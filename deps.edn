@@ -1,0 +1,7 @@
+{:deps {org.clojure/clojure {:mvn/version "1.12.3"}
+        org.duct-framework/main {:mvn/version "0.4.4"}
+        org.duct-framework/test {:mvn/version "0.1.0"}
+        org.duct-framework/module.web {:mvn/version "0.13.4"}
+        org.duct-framework/module.logging {:mvn/version "0.6.6"}
+        cheshire/cheshire {:mvn/version "5.13.0"}}
+ :aliases {:duct {:main-opts ["-m" "duct.main"]}}}

@@ -1,0 +1,6 @@
+{:system
+ {:duct.module/logging {}
+  :duct.module/web
+  {:port 3000
+   :routes [["/" {:get :core-service.routes/index}]]}
+  :core-service.routes/index {}}}
