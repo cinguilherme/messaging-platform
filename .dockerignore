@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+target/
+.cpcache/
+.nrepl-port
+.lein-*
+
+# Documentation
+readme.md
+README.md
+*.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Test files
+test/

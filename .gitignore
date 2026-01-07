@@ -6,3 +6,4 @@ logs/
 .clj-kondo/
 .lsp/
 .rebel_readline_history
+.DS_Store
