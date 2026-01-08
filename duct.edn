@@ -7,7 +7,7 @@
   :core-service.queue/in-memory-queue {}
 
   ;; Consumer Components
- :core-service.consumer/consumer
+ :core-service.consumers.consumer/consumer
  {:queue #ig/ref :core-service.queue/in-memory-queue}
 
   ;; Producer Components
