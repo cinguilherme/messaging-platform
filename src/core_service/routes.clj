@@ -24,3 +24,8 @@
 (defn index [_options]
   (fn [_req]
     (format-response {:ok true} (get-accept-format _req))))
+
+(defn test [_options]
+  (fn [_req]
+    (println _options)
+    (format-response {:ok true :message "Hello, World!"} (get-accept-format _req))))
