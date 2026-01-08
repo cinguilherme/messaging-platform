@@ -1,8 +1,8 @@
-(ns core-service.routes
+(ns core-service.server.routes
   (:refer-clojure :exclude [test])
   (:require [cheshire.core :as json]
             [integrant.core :as ig]
-            [core-service.queue :as q]))
+            [core-service.producers.protocol :as producer]))
 
 (defn- get-accept-format
   "Determines response format from Accept header or defaults to JSON"
@@ -30,19 +30,19 @@
 
 (defn test [_options]
   (fn [_req]
-    (let [queue (:queue _options)
-          msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}]
-      (q/enqueue! queue msg)
+    (let [p (:producer _options)
+          msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}
+          ack (producer/produce! p msg {:topic :default})]
       (format-response {:ok true
-                        :enqueued msg
-                        :queue-size (q/size queue)}
+                        :msg msg
+                        :ack ack}
                        (get-accept-format _req)))))
 
 ;; Hook route keys into Integrant so Duct can instantiate handlers and inject options.
-(defmethod ig/init-key :core-service.routes/index
+(defmethod ig/init-key :core-service.server.routes/index
   [_ opts]
   (index opts))
 
-(defmethod ig/init-key :core-service.routes/test
+(defmethod ig/init-key :core-service.server.routes/test
   [_ opts]
   (test opts))

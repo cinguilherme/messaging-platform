@@ -1,6 +1,6 @@
 (ns core-service.handler
   (:require [integrant.core :as ig]
-            [core-service.routes :as routes]))
+            [core-service.server.routes :as routes]))
 
 (defn health-handler [_req]
   {:status 200
