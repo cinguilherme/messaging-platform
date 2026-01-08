@@ -1,5 +1,7 @@
 {:system
  {:duct.module/logging {}
+  :core-service.print/hello {}
+  :core-service.config/get-config {}
   :duct.module/web
   {:port 3000
    :routes [["/" {:get :core-service.routes/index}]]}

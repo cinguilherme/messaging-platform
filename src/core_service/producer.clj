@@ -1,0 +1,1 @@
+(ns core-service.producer)
