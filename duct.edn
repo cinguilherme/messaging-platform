@@ -2,8 +2,19 @@
  {:duct.module/logging {}
   :core-service.print/hello {}
   :core-service.config/get-config {}
+
+  ;; Queue Components
+  :core-service.queue/in-memory-queue {}
+
+  ;; Consumer Components
+ :core-service.consumer/consumer
+ {:queue #ig/ref :core-service.queue/in-memory-queue}
+
+  ;; Producer Components
+
   :duct.module/web
   {:port 3000
    :routes [["/" {:get :core-service.routes/index}]
-            ["/test" {:get :core-service.routes/test}]]}
-  :core-service.routes/index {}}}
+           ["/test" {:get :core-service.routes/test}]]}
+ :core-service.routes/index {}
+ :core-service.routes/test {:queue #ig/ref :core-service.queue/in-memory-queue}}}
