@@ -27,12 +27,5 @@ docker run -p 3000:3000 core-service:latest
 
 Run with environment variables:
 ```bash
-docker run -p 3000:3000 -e DUCT_ENV=production core-service:latest
+docker run -p 3000:3000 core-service
 ```
-
-The Docker image uses:
-- **Java 21 (Eclipse Temurin JRE)** for optimal performance
-- **Multi-stage build** to minimize image size
-- **Non-root user** for enhanced security
-- **Health checks** for container orchestration
-- **Dependency caching** for faster rebuilds
