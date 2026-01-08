@@ -13,10 +13,13 @@
   ;; Producer Components
  :core-service.producers.in-memory/producer
  {:queue #ig/ref :core-service.queue/in-memory-queue}
+ :core-service.producers.common/producer
+ {:default-producer :in-memory
+  :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer}}
 
   :duct.module/web
   {:port 3000
    :routes [["/" {:get :core-service.server.routes/index}]
            ["/test" {:get :core-service.server.routes/test}]]}
  :core-service.server.routes/index {}
- :core-service.server.routes/test {:producer #ig/ref :core-service.producers.in-memory/producer}}}
+ :core-service.server.routes/test {:producer #ig/ref :core-service.producers.common/producer}}}
