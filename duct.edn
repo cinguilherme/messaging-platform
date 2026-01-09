@@ -8,24 +8,51 @@
   {:topics [:default :test-queue]}
 
   ;; Consumer Components
- :core-service.consumers.consumer/consumer
+:core-service.consumers.redis/runtime
+ {:redis #ig/ref :core-service.redis/client
+  :routing #ig/ref :core-service.messaging/routing
+  :codec #ig/ref :core-service.messaging/codec}
+
+:core-service.consumers.consumer/consumer
  {:queues #ig/ref :core-service.queue/in-memory-queues
-  :subscriptions
-  {:default
-   {:source :in-memory
-    :topic :default
-    :handler #ig/ref :core-service.handlers/log-consumed
-    :options {:poll-ms 100}}}}
+  :routing #ig/ref :core-service.messaging/routing
+  :redis-runtime #ig/ref :core-service.consumers.redis/runtime}
 
   ;; Producer Components
  :core-service.producers.in-memory/producer
  {:queues #ig/ref :core-service.queue/in-memory-queues}
+ :core-service.producers.redis/producer
+ {:redis #ig/ref :core-service.redis/client
+  :routing #ig/ref :core-service.messaging/routing
+  :codec #ig/ref :core-service.messaging/codec}
  :core-service.producers.common/producer
  {:default-producer :in-memory
-  :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer}}
+  :routing #ig/ref :core-service.messaging/routing
+  :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer
+              :redis #ig/ref :core-service.producers.redis/producer}}
+
+ ;; Messaging
+ :core-service.redis/client
+ {:uri "redis://localhost:6379"}
+
+ :core-service.messaging.codecs/edn {}
+ :core-service.messaging/codec
+ {:codec #ig/ref :core-service.messaging.codecs/edn}
+
+ :core-service.messaging/routing
+ {:defaults {:source :redis}
+  :topics {:default {:source :redis
+                     :stream "core:default"
+                     :group "core"}
+           :test-queue {:source :in-memory}}
+  ;; Subscriptions live here (not in the consumer config).
+  :subscriptions {:default {:source :redis
+                            :topic :default
+                            :handler #ig/ref :core-service.handlers.handlers/log-consumed
+                            :options {:block-ms 5000}}}}
 
  ;; Handlers
- :core-service.handlers/log-consumed {}
+ :core-service.handlers.handlers/log-consumed {}
 
   :duct.module/web
   {:port 3000

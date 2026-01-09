@@ -1,0 +1,32 @@
+(ns core-service.producers.redis
+  (:require [integrant.core :as ig]
+            [taoensso.carmine :as car]
+            [core-service.messaging.codec :as codec]
+            [core-service.messaging.routing :as routing]
+            [core-service.producers.protocol :as p]
+            [core-service.redis.client]))
+
+(defrecord RedisStreamsProducer [redis-client routing codec]
+  p/Producer
+  (produce! [_ msg-map options]
+    (let [options (or options {})
+          topic (or (:topic options) :default)
+          topic-cfg (routing/topic-config routing topic)
+          stream (or (:stream topic-cfg)
+                     (str "core:" (name topic)))
+          envelope {:msg msg-map
+                    :options options
+                    :produced-at (System/currentTimeMillis)}
+          payload (codec/encode codec envelope)
+          id (car/wcar (:conn redis-client)
+               (car/xadd stream "*" "payload" payload))]
+      {:ok true
+       :backend :redis
+       :topic topic
+       :stream stream
+       :id id})))
+
+(defmethod ig/init-key :core-service.producers.redis/producer
+  [_ {:keys [redis routing codec]}]
+  (->RedisStreamsProducer redis routing codec))
+

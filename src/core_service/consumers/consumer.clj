@@ -13,10 +13,15 @@
     (println "Subscription stopped:" subscription-id)))
 
 (defmethod ig/init-key :core-service.consumers.consumer/consumer
-  [_ {:keys [queues subscriptions default-poll-ms]
+  [_ {:keys [queues routing redis-runtime default-poll-ms]
       :or {default-poll-ms 100}}]
   (let [stop? (atom false)
-        subscriptions (or subscriptions {})
+        ;; Subscriptions come from the shared routing component.
+        ;; (redis subscriptions are handled by :core-service.consumers.redis/runtime).
+        subscriptions (-> routing :subscriptions (or {}))
+        in-mem-subs (into {}
+                          (filter (fn [[_id sub]] (= :in-memory (:source sub))))
+                          subscriptions)
         threads
         (into {}
               (map (fn [[subscription-id {:keys [topic handler options]
@@ -30,9 +35,11 @@
                                               :poll-ms poll-ms
                                               :stop? stop?
                                               :handler handler})])))
-              subscriptions)]
+              in-mem-subs)]
     {:queues queues
-     :subscriptions subscriptions
+     :routing routing
+     ;; Keep the ref so Integrant orders startup correctly.
+     :redis-runtime redis-runtime
      :default-poll-ms default-poll-ms
      :stop? stop?
      :threads threads}))

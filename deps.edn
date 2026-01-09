@@ -9,5 +9,10 @@
         org.duct-framework/test {:mvn/version "0.1.0"}
         org.duct-framework/module.web {:mvn/version "0.13.4"}
         org.duct-framework/module.logging {:mvn/version "0.6.6"}
+
+        ;; Redis dependencies
+        com.taoensso/carmine {:mvn/version "3.4.1"}
+
+        ;; JSON dependencies
         cheshire/cheshire {:mvn/version "5.13.0"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}}}
