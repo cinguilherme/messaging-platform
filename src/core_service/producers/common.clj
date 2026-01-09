@@ -14,6 +14,7 @@
                            (:source options)
                            (routing/source-for-topic routing topic)
                            default-producer-key)
+          _ (logger/log logger :info "Producing message with producer:" producer-key)
           delegate (get producers producer-key)]
       (when-not delegate
         (throw (ex-info "Unknown producer key"

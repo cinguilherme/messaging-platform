@@ -5,17 +5,6 @@
   [_ routing]
   routing)
 
-(def config-map 
-  {:defaults {:source :redis}
-   :topics {:default {:source :redis
-                     :stream "core:default"
-                     :group "core"}
-           :test-queue {:source :in-memory}}
-   :subscriptions {:default {:source :redis
-                            :topic :default
-                            :handler :core-service.handlers.handlers/log-consumed
-                            :options {:block-ms 5000}}}})
-
 (defn topic-config
   [routing topic]
   (get-in routing [:topics topic]))
