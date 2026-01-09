@@ -20,6 +20,33 @@ services:
     volumes:
       - redis_data:/data
 
+  memcached:
+    image: memcached:1.6-alpine
+    ports:
+      - 11211:11211
+    volumes:
+      - memcached_data:/data
+    environment:
+      MEMCACHED_MAX_ITEM_SIZE: 1024
+    command: memcached -u memcached -m 64
+
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   ports:
+  #     - 15672:15672
+  #     - 5672:5672
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
+
+  # kafka:
+  #   image: confluentinc/cp-kafka:latest
+  #   ports:
+  #     - 9092:9092
+  #   volumes:
+  #     - kafka_data:/var/lib/kafka/data
+  #   environment:
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+
   minio:
     image: minio/minio:latest
     ports:
@@ -34,4 +61,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  memcached_data:
   minio_data:
+  # rabbitmq_data:
+  # kafka_data:

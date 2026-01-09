@@ -48,6 +48,8 @@ A combination of ENV variables and configuration files and the system map of Duc
 
 ### Features requirements
 
+### Core Features, enabling a lightweight Whatsapp or Telegram like Apps
+
 - [ ] Persistence of messages
 - [ ] Persistence of users
 - [ ] Persistence of groups
@@ -56,3 +58,22 @@ A combination of ENV variables and configuration files and the system map of Duc
 - [ ] Persistence of users
 - [ ] Persistence of groups
 - [ ] Persistence of channels
+
+### Backoffice Features, enabling a lightweight CRM or Backoffice like Apps
+
+### Databases
+
+- [ ] Postgres
+- [ ] Redis
+
+### Storage
+
+- [ ] S3
+- [ ] Minio
+
+### Messaging Queues, Bus & or Event Bus
+
+- [ ] Redis
+- [ ] Kafka
+- [ ] RabbitMQ
+- [ ] In-memory
