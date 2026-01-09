@@ -4,18 +4,28 @@
   :core-service.config/get-config {}
 
   ;; Queue Components
-  :core-service.queue/in-memory-queue {}
+  :core-service.queue/in-memory-queues
+  {:topics [:default :test-queue]}
 
   ;; Consumer Components
  :core-service.consumers.consumer/consumer
- {:queue #ig/ref :core-service.queue/in-memory-queue}
+ {:queues #ig/ref :core-service.queue/in-memory-queues
+  :subscriptions
+  {:default
+   {:source :in-memory
+    :topic :default
+    :handler #ig/ref :core-service.handlers/log-consumed
+    :options {:poll-ms 100}}}}
 
   ;; Producer Components
  :core-service.producers.in-memory/producer
- {:queue #ig/ref :core-service.queue/in-memory-queue}
+ {:queues #ig/ref :core-service.queue/in-memory-queues}
  :core-service.producers.common/producer
  {:default-producer :in-memory
   :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer}}
+
+ ;; Handlers
+ :core-service.handlers/log-consumed {}
 
   :duct.module/web
   {:port 3000

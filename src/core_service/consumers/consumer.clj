@@ -2,29 +2,45 @@
   (:require [integrant.core :as ig]
             [core-service.queue :as q]))
 
-(defn- start-consumer!
-  [{:keys [queue poll-ms stop?]}]
+(defn- start-subscription!
+  [{:keys [subscription-id queue poll-ms stop? handler]}]
   (future
-    (println "Consumer started")
+    (println "Subscription started:" subscription-id)
     (while (not @stop?)
       (if-let [item (q/dequeue! queue)]
-        (println "Consumed item:" item)
+        (handler item)
         (Thread/sleep poll-ms)))
-    (println "Consumer stopped")))
+    (println "Subscription stopped:" subscription-id)))
 
 (defmethod ig/init-key :core-service.consumers.consumer/consumer
-  [_ {:keys [queue poll-ms] :or {poll-ms 100}}]
+  [_ {:keys [queues subscriptions default-poll-ms]
+      :or {default-poll-ms 100}}]
   (let [stop? (atom false)
-        thread (start-consumer! {:queue queue :poll-ms poll-ms :stop? stop?})]
-    {:queue queue
-     :poll-ms poll-ms
+        subscriptions (or subscriptions {})
+        threads
+        (into {}
+              (map (fn [[subscription-id {:keys [topic handler options]
+                                         :or {options {}}}]]
+                     (let [topic (or topic :default)
+                           queue (q/get-queue! queues topic)
+                           poll-ms (or (:poll-ms options) default-poll-ms)]
+                       [subscription-id
+                        (start-subscription! {:subscription-id subscription-id
+                                              :queue queue
+                                              :poll-ms poll-ms
+                                              :stop? stop?
+                                              :handler handler})])))
+              subscriptions)]
+    {:queues queues
+     :subscriptions subscriptions
+     :default-poll-ms default-poll-ms
      :stop? stop?
-     :thread thread}))
+     :threads threads}))
 
 (defmethod ig/halt-key! :core-service.consumers.consumer/consumer
-  [_ {:keys [stop? thread]}]
+  [_ {:keys [stop? threads]}]
   (when stop?
     (reset! stop? true))
-  (when thread
+  (doseq [[_id thread] threads]
     (deref thread 1000 nil))
   nil)

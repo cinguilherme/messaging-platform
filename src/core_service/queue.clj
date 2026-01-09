@@ -9,6 +9,28 @@
   [_ _opts]
   (atom clojure.lang.PersistentQueue/EMPTY))
 
+(defmethod ig/init-key :core-service.queue/in-memory-queues
+  [_ {:keys [topics] :or {topics []}}]
+  {:topics->queue (into {}
+                        (map (fn [topic]
+                               [topic (atom clojure.lang.PersistentQueue/EMPTY)]))
+                        topics)})
+
+(defn known-topics
+  [queues]
+  (set (keys (:topics->queue queues))))
+
+(defn get-queue
+  [queues topic]
+  (get-in queues [:topics->queue topic]))
+
+(defn get-queue!
+  [queues topic]
+  (or (get-queue queues topic)
+      (throw (ex-info "Unknown topic queue"
+                      {:topic topic
+                       :known-topics (sort (known-topics queues))}))))
+
 (defn enqueue!
   [queue item]
   (swap! queue conj item))
