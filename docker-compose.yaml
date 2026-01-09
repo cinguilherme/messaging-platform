@@ -30,6 +30,17 @@ services:
       MEMCACHED_MAX_ITEM_SIZE: 1024
     command: memcached -u memcached -m 64
 
+  typesense:
+    image: typesense/typesense:latest
+    ports:
+      - 8108:8108
+    volumes:
+      - typesense_data:/data
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY: typesense
+    command: typesense-server --data-dir /data --api-key typesense
+
   # rabbitmq:
   #   image: rabbitmq:3-management
   #   ports:
@@ -63,5 +74,6 @@ volumes:
   redis_data:
   memcached_data:
   minio_data:
+  typesense_data:
   # rabbitmq_data:
   # kafka_data:

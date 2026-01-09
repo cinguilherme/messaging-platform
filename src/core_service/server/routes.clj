@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [test])
   (:require [cheshire.core :as json]
             [core-service.producers.protocol :as producer]
-            [core-service.cache.protocol :as cache]))
+            [core-service.cache.protocol :as cache]
+            [core-service.storage.protocol :as storage]))
 
 (defn- get-accept-format
   "Determines response format from Accept header or defaults to JSON"
@@ -32,17 +33,26 @@
   (fn [_req]
     (let [p (:producer _options)
           c (:cache _options)
+          s (:storage _options)
           msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}
           cache-key "last-test-msg"
+          storage-key (str "msg-" (:timestamp msg) ".json")
+          
+          ;; Cache operations
           cached-msg (cache/cache-lookup c cache-key {})
           newly-cached? (not cached-msg)
           _ (when newly-cached?
               (cache/cache-put c cache-key msg {}))
+          
+          ;; Storage operations
+          storage-result (storage/storage-put s storage-key (json/generate-string msg) {})
+          
           ack (producer/produce! p msg {:topic :default})]
       (format-response {:ok true
                         :msg msg
                         :cached-msg cached-msg
                         :ack ack
                         :cached? (boolean cached-msg)
-                        :newly-cached? newly-cached?}
+                        :newly-cached? newly-cached?
+                        :storage-result storage-result}
                        (get-accept-format _req)))))

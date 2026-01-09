@@ -46,6 +46,24 @@
             :redis #ig/ref :core-service.cache/redis}
    :logger #ig/ref :duct/logger}
 
+  ;; Storage Components
+  :core-service.storage/local-disk
+  {:root-path "storage"
+   :logger #ig/ref :duct/logger}
+
+  :core-service.storage/minio
+  {:endpoint "http://localhost:9000"
+   :access-key "minioadmin"
+   :secret-key "minioadmin"
+   :bucket "messaging-platform"
+   :logger #ig/ref :duct/logger}
+
+  :core-service.storage/common
+  {:default-storage :local-disk
+   :backends {:local-disk #ig/ref :core-service.storage/local-disk
+              :minio #ig/ref :core-service.storage/minio}
+   :logger #ig/ref :duct/logger}
+
   ;; Messaging
   :core-service.redis/client
   {:uri "redis://localhost:6379"}
@@ -75,4 +93,5 @@
             ["/test" {:get :core-service.server.routes/test}]]}
   :core-service.server.routes/index {}
   :core-service.server.routes/test {:producer #ig/ref :core-service.producers.common/producer
-                                    :cache #ig/ref :core-service.cache/common}}}
+                                    :cache #ig/ref :core-service.cache/common
+                                    :storage #ig/ref :core-service.storage/common}}}

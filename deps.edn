@@ -13,6 +13,9 @@
         ;; Redis dependencies
         com.taoensso/carmine {:mvn/version "3.4.1"}
 
+        ;; Storage dependencies
+        amazonica/amazonica {:mvn/version "0.3.165"}
+
         ;; JSON dependencies
         cheshire/cheshire {:mvn/version "5.13.0"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}}}
