@@ -47,11 +47,14 @@
           ;; Storage operations
           storage-result (storage/storage-put s storage-key (json/generate-string msg) {})
           
-          ack (producer/produce! p msg {:topic :default})]
+          ack (producer/produce! p msg {:topic :default})
+          ;; Produce to a topic that fails once
+          fail-ack (producer/produce! p {:type :fail-test :msg "this should fail once"} {:topic :to-fail})]
       (format-response {:ok true
                         :msg msg
                         :cached-msg cached-msg
                         :ack ack
+                        :fail-ack fail-ack
                         :cached? (boolean cached-msg)
                         :newly-cached? newly-cached?
                         :storage-result storage-result}

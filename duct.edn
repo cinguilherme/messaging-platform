@@ -5,13 +5,14 @@
 
   ;; Queue Components
   :core-service.queue/in-memory-queues
-  {:topics [:default :test-queue]}
+  {:topics [:default :test-queue :to-fail]}
 
   ;; Consumer Components
   :core-service.consumers.redis/runtime
   {:redis #ig/ref :core-service.redis/client
    :routing #ig/ref :core-service.messaging/routing
    :codec #ig/ref :core-service.messaging/codec
+   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
   ;; In memory consumer
@@ -19,6 +20,7 @@
   {:queues #ig/ref :core-service.queue/in-memory-queues
    :routing #ig/ref :core-service.messaging/routing
    :redis-runtime #ig/ref :core-service.consumers.redis/runtime
+   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
   ;; Producer Components
@@ -64,6 +66,28 @@
               :minio #ig/ref :core-service.storage/minio}
    :logger #ig/ref :duct/logger}
 
+  ;; Dead Letter Components
+  :core-service.messaging.dead-letter/logger
+  {:logger #ig/ref :duct/logger}
+
+  :core-service.messaging.dead-letter/storage
+  {:storage #ig/ref :core-service.storage/common
+   :logger #ig/ref :duct/logger}
+
+  :core-service.messaging.dead-letter/producer
+  {:producer #ig/ref :core-service.producers.common/producer
+   :dlq-topic :to-fail
+   :max-retries 3
+   :delay-ms 5000
+   :logger #ig/ref :duct/logger}
+
+  :core-service.messaging.dead-letter/common
+  {:default-sink :producer
+   :sinks {:logger #ig/ref :core-service.messaging.dead-letter/logger
+           :storage #ig/ref :core-service.messaging.dead-letter/storage
+           :producer #ig/ref :core-service.messaging.dead-letter/producer}
+   :logger #ig/ref :duct/logger}
+
   ;; Messaging
   :core-service.redis/client
   {:uri "redis://localhost:6379"}
@@ -82,10 +106,15 @@
 
   ;; Routing Config Handlers
   :core-service.config.messaging/routing
-  {:handlers {:log-consumed #ig/ref :core-service.handlers.handlers/log-consumed}}
+  {:handlers {:log-consumed #ig/ref :core-service.handlers.handlers/log-consumed
+              :fail-once #ig/ref :core-service.handlers.handlers/fail-once}
+   :topics {:to-fail {:source :in-memory}}
+   :subscriptions
+   {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}
 
   ;; Handlers
   :core-service.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
+  :core-service.handlers.handlers/fail-once {:logger #ig/ref :duct/logger}
 
   :duct.module/web
   {:port 3000

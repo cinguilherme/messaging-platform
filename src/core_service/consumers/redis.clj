@@ -3,7 +3,8 @@
             [taoensso.carmine :as car]
             [duct.logger :as logger]
             [core-service.messaging.codec :as codec]
-            [core-service.messaging.routing :as routing]))
+            [core-service.messaging.routing :as routing]
+            [core-service.messaging.dead-letter :as dl]))
 
 (defn- ensure-consumer-group!
   [conn stream group]
@@ -16,7 +17,7 @@
       nil)))
 
 (defn- start-redis-subscription!
-  [{:keys [subscription-id conn stream group consumer-name codec handler stop? block-ms logger]}]
+  [{:keys [subscription-id conn stream group consumer-name codec handler dead-letter stop? block-ms logger]}]
   (future
     (logger/log logger :report ::redis-subscription-started
                 {:id subscription-id :stream stream :group group :consumer consumer-name})
@@ -34,12 +35,29 @@
           (let [m (apply hash-map fields)
                 payload (get m "payload")
                 envelope (codec/decode codec payload)]
-            (handler envelope)
-            (car/wcar conn (car/xack stream group id))))))
+            (try
+              (handler envelope)
+              (car/wcar conn (car/xack stream group id))
+              (catch Exception e
+                (logger/log logger :error ::redis-handler-failed 
+                            {:subscription-id subscription-id :stream stream :redis-id id :error (.getMessage e)})
+                (if dead-letter
+                  (let [dl-res (dl/send-dead-letter! dead-letter envelope 
+                                                     {:error (.getMessage e)
+                                                      :stacktrace (with-out-str (.printStackTrace e))}
+                                                     {})]
+                    (if (:ok dl-res)
+                      (do
+                        (logger/log logger :info ::redis-dead-letter-success {:subscription-id subscription-id :redis-id id})
+                        (car/wcar conn (car/xack stream group id)))
+                      (logger/log logger :error ::redis-dead-letter-failed 
+                                  {:subscription-id subscription-id :redis-id id :error (:error dl-res)})))
+                  ;; If no DLQ configured, we don't XACK, so it stays in PEL
+                  (logger/log logger :warn ::no-dlq-configured {:subscription-id subscription-id :redis-id id}))))))))
     (logger/log logger :report ::redis-subscription-stopped {:id subscription-id})))
 
 (defmethod ig/init-key :core-service.consumers.redis/runtime
-  [_ {:keys [redis routing codec logger]
+  [_ {:keys [redis routing codec dead-letter logger]
       :or {}}]
   (let [stop? (atom false)
         subscriptions (-> routing :subscriptions (or {}))
@@ -64,6 +82,7 @@
                                                     :consumer-name consumer-name
                                                     :codec codec
                                                     :handler handler
+                                                    :dead-letter dead-letter
                                                     :stop? stop?
                                                     :block-ms block-ms
                                                     :logger logger})])))
@@ -80,4 +99,3 @@
   (doseq [[_id thread] threads]
     (deref thread 1000 nil))
   nil)
-
