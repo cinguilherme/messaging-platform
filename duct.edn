@@ -55,13 +55,13 @@
 
   :core-service.storage/minio
   {:endpoint "http://localhost:9000"
-   :access-key "minioadmin"
-   :secret-key "minioadmin"
+   :access-key "minio"
+   :secret-key "minio123"
    :bucket "messaging-platform"
    :logger #ig/ref :duct/logger}
 
   :core-service.storage/common
-  {:default-storage :local-disk
+  {:default-storage :minio
    :backends {:local-disk #ig/ref :core-service.storage/local-disk
               :minio #ig/ref :core-service.storage/minio}
    :logger #ig/ref :duct/logger}
