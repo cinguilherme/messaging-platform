@@ -1,35 +1,40 @@
 {:system
  {:duct.module/logging {}
-  :core-service.print/hello {}
-  :core-service.config/get-config {}
+  :core-service.print/hello {:logger #ig/ref :duct/logger}
+  :core-service.config/get-config {:logger #ig/ref :duct/logger}
 
   ;; Queue Components
   :core-service.queue/in-memory-queues
   {:topics [:default :test-queue]}
 
   ;; Consumer Components
-:core-service.consumers.redis/runtime
+ :core-service.consumers.redis/runtime
  {:redis #ig/ref :core-service.redis/client
   :routing #ig/ref :core-service.messaging/routing
-  :codec #ig/ref :core-service.messaging/codec}
+  :codec #ig/ref :core-service.messaging/codec
+  :logger #ig/ref :duct/logger}
 
 :core-service.consumers.consumer/consumer
  {:queues #ig/ref :core-service.queue/in-memory-queues
   :routing #ig/ref :core-service.messaging/routing
-  :redis-runtime #ig/ref :core-service.consumers.redis/runtime}
+  :redis-runtime #ig/ref :core-service.consumers.redis/runtime
+  :logger #ig/ref :duct/logger}
 
   ;; Producer Components
  :core-service.producers.in-memory/producer
- {:queues #ig/ref :core-service.queue/in-memory-queues}
+ {:queues #ig/ref :core-service.queue/in-memory-queues
+  :logger #ig/ref :duct/logger}
  :core-service.producers.redis/producer
  {:redis #ig/ref :core-service.redis/client
   :routing #ig/ref :core-service.messaging/routing
-  :codec #ig/ref :core-service.messaging/codec}
+  :codec #ig/ref :core-service.messaging/codec
+  :logger #ig/ref :duct/logger}
  :core-service.producers.common/producer
  {:default-producer :in-memory
   :routing #ig/ref :core-service.messaging/routing
   :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer
-              :redis #ig/ref :core-service.producers.redis/producer}}
+              :redis #ig/ref :core-service.producers.redis/producer}
+  :logger #ig/ref :duct/logger}
 
  ;; Messaging
  :core-service.redis/client
@@ -39,20 +44,12 @@
  :core-service.messaging/codec
  {:codec #ig/ref :core-service.messaging.codecs/edn}
 
+ ;; Routing Messages
  :core-service.messaging/routing
- {:defaults {:source :redis}
-  :topics {:default {:source :redis
-                     :stream "core:default"
-                     :group "core"}
-           :test-queue {:source :in-memory}}
-  ;; Subscriptions live here (not in the consumer config).
-  :subscriptions {:default {:source :redis
-                            :topic :default
-                            :handler #ig/ref :core-service.handlers.handlers/log-consumed
-                            :options {:block-ms 5000}}}}
-
+ core-service.messaging.routing/config-map
+ 
  ;; Handlers
- :core-service.handlers.handlers/log-consumed {}
+ :core-service.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
 
   :duct.module/web
   {:port 3000

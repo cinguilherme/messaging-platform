@@ -1,19 +1,20 @@
 (ns core-service.consumers.consumer
   (:require [integrant.core :as ig]
+            [duct.logger :as logger]
             [core-service.queue :as q]))
 
 (defn- start-subscription!
-  [{:keys [subscription-id queue poll-ms stop? handler]}]
+  [{:keys [subscription-id queue poll-ms stop? handler logger]}]
   (future
-    (println "Subscription started:" subscription-id)
+    (logger/log logger :report ::subscription-started {:id subscription-id})
     (while (not @stop?)
       (if-let [item (q/dequeue! queue)]
         (handler item)
         (Thread/sleep poll-ms)))
-    (println "Subscription stopped:" subscription-id)))
+    (logger/log logger :report ::subscription-stopped {:id subscription-id})))
 
 (defmethod ig/init-key :core-service.consumers.consumer/consumer
-  [_ {:keys [queues routing redis-runtime default-poll-ms]
+  [_ {:keys [queues routing redis-runtime default-poll-ms logger]
       :or {default-poll-ms 100}}]
   (let [stop? (atom false)
         ;; Subscriptions come from the shared routing component.
@@ -34,7 +35,8 @@
                                               :queue queue
                                               :poll-ms poll-ms
                                               :stop? stop?
-                                              :handler handler})])))
+                                              :handler handler
+                                              :logger logger})])))
               in-mem-subs)]
     {:queues queues
      :routing routing
@@ -42,10 +44,12 @@
      :redis-runtime redis-runtime
      :default-poll-ms default-poll-ms
      :stop? stop?
-     :threads threads}))
+     :threads threads
+     :logger logger}))
 
 (defmethod ig/halt-key! :core-service.consumers.consumer/consumer
-  [_ {:keys [stop? threads]}]
+  [_ {:keys [stop? threads logger]}]
+  (logger/log logger :report ::halting-consumer)
   (when stop?
     (reset! stop? true))
   (doseq [[_id thread] threads]

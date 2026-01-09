@@ -1,6 +1,7 @@
 (ns core-service.consumers.redis
   (:require [integrant.core :as ig]
             [taoensso.carmine :as car]
+            [duct.logger :as logger]
             [core-service.messaging.codec :as codec]
             [core-service.messaging.routing :as routing]))
 
@@ -15,9 +16,10 @@
       nil)))
 
 (defn- start-redis-subscription!
-  [{:keys [subscription-id conn stream group consumer-name codec handler stop? block-ms]}]
+  [{:keys [subscription-id conn stream group consumer-name codec handler stop? block-ms logger]}]
   (future
-    (println "Redis subscription started:" subscription-id "stream:" stream "group:" group "consumer:" consumer-name)
+    (logger/log logger :report ::redis-subscription-started
+                {:id subscription-id :stream stream :group group :consumer consumer-name})
     (ensure-consumer-group! conn stream group)
     (while (not @stop?)
       (let [resp (car/wcar conn
@@ -34,10 +36,10 @@
                 envelope (codec/decode codec payload)]
             (handler envelope)
             (car/wcar conn (car/xack stream group id))))))
-    (println "Redis subscription stopped:" subscription-id)))
+    (logger/log logger :report ::redis-subscription-stopped {:id subscription-id})))
 
 (defmethod ig/init-key :core-service.consumers.redis/runtime
-  [_ {:keys [redis routing codec]
+  [_ {:keys [redis routing codec logger]
       :or {}}]
   (let [stop? (atom false)
         subscriptions (-> routing :subscriptions (or {}))
@@ -63,13 +65,16 @@
                                                     :codec codec
                                                     :handler handler
                                                     :stop? stop?
-                                                    :block-ms block-ms})])))
+                                                    :block-ms block-ms
+                                                    :logger logger})])))
               redis-subs)]
     {:stop? stop?
-     :threads threads}))
+     :threads threads
+     :logger logger}))
 
 (defmethod ig/halt-key! :core-service.consumers.redis/runtime
-  [_ {:keys [stop? threads]}]
+  [_ {:keys [stop? threads logger]}]
+  (logger/log logger :report ::halting-redis-runtime)
   (when stop?
     (reset! stop? true))
   (doseq [[_id thread] threads]
