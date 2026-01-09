@@ -30,5 +30,8 @@
 
 (defmethod ig/init-key :core-service.producers.redis/producer
   [_ {:keys [redis routing codec logger]}]
+  (logger/log logger :info ::initializing-producer (str {:flavor :redis
+                                                         :routing routing
+                                                         :codec codec}))
   (->RedisStreamsProducer redis routing codec logger))
 

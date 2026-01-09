@@ -22,5 +22,7 @@
 
 (defmethod ig/init-key :core-service.producers.in-memory/producer
   [_ {:keys [queues logger]}]
+  (logger/log logger :info ::initializing-producer {:flavor :in-memory
+                                                    :queues queues})
   (->InMemoryProducer queues logger))
 
