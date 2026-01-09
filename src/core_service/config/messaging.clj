@@ -1,5 +1,6 @@
 (ns core-service.config.messaging
-  (:require [integrant.core :as ig]))
+  (:require [integrant.core :as ig]
+            [core-service.tracing :as tracing]))
 
 ;; Config components: return config maps (can include Integrant refs via ig/ref).
 
@@ -28,23 +29,29 @@
   [_ overrides]
   ;; Allow duct.edn to pass overrides (e.g. env-specific tweaks) while keeping the heavy
   ;; default routing map in code.
-  (let [handlers (:handlers overrides)
-        merged (deep-merge default-routing (or (dissoc overrides :handlers) {}))]
-    (update merged :subscriptions
-            (fn [subs]
-              (into {}
-                    (map (fn [[id sub]]
-                           (let [h (:handler sub)]
-                             (cond
-                               (fn? h)
-                               [id sub]
+  (letfn [(wrap-handler [handler-fn]
+            (fn [envelope]
+              (let [parent (some-> (get-in envelope [:metadata :trace]) tracing/decode-ctx)
+                    ctx (tracing/child-ctx parent)]
+                (tracing/with-ctx ctx
+                  (handler-fn envelope)))))]
+    (let [handlers (:handlers overrides)
+          merged (deep-merge default-routing (or (dissoc overrides :handlers) {}))]
+      (update merged :subscriptions
+              (fn [subs]
+                (into {}
+                      (map (fn [[id sub]]
+                             (let [h (:handler sub)]
+                               (cond
+                                 (fn? h)
+                                 [id (update sub :handler wrap-handler)]
 
-                               (and (keyword? h) (contains? handlers h))
-                               [id (assoc sub :handler (get handlers h))]
+                                 (and (keyword? h) (contains? handlers h))
+                                 [id (assoc sub :handler (wrap-handler (get handlers h)))]
 
-                               :else
-                               (throw (ex-info "Subscription handler must be a function or a known handler key"
-                                               {:subscription id
-                                                :handler h
-                                                :known-handlers (keys handlers)}))))))
-                    (or subs {}))))))
+                                 :else
+                                 (throw (ex-info "Subscription handler must be a function or a known handler key"
+                                                 {:subscription id
+                                                  :handler h
+                                                  :known-handlers (keys handlers)}))))))
+                      (or subs {})))))))

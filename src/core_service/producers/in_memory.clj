@@ -9,11 +9,14 @@
   (produce! [_ msg-map options]
     (let [options (or options {})
           topic (or (:topic options) :default)
+          trace (:trace options)
           queue (q/get-queue! queues topic)
           envelope {:msg msg-map
                     :options options
+                    :metadata (cond-> {}
+                                trace (assoc :trace trace))
                     :produced-at (System/currentTimeMillis)}]
-      (logger/log logger :info ::producing-message {:topic topic :msg msg-map})
+      (logger/log logger :info ::producing-message {:topic topic :msg msg-map :trace trace})
       (q/enqueue! queue envelope)
       {:ok true
        :backend :in-memory

@@ -12,14 +12,17 @@
   (produce! [_ msg-map options]
     (let [options (or options {})
           topic (or (:topic options) :default)
+          trace (:trace options)
           topic-cfg (routing/topic-config routing topic)
           stream (or (:stream topic-cfg)
                      (str "core:" (name topic)))
           envelope {:msg msg-map
                     :options options
+                    :metadata (cond-> {}
+                                trace (assoc :trace trace))
                     :produced-at (System/currentTimeMillis)}
           payload (codec/encode codec envelope)
-          _ (logger/log logger :info ::producing-message {:topic topic :stream stream})
+          _ (logger/log logger :info ::producing-message {:topic topic :stream stream :trace trace})
           id (car/wcar (:conn redis-client)
                (car/xadd stream "*" "payload" payload))]
       {:ok true

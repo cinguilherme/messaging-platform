@@ -3,6 +3,7 @@
             [duct.logger :as logger]
             [core-service.storage.protocol :as storage]
             [core-service.producers.protocol :as producer]
+            [core-service.tracing :as tracing]
             [cheshire.core :as json]))
 
 (defprotocol DeadLetterProtocol
@@ -16,10 +17,12 @@
 (defrecord LoggerDeadLetter [logger]
   DeadLetterProtocol
   (send-dead-letter! [_ envelope error-info _opts]
-    (logger/log logger :error ::dead-letter-logged
-                {:envelope envelope
-                 :error-info error-info})
-    {:ok true :sink :logger}))
+    (let [trace (get-in envelope [:metadata :trace])]
+      (logger/log logger :error ::dead-letter-logged
+                  {:envelope envelope
+                   :error-info error-info
+                   :trace trace})
+      {:ok true :sink :logger})))
 
 (defmethod ig/init-key :core-service.messaging.dead-letter/logger
   [_ {:keys [logger]}]
@@ -30,13 +33,14 @@
   DeadLetterProtocol
   (send-dead-letter! [_ envelope error-info opts]
     (let [timestamp (System/currentTimeMillis)
+          trace (get-in envelope [:metadata :trace])
           filename (str "dead-letters/dlq-" timestamp "-" (java.util.UUID/randomUUID) ".json")
-          payload (json/generate-string {:envelope envelope :error-info error-info})]
+          payload (json/generate-string {:envelope envelope :error-info error-info :trace trace})]
       (try
         (storage/storage-put storage filename payload opts)
         {:ok true :sink :storage :path filename}
         (catch Exception e
-          (logger/log logger :error ::storage-dlq-failed {:error (.getMessage e)})
+          (logger/log logger :error ::storage-dlq-failed {:error (.getMessage e) :trace trace})
           {:ok false :error (.getMessage e)})))))
 
 (defmethod ig/init-key :core-service.messaging.dead-letter/storage
@@ -50,13 +54,16 @@
     (let [dlq-topic (or (:dlq-topic opts) dlq-topic "dead-letters")
           delay-ms (or (:delay-ms opts) delay-ms 0)
           max-retries (or (:max-retries opts) max-retries 3)
+          trace (get-in envelope [:metadata :trace])
+          parent (tracing/decode-ctx trace)
+          dlq-ctx (tracing/child-ctx parent)
           ;; Extract retry count from envelope if it was already retried
           current-retry (get-in envelope [:msg :retry-count] 0)
           next-retry (inc current-retry)]
       (if (> next-retry max-retries)
         (do
           (logger/log logger :error ::max-retries-exceeded 
-                      {:topic dlq-topic :retry-count current-retry})
+                      {:topic dlq-topic :retry-count current-retry :trace trace})
           ;; Fallback to logging the message so it isn't lost
           {:ok false :error :max-retries-exceeded})
         (let [payload {:original-envelope envelope
@@ -66,14 +73,14 @@
           (try
             (if (> delay-ms 0)
               (do
-                (logger/log logger :info ::delaying-dead-letter {:delay-ms delay-ms :retry-count next-retry})
+                (logger/log logger :info ::delaying-dead-letter {:delay-ms delay-ms :retry-count next-retry :trace trace})
                 (future 
                   (Thread/sleep delay-ms)
-                  (producer/produce! producer payload {:topic dlq-topic})))
-              (producer/produce! producer payload {:topic dlq-topic}))
-            {:ok true :sink :producer :topic dlq-topic :retry-count next-retry}
+                  (producer/produce! producer payload {:topic dlq-topic :trace/ctx dlq-ctx})))
+              (producer/produce! producer payload {:topic dlq-topic :trace/ctx dlq-ctx}))
+            {:ok true :sink :producer :topic dlq-topic :retry-count next-retry :trace (tracing/encode-ctx dlq-ctx)}
             (catch Exception e
-              (logger/log logger :error ::producer-dlq-failed {:error (.getMessage e)})
+              (logger/log logger :error ::producer-dlq-failed {:error (.getMessage e) :trace trace})
               {:ok false :error (.getMessage e)})))))))
 
 (defmethod ig/init-key :core-service.messaging.dead-letter/producer
