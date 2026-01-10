@@ -1,1 +1,1 @@
-(ns core-service.postgres.client)
+(ns core-service.clients.postgres.client)

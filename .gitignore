@@ -8,3 +8,4 @@ logs/
 .rebel_readline_history
 .DS_Store
 .nrepl-port
+storage/
