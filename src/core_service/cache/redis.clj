@@ -2,7 +2,7 @@
   (:require [integrant.core :as ig]
             [taoensso.carmine :as car]
             [core-service.cache.protocol :as p]
-            [core-service.redis.client]))
+            [core-service.clients.redis.client]))
 
 (defrecord RedisCache [redis-client]
   p/CacheProtocol
@@ -21,6 +21,6 @@
     (car/wcar (:conn redis-client)
       (car/flushdb))))
 
-(defmethod ig/init-key :core-service.cache/redis
-  [_ {:keys [redis]}]
-  (->RedisCache redis))
+(defmethod ig/init-key :core-service.cache.redis/redis
+  [_ {:keys [redis-client]}]
+  (->RedisCache redis-client))

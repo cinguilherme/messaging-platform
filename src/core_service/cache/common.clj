@@ -26,7 +26,7 @@
       (logger/log logger :debug ::cache-clear {:cache cache-key})
       (p/cache-clear delegate opts))))
 
-(defmethod ig/init-key :core-service.cache/common
+(defmethod ig/init-key :core-service.cache.common/common
   [_ {:keys [default-cache caches logger]
       :or {default-cache :in-memory}}]
   (logger/log logger :info ::initializing-common-cache {:default-cache default-cache})

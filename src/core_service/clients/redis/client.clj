@@ -1,11 +1,11 @@
-(ns core-service.redis.client
+(ns core-service.clients.redis.client
   (:require [integrant.core :as ig]))
 
 (defrecord RedisClient [conn]
   Object
   (toString [_] (str "#RedisClient" (dissoc conn :spec))))
 
-(defmethod ig/init-key :core-service.redis/client
+(defmethod ig/init-key :core-service.clients.redis/client
   [_ {:keys [uri] :or {uri "redis://localhost:6379"}}]
   (->RedisClient {:pool {}
                  :spec {:uri uri}}))

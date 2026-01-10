@@ -9,7 +9,7 @@
 
   ;; Consumer Components
   :core-service.consumers.redis/runtime
-  {:redis #ig/ref :core-service.redis/client
+  {:redis #ig/ref :core-service.clients.redis/client
    :routing #ig/ref :core-service.messaging/routing
    :codec #ig/ref :core-service.messaging/codec
    :dead-letter #ig/ref :core-service.messaging.dead-letter/common
@@ -28,7 +28,7 @@
   {:queues #ig/ref :core-service.queue/in-memory-queues
    :logger #ig/ref :duct/logger}
   :core-service.producers.redis/producer
-  {:redis #ig/ref :core-service.redis/client
+  {:redis #ig/ref :core-service.clients.redis/client
    :routing #ig/ref :core-service.messaging/routing
    :codec #ig/ref :core-service.messaging/codec
    :logger #ig/ref :duct/logger}
@@ -40,12 +40,12 @@
    :logger #ig/ref :duct/logger}
 
   ;; Cache Components
-  :core-service.cache/in-memory {:logger #ig/ref :duct/logger}
-  :core-service.cache/redis {:redis #ig/ref :core-service.redis/client}
-  :core-service.cache/common
+  :core-service.cache.in-memory/in-memory {:logger #ig/ref :duct/logger}
+  :core-service.cache.redis/redis {:redis-client #ig/ref :core-service.clients.redis/client}
+  :core-service.cache.common/common
   {:default-cache :in-memory
-   :caches {:in-memory #ig/ref :core-service.cache/in-memory
-            :redis #ig/ref :core-service.cache/redis}
+   :caches {:in-memory #ig/ref :core-service.cache.in-memory/in-memory
+            :redis #ig/ref :core-service.cache.redis/redis}
    :logger #ig/ref :duct/logger}
 
   ;; Storage Components
@@ -89,7 +89,7 @@
    :logger #ig/ref :duct/logger}
 
   ;; Messaging
-  :core-service.redis/client
+  :core-service.clients.redis/client
   {:uri "redis://localhost:6379"}
 
   ;; Codecs
@@ -123,7 +123,7 @@
             ["/test" {:get :core-service.server.routes/test}]]}
   :core-service.server.routes/index {}
   :core-service.server.routes/test {:producer #ig/ref :core-service.producers.common/producer
-                                    :cache #ig/ref :core-service.cache/common
+                                    :cache #ig/ref :core-service.cache.common/common
                                     :storage #ig/ref :core-service.storage/common}
 
   :core-service.tracing.http/middleware {}}}

@@ -5,7 +5,7 @@
             [core-service.messaging.codec :as codec]
             [core-service.messaging.routing :as routing]
             [core-service.producers.protocol :as p]
-            [core-service.redis.client]))
+            [core-service.clients.redis.client]))
 
 (defrecord RedisStreamsProducer [redis-client routing codec logger]
   p/Producer

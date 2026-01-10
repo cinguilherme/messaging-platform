@@ -17,12 +17,12 @@
     (reset! data {})
     nil))
 
-(defmethod ig/init-key :core-service.cache/in-memory
+(defmethod ig/init-key :core-service.cache.in-memory/in-memory
   [_ {:keys [logger]}]
   (logger/log logger :info ::initializing-in-memory-cache)
   (->InMemoryCache (atom {})))
 
-(defmethod ig/halt-key! :core-service.cache/in-memory
+(defmethod ig/halt-key! :core-service.cache.in-memory/in-memory
   [_ this {:keys [logger]}]
   (logger/log logger :info ::halting-in-memory-cache)
   (reset! (:data this) {}))
