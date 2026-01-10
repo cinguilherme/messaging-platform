@@ -31,16 +31,122 @@
   [datasource opts]
   (or (:conn opts) (:tx opts) datasource))
 
+(defn- expr->sql
+  "Converts a where expression DSL into [sql params].
+
+   Supported forms:
+   - Column: :col / \"col\"
+   - Ops: [:and ...], [:or ...], [:not expr]
+   - Comparisons: [:= col v], [:!= col v], [:> col v], [:>= col v], [:< col v], [:<= col v]
+   - Other: [:like col pattern], [:in col coll]
+   - Functions: [:length :col]"
+  [expr]
+  (cond
+    (vector? expr)
+    (let [[op & xs] expr]
+      (when-not (keyword? op)
+        (throw (ex-info "Where expression must start with an operator keyword" {:expr expr})))
+      (case op
+        :and (let [parts (map expr->sql xs)
+                   sql (str/join " AND " (map first parts))
+                   args (vec (mapcat second parts))]
+               [(str "(" sql ")") args])
+
+        :or (let [parts (map expr->sql xs)
+                  sql (str/join " OR " (map first parts))
+                  args (vec (mapcat second parts))]
+              [(str "(" sql ")") args])
+
+        :not (let [[sql args] (expr->sql (first xs))]
+               [(str "NOT (" sql ")") args])
+
+        := (let [[lhs rhs] xs
+                 [lhs-sql lhs-args] (expr->sql lhs)]
+             (if (nil? rhs)
+               [(str lhs-sql " IS NULL") (vec lhs-args)]
+               [(str lhs-sql " = ?") (conj (vec lhs-args) rhs)]))
+
+        :!= (let [[lhs rhs] xs
+                  [lhs-sql lhs-args] (expr->sql lhs)]
+              (if (nil? rhs)
+                [(str lhs-sql " IS NOT NULL") (vec lhs-args)]
+                [(str lhs-sql " <> ?") (conj (vec lhs-args) rhs)]))
+
+        :> (let [[lhs rhs] xs
+                 [lhs-sql lhs-args] (expr->sql lhs)]
+             [(str lhs-sql " > ?") (conj (vec lhs-args) rhs)])
+
+        :>= (let [[lhs rhs] xs
+                  [lhs-sql lhs-args] (expr->sql lhs)]
+              [(str lhs-sql " >= ?") (conj (vec lhs-args) rhs)])
+
+        :< (let [[lhs rhs] xs
+                 [lhs-sql lhs-args] (expr->sql lhs)]
+             [(str lhs-sql " < ?") (conj (vec lhs-args) rhs)])
+
+        :<= (let [[lhs rhs] xs
+                  [lhs-sql lhs-args] (expr->sql lhs)]
+              [(str lhs-sql " <= ?") (conj (vec lhs-args) rhs)])
+
+        :like (let [[lhs pattern] xs
+                    [lhs-sql lhs-args] (expr->sql lhs)]
+                [(str lhs-sql " LIKE ?") (conj (vec lhs-args) pattern)])
+
+        :in (let [[lhs coll] xs
+                  coll (vec coll)
+                  [lhs-sql lhs-args] (expr->sql lhs)]
+              (when (empty? coll)
+                (throw (ex-info ":in requires a non-empty collection" {:expr expr})))
+              [(str lhs-sql " IN (" (str/join ", " (repeat (count coll) "?")) ")")
+               (into (vec lhs-args) coll)])
+
+        :length (let [[col] xs]
+                  [(str "LENGTH(" (ident col {:kind :column}) ")") []])
+
+        (throw (ex-info "Unknown where operator" {:op op :expr expr}))))
+
+    (keyword? expr)
+    [(ident expr {:kind :column}) []]
+
+    (string? expr)
+    [(ident expr {:kind :column}) []]
+
+    :else
+    (throw (ex-info "Invalid where expression" {:expr expr}))))
+
+(defn- map-where->expr
+  [m]
+  (into
+    [:and]
+    (map (fn [[k v]]
+           (cond
+             (vector? v)
+             (let [[op rhs] v]
+               (case op
+                 :> [:> k rhs]
+                 :>= [:>= k rhs]
+                 :< [:< k rhs]
+                 :<= [:<= k rhs]
+                 :!= [:!= k rhs]
+                 :like [:like k rhs]
+                 :in [:in k rhs]
+                 := [:= k rhs]
+                 (throw (ex-info "Unknown map :where operator" {:op op :entry [k v]}))))
+
+             :else
+             [:= k v])))
+    m))
+
 (defn- where->sql
-  "Turns a simple equality where-map into [\"col1 = ? AND col2 = ?\" [v1 v2]]."
+  "Returns [sql params]. Supports:
+   - map form: {:col val, :age [:> 18], :email [:like \"%@x.com\"], :id [:in [1 2 3]]}
+   - expression form: [:and [:> [:length :username] 3] [:= :status \"active\"]]"
   [where]
-  (when (some? where)
-    (when-not (map? where)
-      (throw (ex-info ":where must be a map" {:where where})))
-    (let [ks (keys where)
-          clauses (map (fn [k] (str (ident k {:kind :column}) " = ?")) ks)
-          params (mapv where ks)]
-      [(str/join " AND " clauses) params])))
+  (cond
+    (nil? where) [nil []]
+    (map? where) (expr->sql (map-where->expr where))
+    (vector? where) (expr->sql where)
+    :else (throw (ex-info ":where must be a map or vector expression" {:where where}))))
 
 (defn- order-by->sql
   [order-by]
@@ -89,7 +195,7 @@
   (select [_ {:keys [table columns where limit offset order-by] :as opts}]
     (when-not table
       (throw (ex-info "select requires :table in opts" {:opts opts})))
-    (let [[where-sql where-params] (or (where->sql where) [nil []])
+    (let [[where-sql where-params] (where->sql where)
           cols-sql (if (seq columns)
                      (str/join ", " (map #(ident % {:kind :column}) columns))
                      "*")

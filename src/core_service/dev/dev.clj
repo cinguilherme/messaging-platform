@@ -96,8 +96,8 @@
          (let [rows (sql/select common-db {:conn conn :table table :where {:username "bob"}})]
            (println "SQL protocol select with where clause:" {:jdbc-url jdbc-url :rows rows}))
 
-         ;; select with more conditions, select where username is longer than 3 characters, this is failing
-         (let [rows (sql/select common-db {:conn conn :table table :where {:username [:> 3]}})]
+        ;; select with more conditions, select where username is longer than 3 characters
+        (let [rows (sql/select common-db {:conn conn :table table :where [:> [:length :username] 3]})]
            (println "SQL protocol select with where username is longer than 3 characters:" {:jdbc-url jdbc-url :rows rows}))
 
          ;; Update + select
