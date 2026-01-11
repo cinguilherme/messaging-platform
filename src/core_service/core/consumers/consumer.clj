@@ -23,11 +23,12 @@
     (logger/log logger :report ::subscription-stopped {:id subscription-id})))
 
 (defmethod ig/init-key :core-service.core.consumers.consumer/consumer
-  [_ {:keys [queues routing redis-runtime jetstream-runtime dead-letter default-poll-ms logger]
+  [_ {:keys [queues routing redis-runtime jetstream-runtime kafka-runtime dead-letter default-poll-ms logger]
       :or {default-poll-ms 100}}]
   (let [stop? (atom false)
         ;; Subscriptions come from the shared routing component.
-        ;; (redis subscriptions are handled by :core-service.core.consumers.redis/runtime).
+        ;; Non in-memory subscriptions are handled by their respective runtimes
+        ;; (e.g. :core-service.core.consumers.redis/runtime, :core-service.core.consumers.kafka/runtime, etc).
         subscriptions (-> routing :subscriptions (or {}))
         in-mem-subs (into {}
                           (filter (fn [[_id sub]] (= :in-memory (:source sub))))
@@ -53,6 +54,7 @@
      ;; Keep the ref so Integrant orders startup correctly.
      :redis-runtime redis-runtime
      :jetstream-runtime jetstream-runtime
+     :kafka-runtime kafka-runtime
      :dead-letter dead-letter
      :default-poll-ms default-poll-ms
      :stop? stop?

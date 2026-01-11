@@ -34,6 +34,7 @@
    :routing #ig/ref :core-service.core.messaging/routing
    :redis-runtime #ig/ref :core-service.core.consumers.redis/runtime
    :jetstream-runtime #ig/ref :core-service.core.consumers.jetstream/runtime
+   :kafka-runtime #ig/ref :core-service.core.consumers.kafka/runtime
    :dead-letter #ig/ref :core-service.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
