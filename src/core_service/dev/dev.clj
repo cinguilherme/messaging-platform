@@ -12,8 +12,11 @@
             [core-service.clients.typesense]
             [core-service.clients.typesense.client :as tc]
             [core-service.clients.jetstream]
+            [core-service.clients.kafka]
+            [core-service.clients.kafka.client :as kc]
             [core-service.producers.jetstream]
             [core-service.consumers.jetstream]
+            [core-service.messaging.codec :as codec]
             [core-service.messaging.codecs.edn :as edn]
             [core-service.producers.protocol :as producer]
             ;; Ensure Integrant has loaded init-key methods for DB components too.
@@ -352,3 +355,67 @@
          (ig/halt-key! :core-service.clients.jetstream/client jetstream))))))
 
 ;(smoke-jetstream!)
+
+(defn smoke-kafka-produce!
+  "Publishes a single EDN-encoded envelope to Kafka using the low-level Kafka client."
+  ([] (smoke-kafka-produce! {}))
+  ([{:keys [bootstrap-servers kafka-topic]
+     :or {bootstrap-servers "localhost:29092"
+          kafka-topic "core.kafka_smoke"}}]
+   (let [client (ig/init-key :core-service.clients.kafka/client
+                             {:bootstrap-servers bootstrap-servers})
+         codec (edn/->EdnCodec)]
+     (try
+       (let [envelope {:msg {:hello "kafka"}
+                       :options {:topic kafka-topic}
+                       :metadata {}
+                       :produced-at (System/currentTimeMillis)}
+             payload (codec/encode codec envelope)
+             bytes (.getBytes (str payload) "UTF-8")
+             ack (kc/send! client {:topic kafka-topic :value bytes})]
+         (println "Kafka produced:" ack)
+         ack)
+       (finally
+         (ig/halt-key! :core-service.clients.kafka/client client))))))
+
+(defn smoke-kafka-consume!
+  "Consumes a single message from Kafka and decodes it as an envelope using the EDN codec."
+  ([] (smoke-kafka-consume! {}))
+  ([{:keys [bootstrap-servers kafka-topic group-id timeout-ms poll-ms]
+     :or {bootstrap-servers "localhost:29092"
+          kafka-topic "core.kafka_smoke"
+          group-id (str "core-service-dev-" (java.util.UUID/randomUUID))
+          timeout-ms 5000
+          poll-ms 250}}]
+   (let [client (ig/init-key :core-service.clients.kafka/client
+                             {:bootstrap-servers bootstrap-servers})
+         codec (edn/->EdnCodec)
+         consumer (kc/make-consumer client {:group-id group-id})]
+     (try
+       (kc/subscribe! consumer [kafka-topic])
+       ;; Give the consumer a chance to join the group.
+       (kc/poll! consumer {:timeout-ms 100})
+       (let [deadline (+ (System/currentTimeMillis) (long timeout-ms))]
+         (loop []
+           (when (> (System/currentTimeMillis) deadline)
+             (throw (ex-info "Kafka smoke consume timed out" {:topic kafka-topic :group-id group-id})))
+           (let [records (kc/poll! consumer {:timeout-ms poll-ms})]
+             (if-let [r (first records)]
+               (let [envelope (codec/decode codec (:value r))]
+                 (kc/commit! consumer)
+                 (println "Kafka consumed envelope:" envelope)
+                 envelope)
+               (recur)))))
+       (finally
+         (kc/close-consumer! consumer)
+         (ig/halt-key! :core-service.clients.kafka/client client))))))
+
+(defn smoke-kafka!
+  "Produce then consume a message (roundtrip)."
+  ([] (smoke-kafka! {}))
+  ([opts]
+   (let [kafka-topic (or (:kafka-topic opts) "core.kafka_smoke")]
+     (smoke-kafka-produce! (assoc opts :kafka-topic kafka-topic))
+     (smoke-kafka-consume! (assoc opts :kafka-topic kafka-topic)))))
+
+(smoke-kafka!)

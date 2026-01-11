@@ -27,5 +27,8 @@
         clj-http/clj-http {:mvn/version "3.12.3"}
 
         ;; JetStream / NATS dependencies
-        io.nats/jnats {:mvn/version "2.20.5"}}
+        io.nats/jnats {:mvn/version "2.20.5"}
+
+        ;; Kafka dependencies
+        org.apache.kafka/kafka-clients {:mvn/version "3.6.1"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}}}
