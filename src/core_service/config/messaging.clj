@@ -10,6 +10,10 @@
                       :stream "core:default"
                       :group "core"}
            :test-queue {:source :in-memory}
+           :kafka-test {:source :kafka
+                        ;; Kafka specifics
+                        :kafka-topic "core.kafka_test"
+                        :group "core"}
            :jetstream-test {:source :jetstream
                             ;; JetStream specifics
                             :subject "core.jetstream_test"
@@ -20,6 +24,10 @@
                              ;; Resolved at init time from :handlers override map (see init-key).
                              :handler :log-consumed
                              :options {:block-ms 5000}}
+                   :kafka-test {:source :kafka
+                                :topic :kafka-test
+                                :handler :log-consumed
+                                :options {:poll-ms 250}}
                    :jetstream-test {:source :jetstream
                                     :topic :jetstream-test
                                     :handler :log-consumed

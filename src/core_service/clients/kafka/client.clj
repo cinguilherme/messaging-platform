@@ -1,5 +1,4 @@
 (ns core-service.clients.kafka.client
-  (:require [clojure.string :as str])
   (:import (org.apache.kafka.clients.producer KafkaProducer ProducerRecord RecordMetadata)
            (org.apache.kafka.clients.consumer KafkaConsumer ConsumerRecord)
            (org.apache.kafka.common.serialization ByteArraySerializer ByteArrayDeserializer)

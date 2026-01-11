@@ -22,6 +22,13 @@
    :dead-letter #ig/ref :core-service.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
+  :core-service.consumers.kafka/runtime
+  {:kafka #ig/ref :core-service.clients.kafka/client
+   :routing #ig/ref :core-service.messaging/routing
+   :codec #ig/ref :core-service.messaging/codec
+   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
+   :logger #ig/ref :duct/logger}
+
   ;; In memory consumer
   :core-service.consumers.consumer/consumer
   {:queues #ig/ref :core-service.queue/in-memory-queues
@@ -46,12 +53,20 @@
    :routing #ig/ref :core-service.messaging/routing
    :codec #ig/ref :core-service.messaging/codec
    :logger #ig/ref :duct/logger}
+
+  :core-service.producers.kafka/producer
+  {:kafka #ig/ref :core-service.clients.kafka/client
+   :routing #ig/ref :core-service.messaging/routing
+   :codec #ig/ref :core-service.messaging/codec
+   :logger #ig/ref :duct/logger}
+
   :core-service.producers.common/producer
   {:default-producer :redis
    :routing #ig/ref :core-service.messaging/routing
    :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer
                :redis #ig/ref :core-service.producers.redis/producer
-               :jetstream #ig/ref :core-service.producers.jetstream/producer}
+               :jetstream #ig/ref :core-service.producers.jetstream/producer
+               :kafka #ig/ref :core-service.producers.kafka/producer}
    :logger #ig/ref :duct/logger}
 
   ;; Cache Components
@@ -109,6 +124,9 @@
 
   :core-service.clients.jetstream/client
   {:uri "nats://localhost:4222"}
+
+  :core-service.clients.kafka/client
+  {:bootstrap-servers "localhost:29092"}
 
   ;; Codecs
   :core-service.messaging.codecs/edn {}
