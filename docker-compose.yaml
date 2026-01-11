@@ -31,7 +31,7 @@ services:
     command: memcached -u memcached -m 64
 
   typesense:
-    image: typesense/typesense:latest
+    image: typesense/typesense:0.25.2
     ports:
       - 8108:8108
     volumes:

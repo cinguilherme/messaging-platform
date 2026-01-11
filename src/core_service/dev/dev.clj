@@ -9,11 +9,17 @@
             ;; :core-service.clients.sqlite/client before we call ig/init-key.
             [core-service.clients.sqlite]
             [core-service.clients.postgres]
+            [core-service.clients.typesense]
+            [core-service.clients.typesense.client :as tc]
             ;; Ensure Integrant has loaded init-key methods for DB components too.
             [core-service.databases.sqlite]
             [core-service.databases.postgres]
             [core-service.databases.sql.common]
-            [core-service.databases.protocols.simple-sql :as sql]))
+            [core-service.databases.protocols.simple-sql :as sql]
+            ;; Text search layer
+            [core-service.text-search]
+            [core-service.text-search.typesense]
+            [core-service.text-search.protocol :as ts]))
 
 (defn smoke-sqlite!
   "Creates a table, inserts rows, and reads them back.
@@ -218,3 +224,86 @@
            rows))
        (finally
          (ig/halt-key! :core-service.clients.postgres/client pg-client))))))
+
+(defn smoke-typesense-client!
+  "Verifies Typesense connectivity and basic indexing/search via the low-level client.
+
+  Defaults match docker-compose.yaml:
+  - endpoint: http://localhost:8108
+  - api-key: typesense"
+  ([] (smoke-typesense-client! {}))
+  ([{:keys [endpoint api-key]
+     :or {endpoint "http://localhost:8108"
+          api-key "typesense"}}]
+   (let [client (ig/init-key :core-service.clients.typesense/client
+                             {:endpoint endpoint :api-key api-key})
+         collection "dev_typesense_smoke"
+         schema {:name collection
+                 ;; Typesense reserves `id` for document ids, so we can't use it as a sortable field.
+                 :fields [{:name "sort_id" :type "int32"}
+                          {:name "username" :type "string"}
+                          {:name "email" :type "string"}]
+                 :default_sorting_field "sort_id"}]
+     ;; 1) Prove connectivity/auth
+     (let [resp (tc/get! client "/collections" {})]
+       (when-not (<= 200 (:status resp) 299)
+         (throw (ex-info "Typesense list collections failed" {:resp resp}))))
+
+     ;; 2) Create collection (idempotent-ish)
+     (let [resp (tc/post! client "/collections" {:body schema})]
+       (when-not (or (<= 200 (:status resp) 299) (= 409 (:status resp)))
+         (throw (ex-info "Typesense create collection failed" {:resp resp}))))
+
+     ;; 3) Upsert docs
+     (doseq [doc [{:id "1" :sort_id 1 :username "alice" :email "alice@example.com"}
+                  {:id "2" :sort_id 2 :username "bob" :email "bob@example.com"}]]
+       (let [resp (tc/post!
+                    client
+                    (str "/collections/" collection "/documents")
+                    {:query {:action "upsert"}
+                     :body doc})]
+         (when-not (<= 200 (:status resp) 299)
+           (throw (ex-info "Typesense upsert failed" {:doc doc :resp resp})))))
+
+     ;; 4) Search
+     (let [resp (tc/get!
+                  client
+                  (str "/collections/" collection "/documents/search")
+                  {:query {:q "ali"
+                           :query_by "username"}})]
+       (when-not (<= 200 (:status resp) 299)
+         (throw (ex-info "Typesense search failed" {:resp resp})))
+       (println "Typesense client smoke test OK:" {:endpoint endpoint
+                                                   :collection collection
+                                                   :search-body (:body resp)})
+       resp))))
+
+(defn smoke-typesense-protocol!
+  "Exercises the protocol/component layer for text search (not raw client calls)."
+  ([] (smoke-typesense-protocol! {}))
+  ([{:keys [endpoint api-key]
+     :or {endpoint "http://localhost:8108"
+          api-key "typesense"}}]
+   (let [typesense-client (ig/init-key :core-service.clients.typesense/client
+                                       {:endpoint endpoint :api-key api-key})
+         engine (ig/init-key :core-service.text-search.typesense/engine
+                             {:typesense-client typesense-client})
+         common (ig/init-key :core-service.text-search/common
+                             {:default-engine :typesense
+                              :engines {:typesense engine}
+                              :logger nil})
+         collection "dev_typesense_protocol_smoke"
+         schema {:name collection
+                 :fields [{:name "sort_id" :type "int32"}
+                          {:name "username" :type "string"}
+                          {:name "email" :type "string"}]
+                 :default_sorting_field "sort_id"}]
+     ;; Admin
+     (ts/create-collection! common collection schema {})
+     ;; Docs
+     (ts/upsert-document! common collection "1" {:sort_id 1 :username "alice" :email "alice@example.com"} {})
+     (ts/upsert-document! common collection "2" {:sort_id 2 :username "bob" :email "bob@example.com"} {})
+     ;; Query
+     (let [resp (ts/search common collection {:q "ali" :query_by "username"} {})]
+       (println "Typesense protocol smoke OK:" {:collection collection :search-body (:body resp)})
+       resp))))

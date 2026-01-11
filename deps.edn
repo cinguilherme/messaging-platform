@@ -21,5 +21,8 @@
         amazonica/amazonica {:mvn/version "0.3.165"}
 
         ;; JSON dependencies
-        cheshire/cheshire {:mvn/version "5.13.0"}}
+        cheshire/cheshire {:mvn/version "5.13.0"}
+
+        ;; HTTP dependencies
+        clj-http/clj-http {:mvn/version "3.12.3"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}}}
