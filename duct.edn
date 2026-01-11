@@ -1,143 +1,142 @@
 {:system
  {:duct.module/logging {}
-  :core-service.print/hello {:logger #ig/ref :duct/logger}
-  :core-service.config/get-config {:logger #ig/ref :duct/logger}
+  :core-service.config.config/get-config {:logger #ig/ref :duct/logger}
 
   ;; Queue Components
   :core-service.queue/in-memory-queues
   {:topics [:default :test-queue :to-fail]}
 
   ;; Consumer Components
-  :core-service.consumers.redis/runtime
-  {:redis #ig/ref :core-service.clients.redis/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
-   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
+  :core-service.core.consumers.redis/runtime
+  {:redis #ig/ref :core-service.core.clients.redis/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
+   :dead-letter #ig/ref :core-service.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
-  :core-service.consumers.jetstream/runtime
-  {:jetstream #ig/ref :core-service.clients.jetstream/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
-   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
+  :core-service.core.consumers.jetstream/runtime
+  {:jetstream #ig/ref :core-service.core.clients.jetstream/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
+   :dead-letter #ig/ref :core-service.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
-  :core-service.consumers.kafka/runtime
-  {:kafka #ig/ref :core-service.clients.kafka/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
-   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
+  :core-service.core.consumers.kafka/runtime
+  {:kafka #ig/ref :core-service.core.clients.kafka/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
+   :dead-letter #ig/ref :core-service.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
   ;; In memory consumer
-  :core-service.consumers.consumer/consumer
+  :core-service.core.consumers.consumer/consumer
   {:queues #ig/ref :core-service.queue/in-memory-queues
-   :routing #ig/ref :core-service.messaging/routing
-   :redis-runtime #ig/ref :core-service.consumers.redis/runtime
-   :jetstream-runtime #ig/ref :core-service.consumers.jetstream/runtime
-   :dead-letter #ig/ref :core-service.messaging.dead-letter/common
+   :routing #ig/ref :core-service.core.messaging/routing
+   :redis-runtime #ig/ref :core-service.core.consumers.redis/runtime
+   :jetstream-runtime #ig/ref :core-service.core.consumers.jetstream/runtime
+   :dead-letter #ig/ref :core-service.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
   ;; Producer Components
-  :core-service.producers.in-memory/producer
+  :core-service.core.producers.in-memory/producer
   {:queues #ig/ref :core-service.queue/in-memory-queues
    :logger #ig/ref :duct/logger}
-  :core-service.producers.redis/producer
-  {:redis #ig/ref :core-service.clients.redis/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
+  :core-service.core.producers.redis/producer
+  {:redis #ig/ref :core-service.core.clients.redis/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
    :logger #ig/ref :duct/logger}
 
-  :core-service.producers.jetstream/producer
-  {:jetstream #ig/ref :core-service.clients.jetstream/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
+  :core-service.core.producers.jetstream/producer
+  {:jetstream #ig/ref :core-service.core.clients.jetstream/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
    :logger #ig/ref :duct/logger}
 
-  :core-service.producers.kafka/producer
-  {:kafka #ig/ref :core-service.clients.kafka/client
-   :routing #ig/ref :core-service.messaging/routing
-   :codec #ig/ref :core-service.messaging/codec
+  :core-service.core.producers.kafka/producer
+  {:kafka #ig/ref :core-service.core.clients.kafka/client
+   :routing #ig/ref :core-service.core.messaging/routing
+   :codec #ig/ref :core-service.core.messaging/codec
    :logger #ig/ref :duct/logger}
 
-  :core-service.producers.common/producer
+  :core-service.core.producers.common/producer
   {:default-producer :redis
-   :routing #ig/ref :core-service.messaging/routing
-   :producers {:in-memory #ig/ref :core-service.producers.in-memory/producer
-               :redis #ig/ref :core-service.producers.redis/producer
-               :jetstream #ig/ref :core-service.producers.jetstream/producer
-               :kafka #ig/ref :core-service.producers.kafka/producer}
+   :routing #ig/ref :core-service.core.messaging/routing
+   :producers {:in-memory #ig/ref :core-service.core.producers.in-memory/producer
+               :redis #ig/ref :core-service.core.producers.redis/producer
+               :jetstream #ig/ref :core-service.core.producers.jetstream/producer
+               :kafka #ig/ref :core-service.core.producers.kafka/producer}
    :logger #ig/ref :duct/logger}
 
   ;; Cache Components
-  :core-service.cache.in-memory/in-memory {:logger #ig/ref :duct/logger}
-  :core-service.cache.redis/redis {:redis-client #ig/ref :core-service.clients.redis/client}
-  :core-service.cache.common/common
+  :core-service.core.cache.in-memory/in-memory {:logger #ig/ref :duct/logger}
+  :core-service.core.cache.redis/redis {:redis-client #ig/ref :core-service.core.clients.redis/client}
+  :core-service.core.cache.common/common
   {:default-cache :in-memory
-   :caches {:in-memory #ig/ref :core-service.cache.in-memory/in-memory
-            :redis #ig/ref :core-service.cache.redis/redis}
+   :caches {:in-memory #ig/ref :core-service.core.cache.in-memory/in-memory
+            :redis #ig/ref :core-service.core.cache.redis/redis}
    :logger #ig/ref :duct/logger}
 
   ;; Storage Components
-  :core-service.storage/local-disk
+  :core-service.core.storage/local-disk
   {:root-path "storage"
    :logger #ig/ref :duct/logger}
 
-  :core-service.storage/minio
+  :core-service.core.storage/minio
   {:endpoint "http://localhost:9000"
    :access-key "minio"
    :secret-key "minio123"
    :bucket "messaging-platform"
    :logger #ig/ref :duct/logger}
 
-  :core-service.storage/common
+  :core-service.core.storage/common
   {:default-storage :minio
-   :backends {:local-disk #ig/ref :core-service.storage/local-disk
-              :minio #ig/ref :core-service.storage/minio}
+   :backends {:local-disk #ig/ref :core-service.core.storage/local-disk
+              :minio #ig/ref :core-service.core.storage/minio}
    :logger #ig/ref :duct/logger}
 
   ;; Dead Letter Components
-  :core-service.messaging.dead-letter/logger
+  :core-service.core.messaging.dead-letter/logger
   {:logger #ig/ref :duct/logger}
 
-  :core-service.messaging.dead-letter/storage
-  {:storage #ig/ref :core-service.storage/common
+  :core-service.core.messaging.dead-letter/storage
+  {:storage #ig/ref :core-service.core.storage/common
    :logger #ig/ref :duct/logger}
 
-  :core-service.messaging.dead-letter/producer
-  {:producer #ig/ref :core-service.producers.common/producer
+  :core-service.core.messaging.dead-letter/producer
+  {:producer #ig/ref :core-service.core.producers.common/producer
    :dlq-topic :to-fail
    :max-retries 3
    :delay-ms 5000
    :logger #ig/ref :duct/logger}
 
-  :core-service.messaging.dead-letter/common
+  :core-service.core.messaging.dead-letter/common
   {:default-sink :producer
-   :sinks {:logger #ig/ref :core-service.messaging.dead-letter/logger
-           :storage #ig/ref :core-service.messaging.dead-letter/storage
-           :producer #ig/ref :core-service.messaging.dead-letter/producer}
+   :sinks {:logger #ig/ref :core-service.core.messaging.dead-letter/logger
+           :storage #ig/ref :core-service.core.messaging.dead-letter/storage
+           :producer #ig/ref :core-service.core.messaging.dead-letter/producer}
    :logger #ig/ref :duct/logger}
 
   ;; Messaging
-  :core-service.clients.redis/client
+  :core-service.core.clients.redis/client
   {:uri "redis://localhost:6379"}
 
-  :core-service.clients.jetstream/client
+  :core-service.core.clients.jetstream/client
   {:uri "nats://localhost:4222"}
 
-  :core-service.clients.kafka/client
+  :core-service.core.clients.kafka/client
   {:bootstrap-servers "localhost:29092"}
 
   ;; Codecs
-  :core-service.messaging.codecs/edn {}
-  :core-service.messaging.codecs/json {}
+  :core-service.core.messaging.codecs/edn {}
+  :core-service.core.messaging.codecs/json {}
 
-  :core-service.messaging/codec
-  {:codec #ig/ref :core-service.messaging.codecs/edn}
+  :core-service.core.messaging/codec
+  {:codec #ig/ref :core-service.core.messaging.codecs/edn}
   
 
   ;; Routing Messages
-  :core-service.messaging/routing
+  :core-service.core.messaging/routing
   #ig/ref :core-service.config.messaging/routing
 
   ;; Routing Config Handlers
@@ -154,12 +153,12 @@
 
   :duct.module/web
   {:port 3000
-   :middleware [:core-service.tracing.http/middleware]
+   :middleware [:core-service.core.tracing.http/middleware]
    :routes [["/" {:get :core-service.server.routes/index}]
             ["/test" {:get :core-service.server.routes/test}]]}
   :core-service.server.routes/index {}
-  :core-service.server.routes/test {:producer #ig/ref :core-service.producers.common/producer
-                                    :cache #ig/ref :core-service.cache.common/common
-                                    :storage #ig/ref :core-service.storage/common}
+  :core-service.server.routes/test {:producer #ig/ref :core-service.core.producers.common/producer
+                                    :cache #ig/ref :core-service.core.cache.common/common
+                                    :storage #ig/ref :core-service.core.storage/common}
 
-  :core-service.tracing.http/middleware {}}}
+  :core-service.core.tracing.http/middleware {}}}
