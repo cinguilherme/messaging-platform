@@ -23,7 +23,7 @@
     (logger/log logger :report ::subscription-stopped {:id subscription-id})))
 
 (defmethod ig/init-key :core-service.consumers.consumer/consumer
-  [_ {:keys [queues routing redis-runtime dead-letter default-poll-ms logger]
+  [_ {:keys [queues routing redis-runtime jetstream-runtime dead-letter default-poll-ms logger]
       :or {default-poll-ms 100}}]
   (let [stop? (atom false)
         ;; Subscriptions come from the shared routing component.
@@ -52,6 +52,7 @@
      :routing routing
      ;; Keep the ref so Integrant orders startup correctly.
      :redis-runtime redis-runtime
+     :jetstream-runtime jetstream-runtime
      :dead-letter dead-letter
      :default-poll-ms default-poll-ms
      :stop? stop?

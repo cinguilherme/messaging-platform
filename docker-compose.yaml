@@ -69,11 +69,21 @@ services:
       MINIO_ROOT_PASSWORD: minio123
     command: server /data --console-address ":9001"
 
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - 4222:4222
+      - 8222:8222
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats_data:/data
+
 volumes:
   postgres_data:
   redis_data:
   memcached_data:
   minio_data:
   typesense_data:
+  nats_data:
   # rabbitmq_data:
   # kafka_data:

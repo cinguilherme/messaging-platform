@@ -24,5 +24,8 @@
         cheshire/cheshire {:mvn/version "5.13.0"}
 
         ;; HTTP dependencies
-        clj-http/clj-http {:mvn/version "3.12.3"}}
+        clj-http/clj-http {:mvn/version "3.12.3"}
+
+        ;; JetStream / NATS dependencies
+        io.nats/jnats {:mvn/version "2.20.5"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}}}

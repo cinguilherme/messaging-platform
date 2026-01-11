@@ -9,12 +9,22 @@
    :topics {:default {:source :redis
                       :stream "core:default"
                       :group "core"}
-           :test-queue {:source :in-memory}}
+           :test-queue {:source :in-memory}
+           :jetstream-test {:source :jetstream
+                            ;; JetStream specifics
+                            :subject "core.jetstream_test"
+                            :stream "core_jetstream_test"
+                            :durable "core_jetstream_test"}}
    :subscriptions {:default {:source :redis
                              :topic :default
                              ;; Resolved at init time from :handlers override map (see init-key).
                              :handler :log-consumed
-                             :options {:block-ms 5000}}}})
+                             :options {:block-ms 5000}}
+                   :jetstream-test {:source :jetstream
+                                    :topic :jetstream-test
+                                    :handler :log-consumed
+                                    :options {:pull-batch 1
+                                              :expires-ms 1000}}}})
 
 (defn- deep-merge
   "Recursively merges maps. Non-map values on the right overwrite."

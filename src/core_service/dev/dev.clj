@@ -11,6 +11,11 @@
             [core-service.clients.postgres]
             [core-service.clients.typesense]
             [core-service.clients.typesense.client :as tc]
+            [core-service.clients.jetstream]
+            [core-service.producers.jetstream]
+            [core-service.consumers.jetstream]
+            [core-service.messaging.codecs.edn :as edn]
+            [core-service.producers.protocol :as producer]
             ;; Ensure Integrant has loaded init-key methods for DB components too.
             [core-service.databases.sqlite]
             [core-service.databases.postgres]
@@ -307,3 +312,43 @@
      (let [resp (ts/search common collection {:q "ali" :query_by "username"} {})]
        (println "Typesense protocol smoke OK:" {:collection collection :search-body (:body resp)})
        resp))))
+
+(defn smoke-jetstream!
+  "Publishes a message to JetStream and verifies it is consumed via the JetStream runtime."
+  ([] (smoke-jetstream! {}))
+  ([{:keys [uri]
+     :or {uri "nats://localhost:4222"}}]
+   (let [received (promise)
+         ;; Minimal routing config for dev smoke test.
+         routing {:defaults {:source :jetstream}
+                  :topics {:jetstream-test {:source :jetstream
+                                            :subject "core.jetstream_test"
+                                            :stream "core_jetstream_test"
+                                            :durable "dev_jetstream_test"}}
+                  :subscriptions {:jetstream-test {:source :jetstream
+                                                   :topic :jetstream-test
+                                                   :handler (fn [envelope]
+                                                              (deliver received envelope))
+                                                   :options {:pull-batch 1
+                                                             :expires-ms 500}}}}
+         codec (edn/->EdnCodec)
+         jetstream (ig/init-key :core-service.clients.jetstream/client {:uri uri})
+         producer (ig/init-key :core-service.producers.jetstream/producer
+                               {:jetstream jetstream :routing routing :codec codec :logger nil})
+         runtime (ig/init-key :core-service.consumers.jetstream/runtime
+                              {:jetstream jetstream :routing routing :codec codec :dead-letter nil :logger nil})]
+     (try
+       (let [ack (producer/produce! producer
+                                                          {:hello "jetstream"}
+                                                          {:topic :jetstream-test})]
+         (println "JetStream produced:" ack))
+       (let [env (deref received 3000 ::timeout)]
+         (when (= env ::timeout)
+           (throw (ex-info "JetStream smoke test timed out waiting for consumption" {})))
+         (println "JetStream consumed envelope:" env)
+         env)
+       (finally
+         (ig/halt-key! :core-service.consumers.jetstream/runtime runtime)
+         (ig/halt-key! :core-service.clients.jetstream/client jetstream))))))
+
+(smoke-jetstream!)
