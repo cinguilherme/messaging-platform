@@ -1,4 +1,4 @@
-(ns core-service.config.messaging
+(ns core-service.app.config.messaging
   (:require [integrant.core :as ig]
             [core-service.tracing :as tracing]))
 
@@ -43,7 +43,7 @@
               b))]
     (reduce dm {} xs)))
 
-(defmethod ig/init-key :core-service.config.messaging/routing
+(defmethod ig/init-key :core-service.app.config.messaging/routing
   [_ overrides]
   ;; Allow duct.edn to pass overrides (e.g. env-specific tweaks) while keeping the heavy
   ;; default routing map in code.
@@ -73,3 +73,4 @@
                                                   :handler h
                                                   :known-handlers (keys handlers)}))))))
                       (or subs {})))))))
+

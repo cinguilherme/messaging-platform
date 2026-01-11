@@ -1,4 +1,4 @@
-(ns core-service.server.routes
+(ns core-service.app.server.routes
   (:refer-clojure :exclude [test])
   (:require [cheshire.core :as json]
             [core-service.core.producers.protocol :as producer]
@@ -37,16 +37,16 @@
           msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}
           cache-key "last-test-msg"
           storage-key (str "msg-" (:timestamp msg) ".json")
-          
+
           ;; Cache operations
           cached-msg (cache/cache-lookup c cache-key {})
           newly-cached? (not cached-msg)
           _ (when newly-cached?
               (cache/cache-put c cache-key msg {}))
-          
+
           ;; Storage operations
           storage-result (storage/storage-put s storage-key (json/generate-string msg) {})
-          
+
           ack (producer/produce! p msg {:topic :default})
           ;; Produce to a topic that fails once
 
@@ -65,3 +65,4 @@
                         :newly-cached? newly-cached?
                         :storage-result storage-result}
                        (get-accept-format _req)))))
+

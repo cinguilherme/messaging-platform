@@ -1,14 +1,14 @@
-(ns core-service.handlers.handlers
+(ns core-service.app.handlers.handlers
   (:require [integrant.core :as ig]
             [duct.logger :as logger]))
 
-(defmethod ig/init-key :core-service.handlers.handlers/log-consumed
+(defmethod ig/init-key :core-service.app.handlers.handlers/log-consumed
   [_ {:keys [logger]}]
   (fn [envelope]
     (let [trace (get-in envelope [:metadata :trace])]
       (logger/log logger :info ::envelope-received {:envelope envelope :trace trace}))))
 
-(defmethod ig/init-key :core-service.handlers.handlers/fail-once
+(defmethod ig/init-key :core-service.app.handlers.handlers/fail-once
   [_ {:keys [logger]}]
   (fn [envelope]
     (let [trace (get-in envelope [:metadata :trace])]
@@ -18,3 +18,4 @@
         (do
           (logger/log logger :warn ::failing-first-attempt {:envelope envelope :trace trace})
           (throw (ex-info "Simulated failure on first attempt" {:envelope envelope :trace trace})))))))
+

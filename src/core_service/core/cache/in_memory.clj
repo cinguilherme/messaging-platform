@@ -3,7 +3,7 @@
             [core-service.core.cache.protocol :as p]
             [duct.logger :as logger]))
 
-(defrecord InMemoryCache [data]
+(defrecord InMemoryCache [data logger]
   p/CacheProtocol
   (cache-lookup [_ key _opts]
     (get @data key))
@@ -20,9 +20,10 @@
 (defmethod ig/init-key :core-service.core.cache.in-memory/in-memory
   [_ {:keys [logger]}]
   (logger/log logger :info ::initializing-in-memory-cache)
-  (->InMemoryCache (atom {})))
+  (->InMemoryCache (atom {}) logger))
 
 (defmethod ig/halt-key! :core-service.core.cache.in-memory/in-memory
-  [_ this {:keys [logger]}]
-  (logger/log logger :info ::halting-in-memory-cache)
+  [_ this]
+  (when-let [l (:logger this)]
+    (logger/log l :info ::halting-in-memory-cache))
   (reset! (:data this) {}))

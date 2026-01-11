@@ -1,6 +1,47 @@
 {:system
  {:duct.module/logging {}
-  :core-service.config.config/get-config {:logger #ig/ref :duct/logger}
+
+  ;; =============================================================================
+  ;; APP BITS (src/core_service/app/*)
+  ;;
+  ;; Add new "application" namespaces here:
+  ;; - config:    :core-service.app.config.*   (returns config maps / env overrides)
+  ;; - handlers:  :core-service.app.handlers.* (Integrant init-keys for business handlers)
+  ;; - server:    :core-service.app.server.*   (Ring routes/handlers)
+  ;; - workers:   :core-service.app.workers.*  (background jobs)
+  ;; =============================================================================
+
+  ;; App config root (example)
+  :core-service.app.config.config/get-config {:logger #ig/ref :duct/logger}
+
+  ;; Routing config (app provides routing + handler wiring)
+  :core-service.app.config.messaging/routing
+  {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
+              :fail-once #ig/ref :core-service.app.handlers.handlers/fail-once}
+   :topics {:to-fail {:source :in-memory}}
+   :subscriptions
+   {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}
+
+  ;; App handlers
+  :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
+  :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger}
+
+  ;; Web (Duct)
+  :duct.module/web
+  {:port 3000
+   :middleware [:core-service.core.tracing.http/middleware]
+   :routes [["/" {:get :core-service.app.server.routes/index}]
+            ["/test" {:get :core-service.app.server.routes/test}]]}
+  :core-service.app.server.routes/index {}
+  :core-service.app.server.routes/test {:producer #ig/ref :core-service.core.producers.common/producer
+                                        :cache #ig/ref :core-service.core.cache.common/common
+                                        :storage #ig/ref :core-service.core.storage/common}
+
+  ;; =============================================================================
+  ;; CORE BITS (src/core_service/core/*)
+  ;;
+  ;; These are the reusable batteries / infrastructure pieces.
+  ;; =============================================================================
 
   ;; Queue Components
   :core-service.queue/in-memory-queues
@@ -134,32 +175,10 @@
 
   :core-service.core.messaging/codec
   {:codec #ig/ref :core-service.core.messaging.codecs/edn}
-  
 
-  ;; Routing Messages
+  ;; Routing Messages (core references app wiring via ref)
   :core-service.core.messaging/routing
-  #ig/ref :core-service.config.messaging/routing
+  #ig/ref :core-service.app.config.messaging/routing
 
-  ;; Routing Config Handlers
-  :core-service.config.messaging/routing
-  {:handlers {:log-consumed #ig/ref :core-service.handlers.handlers/log-consumed
-              :fail-once #ig/ref :core-service.handlers.handlers/fail-once}
-   :topics {:to-fail {:source :in-memory}}
-   :subscriptions
-   {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}
-
-  ;; Handlers
-  :core-service.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
-  :core-service.handlers.handlers/fail-once {:logger #ig/ref :duct/logger}
-
-  :duct.module/web
-  {:port 3000
-   :middleware [:core-service.core.tracing.http/middleware]
-   :routes [["/" {:get :core-service.server.routes/index}]
-            ["/test" {:get :core-service.server.routes/test}]]}
-  :core-service.server.routes/index {}
-  :core-service.server.routes/test {:producer #ig/ref :core-service.core.producers.common/producer
-                                    :cache #ig/ref :core-service.core.cache.common/common
-                                    :storage #ig/ref :core-service.core.storage/common}
-
+  ;; Tracing
   :core-service.core.tracing.http/middleware {}}}
