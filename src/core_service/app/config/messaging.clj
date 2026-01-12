@@ -1,6 +1,6 @@
 (ns core-service.app.config.messaging
   (:require [integrant.core :as ig]
-            [core-service.tracing :as tracing]))
+            [d-core.tracing :as tracing]))
 
 ;; Config components: return config maps (can include Integrant refs via ig/ref).
 

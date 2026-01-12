@@ -1,1 +1,0 @@
-(ns core-service.core.consumers.in-mem-consumer)

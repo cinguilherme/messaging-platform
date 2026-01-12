@@ -1,6 +1,9 @@
 {:deps {org.clojure/clojure {:mvn/version "1.12.3"}
         org.clojure/core.async {:mvn/version "1.8.741"}
         
+        ;; Local library dependency (extracted core layer)
+        d-core/d-core {:local/root "../d-core"}
+        
         ;; Database dependencies
         org.clojure/java.jdbc {:mvn/version "0.7.12"}
         com.github.seancorfield/next.jdbc {:mvn/version "1.3.955"}

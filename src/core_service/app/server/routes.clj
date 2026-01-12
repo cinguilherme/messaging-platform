@@ -1,9 +1,9 @@
 (ns core-service.app.server.routes
   (:refer-clojure :exclude [test])
   (:require [cheshire.core :as json]
-            [core-service.core.producers.protocol :as producer]
-            [core-service.core.cache.protocol :as cache]
-            [core-service.core.storage.protocol :as storage]))
+            [d-core.core.producers.protocol :as producer]
+            [d-core.core.cache.protocol :as cache]
+            [d-core.core.storage.protocol :as storage]))
 
 (defn- get-accept-format
   "Determines response format from Accept header or defaults to JSON"

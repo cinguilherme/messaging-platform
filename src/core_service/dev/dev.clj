@@ -6,28 +6,28 @@
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
             ;; Ensure Integrant has loaded the init/halt methods for the key
-            ;; :core-service.core.clients.sqlite/client before we call ig/init-key.
-            [core-service.core.clients.sqlite]
-            [core-service.core.clients.postgres]
-            [core-service.core.clients.typesense]
-            [core-service.core.clients.typesense.client :as tc]
-            [core-service.core.clients.jetstream]
-            [core-service.core.clients.kafka]
-            [core-service.core.clients.kafka.client :as kc]
-            [core-service.core.producers.jetstream]
-            [core-service.core.consumers.jetstream]
-            [core-service.core.messaging.codec :as codec]
-            [core-service.core.messaging.codecs.edn :as edn]
-            [core-service.core.producers.protocol :as producer]
+            ;; :d-core.core.clients.sqlite/client before we call ig/init-key.
+            [d-core.core.clients.sqlite]
+            [d-core.core.clients.postgres]
+            [d-core.core.clients.typesense]
+            [d-core.core.clients.typesense.client :as tc]
+            [d-core.core.clients.jetstream]
+            [d-core.core.clients.kafka]
+            [d-core.core.clients.kafka.client :as kc]
+            [d-core.core.producers.jetstream]
+            [d-core.core.consumers.jetstream]
+            [d-core.core.messaging.codec :as codec]
+            [d-core.core.messaging.codecs.edn :as edn]
+            [d-core.core.producers.protocol :as producer]
             ;; Ensure Integrant has loaded init-key methods for DB components too.
-            [core-service.core.databases.sqlite]
-            [core-service.core.databases.postgres]
-            [core-service.core.databases.sql.common]
-            [core-service.core.databases.protocols.simple-sql :as sql]
+            [d-core.core.databases.sqlite]
+            [d-core.core.databases.postgres]
+            [d-core.core.databases.sql.common]
+            [d-core.core.databases.protocols.simple-sql :as sql]
             ;; Text search layer
-            [core-service.core.text-search]
-            [core-service.core.text-search.typesense]
-            [core-service.core.text-search.protocol :as ts]))
+            [d-core.core.text-search]
+            [d-core.core.text-search.typesense]
+            [d-core.core.text-search.protocol :as ts]))
 
 (defn smoke-sqlite!
   "Creates a table, inserts rows, and reads them back.
@@ -43,7 +43,7 @@
           pool {:maximum-pool-size 3
                 :minimum-idle 1
                 :connection-timeout-ms 30000}}}]
-   (let [client (ig/init-key :core-service.core.clients.sqlite/client
+   (let [client (ig/init-key :d-core.core.clients.sqlite/client
                              {:jdbc-url jdbc-url :pool? pool? :pool pool})
          ds (:datasource client)]
      (try
@@ -60,7 +60,7 @@
            (println "SQLite smoke test OK:" {:jdbc-url jdbc-url :pool? pool? :rows rows})
            rows))
        (finally
-         (ig/halt-key! :core-service.core.clients.sqlite/client client))))))
+         (ig/halt-key! :d-core.core.clients.sqlite/client client))))))
 
 (defn run-smoke-tests!
   "Runs both in-memory and file-backed smoke tests."
@@ -77,11 +77,11 @@
           pool {:maximum-pool-size 3
                 :minimum-idle 1
                 :connection-timeout-ms 30000}}}]
-   (let [client (ig/init-key :core-service.core.clients.sqlite/client
+   (let [client (ig/init-key :d-core.core.clients.sqlite/client
                              {:jdbc-url jdbc-url :pool? pool? :pool pool})
-         sqlite-db (ig/init-key :core-service.core.databases.sqlite/db
+         sqlite-db (ig/init-key :d-core.core.databases.sqlite/db
                                 {:sqlite-client client})
-         common-db (ig/init-key :core-service.core.databases.sql/common
+         common-db (ig/init-key :d-core.core.databases.sql/common
                                 {:default-engine :sqlite
                                  :engines {:sqlite sqlite-db}
                                  ;; logger is optional for dev; CommonSqlDatabase guards nil
@@ -128,7 +128,7 @@
            (println "SQL protocol after delete:" rows)
            rows))
        (finally
-         (ig/halt-key! :core-service.core.clients.sqlite/client client))))))
+         (ig/halt-key! :d-core.core.clients.sqlite/client client))))))
 
 (run-smoke-tests!)
 (smoke-sql-protocol!)
@@ -148,7 +148,7 @@
           pool {:maximum-pool-size 3
                 :minimum-idle 1
                 :connection-timeout-ms 30000}}}]
-   (let [client (ig/init-key :core-service.core.clients.postgres/client
+   (let [client (ig/init-key :d-core.core.clients.postgres/client
                              {:jdbc-url jdbc-url
                               :username username
                               :password password
@@ -168,7 +168,7 @@
            (println "Postgres client smoke test OK:" {:jdbc-url jdbc-url :pool? pool? :rows rows})
            rows))
        (finally
-         (ig/halt-key! :core-service.core.clients.postgres/client client))))))
+         (ig/halt-key! :d-core.core.clients.postgres/client client))))))
 
 (defn smoke-postgres-protocol!
   "Exercises CRUD via the SQL protocol layer against Postgres using the SQL common delegator."
@@ -181,15 +181,15 @@
           pool {:maximum-pool-size 3
                 :minimum-idle 1
                 :connection-timeout-ms 30000}}}]
-   (let [pg-client (ig/init-key :core-service.core.clients.postgres/client
+   (let [pg-client (ig/init-key :d-core.core.clients.postgres/client
                                {:jdbc-url jdbc-url
                                 :username username
                                 :password password
                                 :pool? pool?
                                 :pool pool})
-         pg-db (ig/init-key :core-service.core.databases.postgres/db
+         pg-db (ig/init-key :d-core.core.databases.postgres/db
                             {:postgres-client pg-client})
-         common-db (ig/init-key :core-service.core.databases.sql/common
+         common-db (ig/init-key :d-core.core.databases.sql/common
                                 {:default-engine :postgres
                                  :engines {:postgres pg-db}
                                  :logger nil})
@@ -231,7 +231,7 @@
            (println "Postgres protocol after delete:" rows)
            rows))
        (finally
-         (ig/halt-key! :core-service.core.clients.postgres/client pg-client))))))
+         (ig/halt-key! :d-core.core.clients.postgres/client pg-client))))))
 
 (defn smoke-typesense-client!
   "Verifies Typesense connectivity and basic indexing/search via the low-level client.
@@ -243,7 +243,7 @@
   ([{:keys [endpoint api-key]
      :or {endpoint "http://localhost:8108"
           api-key "typesense"}}]
-   (let [client (ig/init-key :core-service.core.clients.typesense/client
+   (let [client (ig/init-key :d-core.core.clients.typesense/client
                              {:endpoint endpoint :api-key api-key})
          collection "dev_typesense_smoke"
          schema {:name collection
@@ -292,11 +292,11 @@
   ([{:keys [endpoint api-key]
      :or {endpoint "http://localhost:8108"
           api-key "typesense"}}]
-   (let [typesense-client (ig/init-key :core-service.core.clients.typesense/client
+   (let [typesense-client (ig/init-key :d-core.core.clients.typesense/client
                                        {:endpoint endpoint :api-key api-key})
-         engine (ig/init-key :core-service.core.text-search.typesense/engine
+         engine (ig/init-key :d-core.core.text-search.typesense/engine
                              {:typesense-client typesense-client})
-         common (ig/init-key :core-service.core.text-search/common
+         common (ig/init-key :d-core.core.text-search/common
                              {:default-engine :typesense
                               :engines {:typesense engine}
                               :logger nil})
@@ -335,10 +335,10 @@
                                                    :options {:pull-batch 1
                                                              :expires-ms 500}}}}
          codec (edn/->EdnCodec)
-         jetstream (ig/init-key :core-service.core.clients.jetstream/client {:uri uri})
-         producer (ig/init-key :core-service.core.producers.jetstream/producer
+         jetstream (ig/init-key :d-core.core.clients.jetstream/client {:uri uri})
+         producer (ig/init-key :d-core.core.producers.jetstream/producer
                                {:jetstream jetstream :routing routing :codec codec :logger nil})
-         runtime (ig/init-key :core-service.core.consumers.jetstream/runtime
+         runtime (ig/init-key :d-core.core.consumers.jetstream/runtime
                               {:jetstream jetstream :routing routing :codec codec :dead-letter nil :logger nil})]
      (try
        (let [ack (producer/produce! producer
@@ -351,8 +351,8 @@
          (println "JetStream consumed envelope:" env)
          env)
        (finally
-         (ig/halt-key! :core-service.core.consumers.jetstream/runtime runtime)
-         (ig/halt-key! :core-service.core.clients.jetstream/client jetstream))))))
+         (ig/halt-key! :d-core.core.consumers.jetstream/runtime runtime)
+         (ig/halt-key! :d-core.core.clients.jetstream/client jetstream))))))
 
 ;(smoke-jetstream!)
 
@@ -362,7 +362,7 @@
   ([{:keys [bootstrap-servers kafka-topic]
      :or {bootstrap-servers "localhost:29092"
           kafka-topic "core.kafka_smoke"}}]
-   (let [client (ig/init-key :core-service.core.clients.kafka/client
+   (let [client (ig/init-key :d-core.core.clients.kafka/client
                              {:bootstrap-servers bootstrap-servers})
          codec (edn/->EdnCodec)]
      (try
@@ -376,7 +376,7 @@
          (println "Kafka produced:" ack)
          ack)
        (finally
-         (ig/halt-key! :core-service.core.clients.kafka/client client))))))
+         (ig/halt-key! :d-core.core.clients.kafka/client client))))))
 
 (defn smoke-kafka-consume!
   "Consumes a single message from Kafka and decodes it as an envelope using the EDN codec."
@@ -387,7 +387,7 @@
           group-id (str "core-service-dev-" (java.util.UUID/randomUUID))
           timeout-ms 5000
           poll-ms 250}}]
-   (let [client (ig/init-key :core-service.core.clients.kafka/client
+   (let [client (ig/init-key :d-core.core.clients.kafka/client
                              {:bootstrap-servers bootstrap-servers})
          codec (edn/->EdnCodec)
          consumer (kc/make-consumer client {:group-id group-id})]
@@ -408,7 +408,7 @@
                (recur)))))
        (finally
          (kc/close-consumer! consumer)
-         (ig/halt-key! :core-service.core.clients.kafka/client client))))))
+         (ig/halt-key! :d-core.core.clients.kafka/client client))))))
 
 (defn smoke-kafka!
   "Produce then consume a message (roundtrip)."
