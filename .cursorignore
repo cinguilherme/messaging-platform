@@ -1,0 +1,11 @@
+.ls-logs
+.calva  
+.cpcache    
+.vscode
+logs/
+.clj-kondo/
+.lsp/
+.rebel_readline_history
+.DS_Store
+.nrepl-port
+storage/
