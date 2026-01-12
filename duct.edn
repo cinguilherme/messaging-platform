@@ -14,6 +14,16 @@
   ;; App config root (example)
   :core-service.app.config.config/get-config {:logger #ig/ref :duct/logger}
 
+  ;; Client config providers (env-aware; safe defaults for local vs Docker)
+  ;;
+  ;; Override precedence:
+  ;; - explicit values in duct.edn (e.g. {:uri "..."}), then
+  ;; - environment variables, then
+  ;; - sane defaults (localhost for local dev, service DNS for Docker)
+  :core-service.app.config.clients/redis {}
+  :core-service.app.config.clients/jetstream {}
+  :core-service.app.config.clients/kafka {}
+
   ;; Routing config (app provides routing + handler wiring)
   :core-service.app.config.messaging/routing
   {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
@@ -161,13 +171,13 @@
 
   ;; Messaging
   :core-service.core.clients.redis/client
-  {:uri "redis://localhost:6379"}
+  #ig/ref :core-service.app.config.clients/redis
 
   :core-service.core.clients.jetstream/client
-  {:uri "nats://localhost:4222"}
+  #ig/ref :core-service.app.config.clients/jetstream
 
   :core-service.core.clients.kafka/client
-  {:bootstrap-servers "localhost:29092"}
+  #ig/ref :core-service.app.config.clients/kafka
 
   ;; Codecs
   :core-service.core.messaging.codecs/edn {}
