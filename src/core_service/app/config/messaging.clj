@@ -5,25 +5,44 @@
 ;; Config components: return config maps (can include Integrant refs via ig/ref).
 
 (def default-routing
-  {:defaults {:source :redis}
+  {:defaults {:source :redis
+              ;; Dead letter defaults (topic-level `:deadletter` can override)
+              :deadletter {:sink :hybrid
+                           :policy :default
+                           :max-attempts 3
+                           :delay-ms 100
+                           ;; Derived DLQ destination naming (default: \".dl\")
+                           :suffix ".dl"}}
    :topics {:default {:source :redis
                       :stream "core:default"
                       :group "core"}
-           :test-queue {:source :in-memory}
-           :kafka-test {:source :kafka
-                        ;; Kafka specifics
-                        :kafka-topic "core.kafka_test"
-                        :group "core"}
-           :jetstream-test {:source :jetstream
-                            ;; JetStream specifics
-                            :subject "core.jetstream_test"
-                            :stream "core_jetstream_test"
-                            :durable "core_jetstream_test"}}
+            :sample-fail {:source :redis
+                          :stream "sample:fail-sample"
+                          :group "sample"}
+            :test-queue {:source :in-memory}
+            :kafka-test {:source :kafka
+                         ;; Kafka specifics
+                         :kafka-topic "core.kafka_test"
+                         :group "core"}
+            :jetstream-test {:source :jetstream
+                             ;; JetStream specifics
+                             :subject "core.jetstream_test"
+                             :stream "core_jetstream_test"
+                             :durable "core_jetstream_test"}}
    :subscriptions {:default {:source :redis
                              :topic :default
                              ;; Resolved at init time from :handlers override map (see init-key).
                              :handler :log-consumed
                              :options {:block-ms 5000}}
+                   :sample-fail {:source :redis
+                                 :topic :sample-fail
+                                 :handler :log-consumed
+                                 :options {:block-ms 5000}
+                                 :deadletter {:sink :hybrid
+                                              :policy :default
+                                              :max-attempts 3
+                                              :delay-ms 100
+                                              :suffix ".dl"}}
                    :kafka-test {:source :kafka
                                 :topic :kafka-test
                                 :handler :log-consumed

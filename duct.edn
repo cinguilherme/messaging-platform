@@ -41,11 +41,19 @@
   {:port 3000
    :middleware [:d-core.core.tracing.http/middleware]
    :routes [["/" {:get :core-service.app.server.routes/index}]
-            ["/test" {:get :core-service.app.server.routes/test}]]}
+            ["/test" {:get :core-service.app.server.routes/test}]
+            ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
+            ["/admin/dl/:dlq-id" {:get :core-service.app.server.routes/dl-get}]
+            ["/admin/dl/:dlq-id/replay" {:post :core-service.app.server.routes/dl-replay}]
+            ["/admin/dl/:dlq-id/mark" {:post :core-service.app.server.routes/dl-mark}]]}
   :core-service.app.server.routes/index {}
   :core-service.app.server.routes/test {:producer #ig/ref :d-core.core.producers.common/producer
                                         :cache #ig/ref :d-core.core.cache.common/common
                                         :storage #ig/ref :d-core.core.storage/common}
+  :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+  :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+  :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+  :core-service.app.server.routes/dl-replay {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)
@@ -148,6 +156,12 @@
    :logger #ig/ref :duct/logger}
 
   ;; Dead Letter Components
+  :d-core.core.messaging.dead-letter.policy/default {}
+  :d-core.core.messaging.dead-letter.admin/storage
+  {:storage #ig/ref :d-core.core.storage/common
+   :producer #ig/ref :d-core.core.producers.common/producer
+   :logger #ig/ref :duct/logger}
+
   :d-core.core.messaging.dead-letter/logger
   {:logger #ig/ref :duct/logger}
 
@@ -157,16 +171,25 @@
 
   :d-core.core.messaging.dead-letter/producer
   {:producer #ig/ref :d-core.core.producers.common/producer
-   :dlq-topic :to-fail
-   :max-retries 3
+   :routing #ig/ref :d-core.core.messaging/routing
    :delay-ms 5000
    :logger #ig/ref :duct/logger}
 
   :d-core.core.messaging.dead-letter/common
-  {:default-sink :producer
-   :sinks {:logger #ig/ref :d-core.core.messaging.dead-letter/logger
+  {:sinks {:logger #ig/ref :d-core.core.messaging.dead-letter/logger
            :storage #ig/ref :d-core.core.messaging.dead-letter/storage
            :producer #ig/ref :d-core.core.messaging.dead-letter/producer}
+   :policy #ig/ref :d-core.core.messaging.dead-letter.policy/default
+   :logger #ig/ref :duct/logger}
+
+  ;; DLQ replay controller (Redis) - will be updated to derived <topic>.dl streams
+  :d-core.core.messaging.dead-letter.replay/redis
+  {:redis #ig/ref :d-core.core.clients.redis/client
+   :routing #ig/ref :d-core.core.messaging/routing
+   :codec #ig/ref :d-core.core.messaging/codec
+   :policy #ig/ref :d-core.core.messaging.dead-letter.policy/default
+   :admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage
+   :poll-interval-ms 250
    :logger #ig/ref :duct/logger}
 
   ;; Messaging
