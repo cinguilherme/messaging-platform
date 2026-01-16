@@ -59,7 +59,8 @@
   ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
   :d-core.module/ws
   {:port 3001
-   :routes [["/ws" {:get :core-service.app.server.ws/handler}]]}
+   :routes [["/ws" {:get :core-service.app.server.ws/handler}]]
+   :logger #ig/ref :duct/logger}
   :core-service.app.server.ws/handler {:logger #ig/ref :duct/logger}
 
   ;; =============================================================================
