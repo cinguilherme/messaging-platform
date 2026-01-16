@@ -55,6 +55,13 @@
   :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
   :core-service.app.server.routes/dl-replay {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
 
+  ;; WebSocket server (Aleph) - separate port
+  ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
+  :d-core.module/ws
+  {:port 3001
+   :routes [["/ws" {:get :core-service.app.server.ws/handler}]]}
+  :core-service.app.server.ws/handler {:logger #ig/ref :duct/logger}
+
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)
   ;;
