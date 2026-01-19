@@ -63,6 +63,13 @@
    :logger #ig/ref :duct/logger}
   :core-service.app.server.ws/handler {:logger #ig/ref :duct/logger}
 
+  ;; GraphQL server (Lacinia)
+  :d-core.module/graphql
+  {:port 3002
+   :schema #ig/ref :core-service.app.server.graphql/schema
+   :logger #ig/ref :duct/logger}
+  :core-service.app.server.graphql/schema {}
+
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)
   ;;
