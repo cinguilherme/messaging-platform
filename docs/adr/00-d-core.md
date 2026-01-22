@@ -22,8 +22,7 @@ chosen via configuration, not by creating parallel code paths.
 
 - Infrastructure changes should be expressed as D-Core configuration and
   Integrant wiring first.
-- If a required capability is missing, prefer extending D-Core or contributing
-  upstream rather than adding bespoke infrastructure in this repo.
+- If a required capability is missing, prefer extending D-Core, use the Protocol that fits the problem and implement the component to adhere to the Protocol so to access capabilities still not available in D-Core. (eg. at time of writing there is no SQS/SNS support in D-Core, so if you need to use SQS/SNS, you need to implement the component to adhere to the Protocol)
 - Future ADRs and architectural choices must be compatible with D-Core's
   contracts and conventions; exceptions require an explicit ADR.
 
