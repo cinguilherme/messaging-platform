@@ -23,6 +23,7 @@
   :core-service.app.config.clients/redis {}
   :core-service.app.config.clients/jetstream {}
   :core-service.app.config.clients/kafka {}
+  :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
 
   ;; Routing config (app provides routing + handler wiring)
   :core-service.app.config.messaging/routing
@@ -158,11 +159,7 @@
    :logger #ig/ref :duct/logger}
 
   :d-core.core.storage/minio
-  {:endpoint "http://localhost:9000"
-   :access-key "minio"
-   :secret-key "minio123"
-   :bucket "messaging-platform"
-   :logger #ig/ref :duct/logger}
+  #ig/ref :core-service.app.config.storage/minio
 
   :d-core.core.storage/common
   {:default-storage :minio
