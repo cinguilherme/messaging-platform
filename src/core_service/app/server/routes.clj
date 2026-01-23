@@ -32,40 +32,46 @@
 
 (defn test [_options]
   (fn [_req]
-    (let [p (:producer _options)
-          c (:cache _options)
-          s (:storage _options)
-          msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}
-          cache-key "last-test-msg"
-          storage-key (str "msg-" (:timestamp msg) ".json")
+    (try 
+      (let [p (:producer _options)
+            c (:cache _options)
+            s (:storage _options)
+            msg {:message "Hello, World!" :timestamp (System/currentTimeMillis)}
+            cache-key "last-test-msg"
+            storage-key (str "msg-" (:timestamp msg) ".json")
 
-          ;; Cache operations
-          cached-msg (cache/cache-lookup c cache-key {})
-          newly-cached? (not cached-msg)
-          _ (when newly-cached?
-              (cache/cache-put c cache-key msg {}))
+            ;; Cache operations
+            cached-msg (cache/cache-lookup c cache-key {})
+            newly-cached? (not cached-msg)
+            _ (when newly-cached?
+                (cache/cache-put c cache-key msg {}))
 
-          ;; Storage operations
-          storage-result (storage/storage-put s storage-key (json/generate-string msg) {})
+            ;; Storage operations
+            storage-result (storage/storage-put s storage-key (json/generate-string msg) {})
 
-          ack (producer/produce! p msg {:topic :default})
-          ;; Produce to a topic that fails once
+            ack (producer/produce! p msg {:topic :default})
+            ;; Produce to a topic that fails once
 
-          ;; sample kafka and jetstream messages
-          kafka-msg-ack (producer/produce! p {:type :kafka-test :msg "this is a kafka message"} {:topic :kafka-test})
-          jetstream-msg-ack (producer/produce! p {:type :jetstream-test :msg "this is a jetstream message"} {:topic :jetstream-test})
-          fail-ack (producer/produce! p {:type :fail-test :msg "this should fail once"} {:topic :to-fail})]
-      (format-response {:ok true
-                        :msg msg
-                        :cached-msg cached-msg
-                        :ack ack
-                        :kafka-msg-ack kafka-msg-ack
-                        :jetstream-msg-ack jetstream-msg-ack
-                        :fail-ack fail-ack
-                        :cached? (boolean cached-msg)
-                        :newly-cached? newly-cached?
-                        :storage-result storage-result}
-                       (get-accept-format _req)))))
+            ;; sample kafka and jetstream messages
+            kafka-msg-ack (producer/produce! p {:type :kafka-test :msg "this is a kafka message"} {:topic :kafka-test})
+            jetstream-msg-ack (producer/produce! p {:type :jetstream-test :msg "this is a jetstream message"} {:topic :jetstream-test})
+            rabbitmq-msg-ack (producer/produce! p {:type :rabbitmq-test :msg "this is a rabbitmq message"} {:topic :rabbitmq-test})
+            fail-ack (producer/produce! p {:type :fail-test :msg "this should fail once"} {:topic :to-fail})]
+        (format-response
+         {:ok true
+          :msg msg
+          :cached-msg cached-msg
+          :ack ack
+          :kafka-msg-ack kafka-msg-ack
+          :jetstream-msg-ack jetstream-msg-ack
+          :rabbitmq-msg-ack rabbitmq-msg-ack
+          :fail-ack fail-ack
+          :cached? (boolean cached-msg)
+          :newly-cached? newly-cached?
+          :storage-result storage-result}
+         (get-accept-format _req)))
+      (catch Exception e
+        (format-response {:ok false :error (.getMessage e)} (get-accept-format _req))))))
 
 (defn- param
   [req k]

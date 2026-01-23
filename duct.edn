@@ -101,6 +101,13 @@
    :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
+  :d-core.core.consumers.rabbitmq/runtime
+  {:rabbitmq #ig/ref :d-core.core.clients.rabbitmq/client
+   :routing #ig/ref :d-core.core.messaging/routing
+   :codec #ig/ref :d-core.core.messaging/codec
+   :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
+   :logger #ig/ref :duct/logger}
+
   ;; In memory consumer
   :d-core.core.consumers.consumer/consumer
   {:queues #ig/ref :d-core.queue/in-memory-queues
@@ -108,6 +115,7 @@
    :redis-runtime #ig/ref :d-core.core.consumers.redis/runtime
    :jetstream-runtime #ig/ref :d-core.core.consumers.jetstream/runtime
    :kafka-runtime #ig/ref :d-core.core.consumers.kafka/runtime
+   :rabbitmq-runtime #ig/ref :d-core.core.consumers.rabbitmq/runtime
    :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
@@ -133,11 +141,18 @@
    :codec #ig/ref :d-core.core.messaging/codec
    :logger #ig/ref :duct/logger}
 
+  :d-core.core.producers.rabbitmq/producer
+  {:rabbitmq #ig/ref :d-core.core.clients.rabbitmq/client
+   :routing #ig/ref :d-core.core.messaging/routing
+   :codec #ig/ref :d-core.core.messaging/codec
+   :logger #ig/ref :duct/logger}
+
   :d-core.core.producers.common/producer
   {:default-producer :redis
    :routing #ig/ref :d-core.core.messaging/routing
    :producers {:in-memory #ig/ref :d-core.core.producers.in-memory/producer
                :redis #ig/ref :d-core.core.producers.redis/producer
+               :rabbitmq #ig/ref :d-core.core.producers.rabbitmq/producer
                :jetstream #ig/ref :d-core.core.producers.jetstream/producer
                :kafka #ig/ref :d-core.core.producers.kafka/producer}
    :logger #ig/ref :duct/logger}
@@ -145,12 +160,13 @@
   ;; Cache Components
   :d-core.core.cache.in-memory/in-memory {:logger #ig/ref :duct/logger}
   :d-core.core.cache.redis/redis {:redis-client #ig/ref :d-core.core.clients.redis/client}
-  
+  :d-core.core.cache.valkey/valkey {:valkey-client #ig/ref :d-core.core.clients.valkey/client}
   
   :d-core.core.cache.common/common
   {:default-cache :in-memory
    :caches {:in-memory #ig/ref :d-core.core.cache.in-memory/in-memory
-            :redis #ig/ref :d-core.core.cache.redis/redis}
+            :redis #ig/ref :d-core.core.cache.redis/redis
+            :valkey #ig/ref :d-core.core.cache.valkey/valkey}
    :logger #ig/ref :duct/logger}
 
   ;; Storage Components
