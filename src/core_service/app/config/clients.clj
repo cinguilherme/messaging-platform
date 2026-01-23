@@ -34,6 +34,18 @@
             (getenv "JETSTREAM_URI")
             (str "nats://" (default-host "nats" "localhost") ":4222"))})
 
+(defmethod ig/init-key :core-service.app.config.clients/rabbitmq
+  [_ {:keys [uri]}]
+  {:uri (or uri
+            (getenv "RABBITMQ_URI")
+            (str "amqp://" (default-host "rabbitmq" "localhost") ":5672"))})
+
+(defmethod ig/init-key :core-service.app.config.clients/valkey
+  [_ {:keys [uri]}]
+  {:uri (or uri
+            (getenv "VALKEY_URI")
+            (str "valkey://" (default-host "valkey" "localhost") ":6379"))})
+
 (defmethod ig/init-key :core-service.app.config.clients/kafka
   [_ {:keys [bootstrap-servers producer-config]}]
   {:bootstrap-servers (or bootstrap-servers

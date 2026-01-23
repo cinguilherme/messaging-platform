@@ -21,6 +21,8 @@
   ;; - environment variables, then
   ;; - sane defaults (localhost for local dev, service DNS for Docker)
   :core-service.app.config.clients/redis {}
+  :core-service.app.config.clients/rabbitmq {}
+  :core-service.app.config.clients/valkey {}
   :core-service.app.config.clients/jetstream {}
   :core-service.app.config.clients/kafka {}
   :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
@@ -143,6 +145,8 @@
   ;; Cache Components
   :d-core.core.cache.in-memory/in-memory {:logger #ig/ref :duct/logger}
   :d-core.core.cache.redis/redis {:redis-client #ig/ref :d-core.core.clients.redis/client}
+  
+  
   :d-core.core.cache.common/common
   {:default-cache :in-memory
    :caches {:in-memory #ig/ref :d-core.core.cache.in-memory/in-memory
@@ -200,6 +204,9 @@
    :poll-interval-ms 250
    :logger #ig/ref :duct/logger}
 
+  :d-core.core.clients.valkey/client
+  #ig/ref :core-service.app.config.clients/valkey
+
   ;; Messaging
   :d-core.core.clients.redis/client
   #ig/ref :core-service.app.config.clients/redis
@@ -209,6 +216,9 @@
 
   :d-core.core.clients.kafka/client
   #ig/ref :core-service.app.config.clients/kafka
+
+  :d-core.core.clients.rabbitmq/client
+  #ig/ref :core-service.app.config.clients/rabbitmq
 
   ;; Codecs
   :d-core.core.messaging.codecs/edn {}
