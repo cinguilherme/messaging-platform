@@ -20,7 +20,7 @@ The main abstractions are:
 The supported clients give way to common protocols that can be implemented by different services, like:
 - [] Cache Protocol
 - [] Storage Protocol
-- [] Messaging Protocol
+- [] Messaging Protocol (Producers and Consumers)
 - [] Database Protocol
 - [] Text Search Protocol
 

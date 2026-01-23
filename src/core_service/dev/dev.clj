@@ -354,7 +354,7 @@
          (ig/halt-key! :d-core.core.consumers.jetstream/runtime runtime)
          (ig/halt-key! :d-core.core.clients.jetstream/client jetstream))))))
 
-;(smoke-jetstream!)
+(smoke-jetstream!)
 
 (defn smoke-kafka-produce!
   "Publishes a single EDN-encoded envelope to Kafka using the low-level Kafka client."

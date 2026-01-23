@@ -43,6 +43,8 @@
    :middleware [:d-core.core.tracing.http/middleware]
    :routes [["/" {:get :core-service.app.server.routes/index}]
             ["/test" {:get :core-service.app.server.routes/test}]
+
+            ;; deadletter admin routes
             ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
             ["/admin/dl/:dlq-id" {:get :core-service.app.server.routes/dl-get}]
             ["/admin/dl/:dlq-id/replay" {:post :core-service.app.server.routes/dl-replay}]
