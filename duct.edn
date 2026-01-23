@@ -24,16 +24,8 @@
   :core-service.app.config.clients/jetstream {}
   :core-service.app.config.clients/kafka {}
   :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
+  :core-service.app.config.messaging/default-routing {}
 
-  ;; Routing config (app provides routing + handler wiring)
-  :core-service.app.config.messaging/routing
-  {:overrides
-   {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
-               :fail-once #ig/ref :core-service.app.handlers.handlers/fail-once}
-    :topics {:to-fail {}}
-    :publish {:to-fail {:targets [{:producer :in-memory}]}}
-    :subscriptions
-    {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}}
 
   ;; App handlers
   :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
@@ -225,9 +217,16 @@
   :d-core.core.messaging/codec
   {:codec #ig/ref :d-core.core.messaging.codecs/edn}
 
-  ;; Routing Messages (core references app wiring via ref)
+  ;; Routing Messages (core consumes config directly)
   :d-core.core.messaging/routing
-  #ig/ref :core-service.app.config.messaging/routing
+  {:default-routing #ig/ref :core-service.app.config.messaging/default-routing
+   :overrides
+   {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
+               :fail-once #ig/ref :core-service.app.handlers.handlers/fail-once}
+    :topics {:to-fail {}}
+    :publish {:to-fail {:targets [{:producer :in-memory}]}}
+    :subscriptions
+    {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}}
 
   ;; Tracing
   :d-core.core.tracing.http/middleware {}}}

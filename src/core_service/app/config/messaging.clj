@@ -56,15 +56,6 @@
                                     :options {:pull-batch 1
                                               :expires-ms 1000}}}})
 
-(defmethod ig/init-key :core-service.app.config.messaging/routing
-  [_ overrides]
-  ;; Allow duct.edn to pass overrides (env-specific tweaks) while keeping the base
-  ;; routing map in code. D-Core handles deep-merge and handler resolution.
-  (let [overrides (or overrides {})]
-    (if (or (contains? overrides :default-routing)
-            (contains? overrides :overrides))
-      (cond-> overrides
-        (not (contains? overrides :default-routing))
-        (assoc :default-routing default-routing))
-      {:default-routing default-routing
-       :overrides overrides})))
+(defmethod ig/init-key :core-service.app.config.messaging/default-routing
+  [_ _]
+  default-routing)
