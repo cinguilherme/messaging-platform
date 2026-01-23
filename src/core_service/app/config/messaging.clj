@@ -1,6 +1,5 @@
 (ns core-service.app.config.messaging
-  (:require [integrant.core :as ig]
-            [d-core.tracing :as tracing]))
+  (:require [integrant.core :as ig]))
 
 ;; Config components: return config maps (can include Integrant refs via ig/ref).
 
@@ -13,25 +12,29 @@
                            :delay-ms 100
                            ;; Derived DLQ destination naming (default: \".dl\")
                            :suffix ".dl"}}
-   :topics {:default {:source :redis
-                      :stream "core:default"
+   :topics {:default {:stream "core:default"
                       :group "core"}
-            :sample-fail {:source :redis
-                          :stream "sample:fail-sample"
+            :sample-fail {:stream "sample:fail-sample"
                           :group "sample"}
-            :test-queue {:source :in-memory}
-            :kafka-test {:source :kafka
-                         ;; Kafka specifics
-                         :kafka-topic "core.kafka_test"
+            :test-queue {}
+            :kafka-test {:kafka-topic "core.kafka_test"
                          :group "core"}
-            :jetstream-test {:source :jetstream
-                             ;; JetStream specifics
-                             :subject "core.jetstream_test"
+            :jetstream-test {:subject "core.jetstream_test"
                              :stream "core_jetstream_test"
                              :durable "core_jetstream_test"}}
+   :publish {:default {:targets [{:producer :redis
+                                  :stream "core:default"}]}
+             :sample-fail {:targets [{:producer :redis
+                                      :stream "sample:fail-sample"}]}
+             :test-queue {:targets [{:producer :in-memory}]}
+             :kafka-test {:targets [{:producer :kafka
+                                     :kafka-topic "core.kafka_test"}]}
+             :jetstream-test {:targets [{:producer :jetstream
+                                         :subject "core.jetstream_test"
+                                         :stream "core_jetstream_test"}]}}
    :subscriptions {:default {:source :redis
                              :topic :default
-                             ;; Resolved at init time from :handlers override map (see init-key).
+                             ;; Resolved at init time from :handlers (d-core routing init).
                              :handler :log-consumed
                              :options {:block-ms 5000}}
                    :sample-fail {:source :redis
@@ -53,43 +56,15 @@
                                     :options {:pull-batch 1
                                               :expires-ms 1000}}}})
 
-(defn- deep-merge
-  "Recursively merges maps. Non-map values on the right overwrite."
-  [& xs]
-  (letfn [(dm [a b]
-            (if (and (map? a) (map? b))
-              (merge-with dm a b)
-              b))]
-    (reduce dm {} xs)))
-
 (defmethod ig/init-key :core-service.app.config.messaging/routing
   [_ overrides]
-  ;; Allow duct.edn to pass overrides (e.g. env-specific tweaks) while keeping the heavy
-  ;; default routing map in code.
-  (letfn [(wrap-handler [handler-fn]
-            (fn [envelope]
-              (let [parent (some-> (get-in envelope [:metadata :trace]) tracing/decode-ctx)
-                    ctx (tracing/child-ctx parent)]
-                (tracing/with-ctx ctx
-                  (handler-fn envelope)))))]
-    (let [handlers (:handlers overrides)
-          merged (deep-merge default-routing (or (dissoc overrides :handlers) {}))]
-      (update merged :subscriptions
-              (fn [subs]
-                (into {}
-                      (map (fn [[id sub]]
-                             (let [h (:handler sub)]
-                               (cond
-                                 (fn? h)
-                                 [id (update sub :handler wrap-handler)]
-
-                                 (and (keyword? h) (contains? handlers h))
-                                 [id (assoc sub :handler (wrap-handler (get handlers h)))]
-
-                                 :else
-                                 (throw (ex-info "Subscription handler must be a function or a known handler key"
-                                                 {:subscription id
-                                                  :handler h
-                                                  :known-handlers (keys handlers)}))))))
-                      (or subs {})))))))
-
+  ;; Allow duct.edn to pass overrides (env-specific tweaks) while keeping the base
+  ;; routing map in code. D-Core handles deep-merge and handler resolution.
+  (let [overrides (or overrides {})]
+    (if (or (contains? overrides :default-routing)
+            (contains? overrides :overrides))
+      (cond-> overrides
+        (not (contains? overrides :default-routing))
+        (assoc :default-routing default-routing))
+      {:default-routing default-routing
+       :overrides overrides})))

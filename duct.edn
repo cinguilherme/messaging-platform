@@ -27,11 +27,13 @@
 
   ;; Routing config (app provides routing + handler wiring)
   :core-service.app.config.messaging/routing
-  {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
-              :fail-once #ig/ref :core-service.app.handlers.handlers/fail-once}
-   :topics {:to-fail {:source :in-memory}}
-   :subscriptions
-   {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}
+  {:overrides
+   {:handlers {:log-consumed #ig/ref :core-service.app.handlers.handlers/log-consumed
+               :fail-once #ig/ref :core-service.app.handlers.handlers/fail-once}
+    :topics {:to-fail {}}
+    :publish {:to-fail {:targets [{:producer :in-memory}]}}
+    :subscriptions
+    {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}}
 
   ;; App handlers
   :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
