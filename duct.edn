@@ -36,9 +36,12 @@
   ;; Web (Duct)
   :duct.module/web
   {:port 3000
-   :middleware [:d-core.core.tracing.http/middleware]
+   :middleware [:d-core.core.tracing.http/middleware
+                :core-service.app.server.middleware/multipart]
    :routes [["/" {:get :core-service.app.server.routes/index}]
             ["/test" {:get :core-service.app.server.routes/test}]
+            ["/test/image-upload" {:post :core-service.app.server.routes/image-upload}]
+            ["/test/image-upload/list" {:get :core-service.app.server.routes/image-list}]
 
             ;; deadletter admin routes
             ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
@@ -49,6 +52,12 @@
   :core-service.app.server.routes/test {:producer #ig/ref :d-core.core.producers.common/producer
                                         :cache #ig/ref :d-core.core.cache.common/common
                                         :storage #ig/ref :d-core.core.storage/common}
+  :core-service.app.server.routes/image-upload {:workers #ig/ref :core-service.app.workers.images/system
+                                                :logger #ig/ref :duct/logger
+                                                :max-bytes 200000
+                                                :max-dim 1024}
+  :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
+                                              :logger #ig/ref :duct/logger}
   :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
   :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
   :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
@@ -68,6 +77,12 @@
    :schema #ig/ref :core-service.app.server.graphql/schema
    :logger #ig/ref :duct/logger}
   :core-service.app.server.graphql/schema {}
+
+  ;; Image processing workers (resize + store)
+  :core-service.app.storage.minio/client
+  #ig/ref :core-service.app.config.storage/minio
+  :core-service.app.workers.images/system {:logger #ig/ref :duct/logger
+                                           :minio #ig/ref :core-service.app.storage.minio/client}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)

@@ -31,7 +31,8 @@
 (defn maybe-queue-resize
   [{:keys [channels]} {:keys [image-url bytes max-bytes resize reply-chan]}]
   (let [byte-count (alength ^bytes bytes)
-        resize-chan (get channels :images/resize)]
+        resize-chan (get channels :images/resize)
+        store-chan (get channels :images/store)]
     (if (and max-bytes (> byte-count max-bytes))
       (do
         (async/put! resize-chan {:image-url image-url
@@ -42,13 +43,13 @@
         (println "queued resize" {:image-url image-url
                                   :bytes byte-count}))
       (do
-        (println "image under threshold" {:image-url image-url
-                                          :bytes byte-count})
-        (when reply-chan
-          (async/put! reply-chan {:status :skipped
-                                  :reason :under-threshold
-                                  :image-url image-url
-                                  :bytes byte-count}))))))
+        (async/put! store-chan {:image-url image-url
+                                :bytes bytes
+                                :reply-chan reply-chan
+                                :original-bytes byte-count
+                                :resized-bytes byte-count})
+        (println "queued store (no resize)" {:image-url image-url
+                                             :bytes byte-count})))))
 
 (defn image-resize-worker
   [{:keys [channels]} {:keys [image-url bytes resize original-bytes reply-chan]}]
@@ -170,7 +171,7 @@
   []
   (command! @example-system :commands {:cmd :ping-3})
   (command! @example-system :image-download {:image-url image-url
-                                             :max-bytes 200000
+                                             :max-bytes 20000000000
                                              :resize {:max-dim 1024}})
   (async/<!! (request! @example-system :image-download {:image-url image-url
                                                         :max-bytes 200000
@@ -184,7 +185,7 @@
                             :guard-ms 50}))
 
   (workers/command! system :image-download {:image-url image-url
-                                             :max-bytes 200000
+                                             :max-bytes 20000000000
                                              :resize {:max-dim 1024}})
 
 
