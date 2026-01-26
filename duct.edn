@@ -82,7 +82,11 @@
   :core-service.app.storage.minio/client
   #ig/ref :core-service.app.config.storage/minio
   :core-service.app.workers.images/system {:logger #ig/ref :duct/logger
-                                           :minio #ig/ref :core-service.app.storage.minio/client}
+                                           :minio #ig/ref :core-service.app.storage.minio/client
+                                           :cleanup {:interval-ms 60000
+                                                     :max-age-ms 600000
+                                                     :prefix "images/resized/"
+                                                     :batch-size 200}}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)
