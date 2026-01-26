@@ -10,3 +10,4 @@ logs/
 .nrepl-port
 storage/
 .api_keys.edn
+resized_images/
