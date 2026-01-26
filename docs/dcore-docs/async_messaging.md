@@ -1,4 +1,4 @@
-# Async Messaging - Copy from D-core as of 0.2.4
+# Async Messaging
 
 This document describes how to wire async messaging in Duct with explicit
 publish targets and decoupled consumer subscriptions.

@@ -1,0 +1,1 @@
+# D-Core Documentation - COpied from d-core repo as context for the docs of this lib is EXTREMELY IMPORTANT
