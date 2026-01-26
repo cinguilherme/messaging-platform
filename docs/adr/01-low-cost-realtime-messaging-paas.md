@@ -52,6 +52,16 @@ All thresholds are configuration-driven to allow tuning per deployment.
 - Encoding: use D-Core codecs, default JSON for interoperability; EDN and
   raw bytes are supported as alternatives for specialized clients.
 
+### Auth Flows (Keycloak + API Keys)
+
+- Application onboarding: create an application record and issue an API key.
+  The API key authenticates the app/tenant for server-to-server calls.
+- User authentication: users authenticate with Keycloak and obtain access
+  tokens (JWT). The core service validates tokens and maps users to tenants.
+- Authorization: conversation access is enforced by membership and roles
+  stored in Postgres; all message writes/reads require both a valid app API key
+  and a user token with membership to the conversation.
+
 ## Implementation Outline (Phases)
 
 Phase 1: Core path
