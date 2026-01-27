@@ -45,10 +45,6 @@
             ack (producer/produce! p msg {:topic :default})
             ;; Produce to a topic that fails once
             
-            ;; sample kafka and jetstream messages
-            kafka-msg-ack (producer/produce! p {:type :kafka-test :msg "this is a kafka message"} {:topic :kafka-test})
-            jetstream-msg-ack (producer/produce! p {:type :jetstream-test :msg "this is a jetstream message"} {:topic :jetstream-test})
-            rabbitmq-msg-ack (producer/produce! p {:type :rabbitmq-test :msg "this is a rabbitmq message"} {:topic :rabbitmq-test})
             fail-ack (producer/produce! p {:type :fail-test :msg "this should fail once"} {:topic :to-fail})]
         (http/format-response
          {:ok true
@@ -57,9 +53,6 @@
           :valkey-msg-get valkey-msg-get
           :valkey-msg-put valkey-msg-put
           :ack ack
-          :kafka-msg-ack kafka-msg-ack
-          :jetstream-msg-ack jetstream-msg-ack
-          :rabbitmq-msg-ack rabbitmq-msg-ack
           :fail-ack fail-ack
           :cached? (boolean cached-msg)
           :newly-cached? newly-cached?

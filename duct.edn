@@ -21,15 +21,15 @@
   ;; - environment variables, then
   ;; - sane defaults (localhost for local dev, service DNS for Docker)
   :core-service.app.config.clients/redis {}
-  :core-service.app.config.clients/rabbitmq {}
   :core-service.app.config.clients/valkey {}
-  :core-service.app.config.clients/jetstream {}
-  :core-service.app.config.clients/kafka {}
+  :core-service.app.config.databases/postgres {}
   :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
   :core-service.app.config.messaging/default-routing {}
+  :core-service.app.config.messaging/storage-names {}
   :core-service.app.config.auth/keycloak {}
   :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.config.auth/api-keys {}
+  :core-service.app.config.databases/run-migrations {}
 
   ;; Auth components (Keycloak + scope authz + API keys)
   :d-core.core.authn.jwt/authenticator #ig/ref :core-service.app.config.auth/keycloak
@@ -44,6 +44,20 @@
   :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
                                                :bypass-paths ["/v1/auth/register" "/v1/auth/login"]}
   :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
+
+  ;; Database components (Postgres + SQL protocol)
+  :d-core.core.clients.postgres/client #ig/ref :core-service.app.config.databases/postgres
+  :d-core.core.databases.postgres/db {:postgres-client #ig/ref :d-core.core.clients.postgres/client}
+  :d-core.core.databases.sql/common {:default-engine :postgres
+                                     :engines {:postgres #ig/ref :d-core.core.databases.postgres/db}}
+  :core-service.app.config.databases/ensure-messaging-tables {}
+  :core-service.app.db.messaging-tables/tables {:db #ig/ref :d-core.core.databases.sql/common
+                                                :ensure? #ig/ref :core-service.app.config.databases/ensure-messaging-tables
+                                                :logger #ig/ref :duct/logger}
+  :core-service.app.db/migrations {:db #ig/ref :d-core.core.databases.sql/common
+                                   :path "resources/db/migrations"
+                                   :run? #ig/ref :core-service.app.config.databases/run-migrations
+                                   :logger #ig/ref :duct/logger}
 
 
   ;; App handlers
@@ -86,7 +100,7 @@
                                                 :max-dim 1024}
   :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
                                               :logger #ig/ref :duct/logger}
-  :core-service.app.server.conversation.v1.authed/conversations-create {}
+  :core-service.app.server.conversation.v1.authed/conversations-create {:db #ig/ref :d-core.core.databases.sql/common}
   :core-service.app.server.conversation.v1.authed/conversations-get {}
   :core-service.app.server.conversation.v1.authed/messages-create {}
   :core-service.app.server.conversation.v1.authed/messages-list {}
@@ -141,35 +155,11 @@
    :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
-  :d-core.core.consumers.jetstream/runtime
-  {:jetstream #ig/ref :d-core.core.clients.jetstream/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
-   :logger #ig/ref :duct/logger}
-
-  :d-core.core.consumers.kafka/runtime
-  {:kafka #ig/ref :d-core.core.clients.kafka/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
-   :logger #ig/ref :duct/logger}
-
-  :d-core.core.consumers.rabbitmq/runtime
-  {:rabbitmq #ig/ref :d-core.core.clients.rabbitmq/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
-   :logger #ig/ref :duct/logger}
-
   ;; In memory consumer
   :d-core.core.consumers.consumer/consumer
   {:queues #ig/ref :d-core.queue/in-memory-queues
    :routing #ig/ref :d-core.core.messaging/routing
    :redis-runtime #ig/ref :d-core.core.consumers.redis/runtime
-   :jetstream-runtime #ig/ref :d-core.core.consumers.jetstream/runtime
-   :kafka-runtime #ig/ref :d-core.core.consumers.kafka/runtime
-   :rabbitmq-runtime #ig/ref :d-core.core.consumers.rabbitmq/runtime
    :dead-letter #ig/ref :d-core.core.messaging.dead-letter/common
    :logger #ig/ref :duct/logger}
 
@@ -183,32 +173,11 @@
    :codec #ig/ref :d-core.core.messaging/codec
    :logger #ig/ref :duct/logger}
 
-  :d-core.core.producers.jetstream/producer
-  {:jetstream #ig/ref :d-core.core.clients.jetstream/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :logger #ig/ref :duct/logger}
-
-  :d-core.core.producers.kafka/producer
-  {:kafka #ig/ref :d-core.core.clients.kafka/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :logger #ig/ref :duct/logger}
-
-  :d-core.core.producers.rabbitmq/producer
-  {:rabbitmq #ig/ref :d-core.core.clients.rabbitmq/client
-   :routing #ig/ref :d-core.core.messaging/routing
-   :codec #ig/ref :d-core.core.messaging/codec
-   :logger #ig/ref :duct/logger}
-
   :d-core.core.producers.common/producer
   {:default-producer :redis
    :routing #ig/ref :d-core.core.messaging/routing
    :producers {:in-memory #ig/ref :d-core.core.producers.in-memory/producer
-               :redis #ig/ref :d-core.core.producers.redis/producer
-               :rabbitmq #ig/ref :d-core.core.producers.rabbitmq/producer
-               :jetstream #ig/ref :d-core.core.producers.jetstream/producer
-               :kafka #ig/ref :d-core.core.producers.kafka/producer}
+               :redis #ig/ref :d-core.core.producers.redis/producer}
    :logger #ig/ref :duct/logger}
 
   ;; Cache Components
@@ -280,15 +249,6 @@
   ;; Messaging
   :d-core.core.clients.redis/client
   #ig/ref :core-service.app.config.clients/redis
-
-  :d-core.core.clients.jetstream/client
-  #ig/ref :core-service.app.config.clients/jetstream
-
-  :d-core.core.clients.kafka/client
-  #ig/ref :core-service.app.config.clients/kafka
-
-  :d-core.core.clients.rabbitmq/client
-  #ig/ref :core-service.app.config.clients/rabbitmq
 
   ;; Codecs
   :d-core.core.messaging.codecs/edn {}

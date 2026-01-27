@@ -1,20 +1,49 @@
 (ns core-service.app.server.conversation.v1.authed
-  (:require [core-service.app.schemas.messaging :as msg-schema]
+  (:require [clojure.string :as str]
+            [core-service.app.db.conversations :as conversations-db]
+            [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.http :as http]
             [malli.core :as m]
             [malli.error :as me]))
 
+(defn- coerce-conversation-create
+  [data]
+  (-> data
+      (update :type (fn [v] (if (string? v) (keyword v) v)))
+      (update :title (fn [v] (when (and (string? v) (not (str/blank? v))) v)))
+      (update :member_ids (fn [ids]
+                            (when (sequential? ids)
+                              (->> ids
+                                   (map http/parse-uuid)
+                                   vec))))))
+
+(defn- tenant-id-from-request
+  [req]
+  (or (get-in req [:auth/principal :tenant-id])
+      (get-in req [:auth/principal :tenant_id])))
+
 (defn conversations-create
-  [_options]
+  [{:keys [db]}]
   (fn [req]
     (let [format (http/get-accept-format req)
-          {:keys [ok data error]} (http/read-json-body req)]
+          {:keys [ok data error]} (http/read-json-body req)
+          data (when ok (coerce-conversation-create data))
+          tenant-id (tenant-id-from-request req)]
       (cond
         (not ok) (http/format-response {:ok false :error error} format)
+        (nil? tenant-id) (http/format-response {:ok false :error "missing tenant"} format)
         (not (m/validate msg-schema/ConversationCreateSchema data))
         (http/invalid-response format msg-schema/ConversationCreateSchema data)
+        (empty? (:member_ids data))
+        (http/format-response {:ok false :error "member_ids cannot be empty"} format)
         :else
-        (http/format-response {:ok true :conversation data} format)))))
+        (let [result (conversations-db/create-conversation!
+                       db
+                       {:tenant-id tenant-id
+                        :type (:type data)
+                        :title (:title data)
+                        :member-ids (:member_ids data)})]
+          (http/format-response (assoc result :ok true) format))))))
 
 (defn conversations-get
   [_options]
