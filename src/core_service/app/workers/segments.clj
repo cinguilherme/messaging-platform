@@ -3,6 +3,7 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.segments :as segments-db]
+            [core-service.app.libs.redis :as redis-lib]
             [core-service.app.segments.format :as segment-format]
             [core-service.app.storage.minio :as minio]
             [core-service.app.streams.redis :as streams]
@@ -11,25 +12,13 @@
             [integrant.core :as ig]
             [taoensso.carmine :as car]))
 
-(defn- redis-conn
-  [redis-client]
-  (:conn redis-client))
-
-(defn- normalize-key
-  [k]
-  (cond
-    (string? k) k
-    (keyword? k) (name k)
-    (bytes? k) (String. ^bytes k "UTF-8")
-    :else (str k)))
-
 (defn- scan-keys
   [redis-client pattern]
   (loop [cursor "0"
          acc []]
-    (let [[next-cursor keys] (car/wcar (redis-conn redis-client)
+    (let [[next-cursor keys] (car/wcar (redis-lib/conn redis-client)
                                (car/scan cursor "MATCH" pattern "COUNT" 200))
-          keys (mapv normalize-key keys)
+          keys (mapv redis-lib/normalize-key keys)
           acc (into acc keys)]
       (if (= "0" next-cursor)
         acc
@@ -49,12 +38,12 @@
 
 (defn- get-cursor
   [redis-client key]
-  (car/wcar (redis-conn redis-client)
+  (car/wcar (redis-lib/conn redis-client)
     (car/get key)))
 
 (defn- set-cursor!
   [redis-client key cursor]
-  (car/wcar (redis-conn redis-client)
+  (car/wcar (redis-lib/conn redis-client)
     (car/set key cursor)))
 
 (defn- decode-message
@@ -110,12 +99,100 @@
   (let [trim-min-entries (long (or trim-min-entries 0))]
     (if (<= trim-min-entries 0)
       last-id
-      (let [entries (car/wcar (redis-conn redis)
+      (let [entries (car/wcar (redis-lib/conn redis)
                       (car/xrevrange stream "+" "-" "COUNT" trim-min-entries))
             retain-id (some-> entries last first)]
         (if (and retain-id (stream-id<=? retain-id last-id))
           retain-id
           last-id)))))
+
+(defn- entry->prepared [entries codec last-seq]
+  (->> entries
+       (map (fn [{:keys [id payload] :as entry}]
+              (let [msg (decode-message payload)
+                    payload-bytes (case codec
+                                    :json (when msg
+                                            (.getBytes (json/generate-string msg) "UTF-8"))
+                                    :edn (cond
+                                           (bytes? payload) payload
+                                           (string? payload) (.getBytes ^String payload "UTF-8")
+                                           msg (.getBytes (pr-str msg) "UTF-8")
+                                           :else nil)
+                                    :raw (cond
+                                           (bytes? payload) payload
+                                           (string? payload) (.getBytes ^String payload "UTF-8")
+                                           :else nil)
+                                    nil)]
+                (when (and payload-bytes msg (:seq msg))
+                  (assoc entry
+                         :id id
+                         :payload payload-bytes
+                         :message msg
+                         :seq (long (:seq msg))
+                         :record-size (record-size payload-bytes))))))
+       (remove nil?)
+       (filter (fn [{:keys [seq]}] (> seq last-seq)))
+       vec))
+
+(defn- read-prepared
+  [redis stream batch-size cursor codec last-seq]
+  (let [{:keys [entries]} (streams/read! redis stream {:direction :forward
+                                                       :limit batch-size
+                                                       :cursor cursor})
+        prepared (entry->prepared entries codec last-seq)]
+    {:entries entries
+     :prepared prepared}))
+
+(defn- build-header
+  [conversation-id codec compression prepared created-at]
+  {:format_version 1
+   :codec (name codec)
+   :compression (name compression)
+   :conversation_id (str conversation-id)
+   :seq_start (:seq (first prepared))
+   :seq_end (:seq (last prepared))
+   :message_count (count prepared)
+   :created_at created-at})
+
+(defn- store-segment!
+  [{:keys [db minio naming logger]} {:keys [conversation-id header payloads compression created-at]}]
+  (let [segment-bytes (segment-format/encode-segment {:header header
+                                                      :messages payloads
+                                                      :compression compression})
+        object-key (build-object-key naming {:conversation-id conversation-id
+                                             :seq-start (:seq_start header)
+                                             :seq-end (:seq_end header)
+                                             :created-at created-at
+                                             :compression compression})
+        store (minio/put-bytes! minio object-key segment-bytes "application/octet-stream")
+        byte-size (alength ^bytes segment-bytes)]
+    (if-not (:ok store)
+      (do
+        (when logger
+          (logger/log logger :error ::segment-store-failed
+                      {:conversation-id conversation-id
+                       :error (:error store)
+                       :object-key object-key}))
+        {:status :error :reason :minio-failed :conversation-id conversation-id})
+      (do
+        (segments-db/insert-segment! db {:conversation-id conversation-id
+                                         :seq-start (:seq_start header)
+                                         :seq-end (:seq_end header)
+                                         :object-key object-key
+                                         :byte-size byte-size})
+        {:status :ok
+         :conversation-id conversation-id
+         :seq-start (:seq_start header)
+         :seq-end (:seq_end header)
+         :object-key object-key
+         :byte_size byte-size}))))
+
+(defn- trim-stream!
+  [redis stream last-id trim-min-entries]
+  (when-let [trim-id (retention-trim-id redis stream last-id trim-min-entries)]
+    (when (and trim-id (not (str/blank? trim-id)))
+      (car/wcar (redis-lib/conn redis)
+        (car/xtrim stream "MINID" trim-id)))))
 
 (defn flush-conversation!
   [{:keys [db redis minio naming segments logger]} conversation-id]
@@ -130,35 +207,7 @@
         max-bytes (long (or max-bytes 262144))
         compression (or compression :gzip)
         codec (or codec :edn)
-        {:keys [entries]} (streams/read! redis stream {:direction :forward
-                                                       :limit batch-size
-                                                       :cursor last-cursor})
-        prepared (->> entries
-                      (map (fn [{:keys [id payload] :as entry}]
-                             (let [msg (decode-message payload)
-                                   payload-bytes (case codec
-                                                   :json (when msg
-                                                           (.getBytes (json/generate-string msg) "UTF-8"))
-                                                   :edn (cond
-                                                          (bytes? payload) payload
-                                                          (string? payload) (.getBytes ^String payload "UTF-8")
-                                                          msg (.getBytes (pr-str msg) "UTF-8")
-                                                          :else nil)
-                                                   :raw (cond
-                                                          (bytes? payload) payload
-                                                          (string? payload) (.getBytes ^String payload "UTF-8")
-                                                          :else nil)
-                                                   nil)]
-                               (when (and payload-bytes msg (:seq msg))
-                                 (assoc entry
-                                        :id id
-                                        :payload payload-bytes
-                                        :message msg
-                                        :seq (long (:seq msg))
-                                        :record-size (record-size payload-bytes))))))
-                      (remove nil?)
-                      (filter (fn [{:keys [seq]}] (> seq last-seq)))
-                      vec)]
+        {:keys [entries prepared]} (read-prepared redis stream batch-size last-cursor codec last-seq)]
     (cond
       (empty? entries)
       {:status :empty :conversation-id conversation-id}
@@ -170,65 +219,34 @@
         {:status :skipped :reason :no-new-seq :conversation-id conversation-id})
 
       :else
-      (let [seq-start (:seq (first prepared))
-            seq-end (:seq (last prepared))
-            created-at (System/currentTimeMillis)
-            header {:format_version 1
-                    :codec (name codec)
-                    :compression (name compression)
-                    :conversation_id (str conversation-id)
-                    :seq_start seq-start
-                    :seq_end seq-end
-                    :message_count (count prepared)
-                    :created_at created-at}
+      (let [created-at (System/currentTimeMillis)
+            header (build-header conversation-id codec compression prepared created-at)
             selected (trim-to-fit prepared header max-bytes)]
         (if (empty? selected)
           {:status :skipped :reason :segment-too-small :conversation-id conversation-id}
-          (let [seq-start' (:seq (first selected))
-                seq-end' (:seq (last selected))
-                header' (assoc header
-                               :seq_start seq-start'
-                               :seq_end seq-end'
+          (let [header' (assoc header
+                               :seq_start (:seq (first selected))
+                               :seq_end (:seq (last selected))
                                :message_count (count selected))
                 payloads (mapv :payload selected)
-                segment-bytes (segment-format/encode-segment {:header header'
-                                                              :messages payloads
-                                                              :compression compression})
-                object-key (build-object-key naming {:conversation-id conversation-id
-                                                     :seq-start seq-start'
-                                                     :seq-end seq-end'
-                                                     :created-at created-at
-                                                     :compression compression})
-                store (minio/put-bytes! minio object-key segment-bytes "application/octet-stream")
-                byte-size (alength ^bytes segment-bytes)]
-            (if-not (:ok store)
+                result (store-segment! {:db db
+                                        :minio minio
+                                        :naming naming
+                                        :logger logger}
+                                       {:conversation-id conversation-id
+                                        :header header'
+                                        :payloads payloads
+                                        :compression compression
+                                        :created-at created-at})]
+            (if-not (= :ok (:status result))
+              result
               (do
-                (when logger
-                  (logger/log logger :error ::segment-store-failed
-                              {:conversation-id conversation-id
-                               :error (:error store)
-                               :object-key object-key}))
-                {:status :error :reason :minio-failed :conversation-id conversation-id})
-              (do
-                (segments-db/insert-segment! db {:conversation-id conversation-id
-                                                 :seq-start seq-start'
-                                                 :seq-end seq-end'
-                                                 :object-key object-key
-                                                 :byte-size byte-size})
                 (when-let [last-id (:id (last selected))]
                   (set-cursor! redis cursor-k last-id))
                 (when trim-stream?
                   (when-let [last-id (:id (last selected))]
-                    (let [trim-id (retention-trim-id redis stream last-id trim-min-entries)]
-                      (when (and trim-id (not (str/blank? trim-id)))
-                        (car/wcar (redis-conn redis)
-                          (car/xtrim stream "MINID" trim-id))))))
-                {:status :ok
-                 :conversation-id conversation-id
-                 :seq-start seq-start'
-                 :seq-end seq-end'
-                 :object-key object-key
-                 :byte-size byte-size}))))))))
+                    (trim-stream! redis stream last-id trim-min-entries)))
+                result))))))))
 
 (defn flush-all!
   [{:keys [redis naming] :as components}]

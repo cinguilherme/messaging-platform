@@ -2,6 +2,7 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
+            [core-service.app.libs.redis :as redis-lib]
             [core-service.app.pagination :as pagination]
             [core-service.app.redis.receipts :as receipts]
             [core-service.app.schemas.messaging :as msg-schema]
@@ -12,13 +13,9 @@
             [malli.error :as me]
             [taoensso.carmine :as car]))
 
-(defn- redis-conn
-  [redis-client]
-  (:conn redis-client))
-
 (defn- next-seq!
   [redis-client key]
-  (car/wcar (redis-conn redis-client)
+  (car/wcar (redis-lib/conn redis-client)
     (car/incr key)))
 
 (defn- coerce-conversation-create
