@@ -17,7 +17,7 @@
   (loop [cursor "0"
          acc []]
     (let [[next-cursor keys] (car/wcar (redis-lib/conn redis-client)
-                               (car/scan cursor "MATCH" pattern "COUNT" 200))
+                                       (car/scan cursor "MATCH" pattern "COUNT" 200))
           keys (mapv redis-lib/normalize-key keys)
           acc (into acc keys)]
       (if (= "0" next-cursor)
@@ -39,12 +39,12 @@
 (defn- get-cursor
   [redis-client key]
   (car/wcar (redis-lib/conn redis-client)
-    (car/get key)))
+            (car/get key)))
 
 (defn- set-cursor!
   [redis-client key cursor]
   (car/wcar (redis-lib/conn redis-client)
-    (car/set key cursor)))
+            (car/set key cursor)))
 
 (defn- decode-message
   [payload]
@@ -100,7 +100,7 @@
     (if (<= trim-min-entries 0)
       last-id
       (let [entries (car/wcar (redis-lib/conn redis)
-                      (car/xrevrange stream "+" "-" "COUNT" trim-min-entries))
+                              (car/xrevrange stream "+" "-" "COUNT" trim-min-entries))
             retain-id (some-> entries last first)]
         (if (and retain-id (stream-id<=? retain-id last-id))
           retain-id
@@ -192,10 +192,44 @@
   (when-let [trim-id (retention-trim-id redis stream last-id trim-min-entries)]
     (when (and trim-id (not (str/blank? trim-id)))
       (car/wcar (redis-lib/conn redis)
-        (car/xtrim stream "MINID" trim-id)))))
+                (car/xtrim stream "MINID" trim-id)))))
+
+(defn- commit-flush-conversation!
+  [{:keys [db redis minio naming logger]}
+   {:keys [conversation-id prepared created-at
+           codec compression max-bytes
+           cursor-k stream trim-stream?
+           trim-min-entries]}]
+  (let [header (build-header conversation-id codec compression prepared created-at)
+        selected (trim-to-fit prepared header max-bytes)]
+    (if (empty? selected)
+      {:status :skipped :reason :segment-too-small :conversation-id conversation-id}
+      (let [header' (assoc header
+                           :seq_start (:seq (first selected))
+                           :seq_end (:seq (last selected))
+                           :message_count (count selected))
+            payloads (mapv :payload selected)
+            result (store-segment! {:db db
+                                    :minio minio
+                                    :naming naming
+                                    :logger logger}
+                                   {:conversation-id conversation-id
+                                    :header header'
+                                    :payloads payloads
+                                    :compression compression
+                                    :created-at created-at})]
+        (if-not (= :ok (:status result))
+          result
+          (do
+            (when-let [last-id (:id (last selected))]
+              (set-cursor! redis cursor-k last-id))
+            (when trim-stream?
+              (when-let [last-id (:id (last selected))]
+                (trim-stream! redis stream last-id trim-min-entries)))
+            result))))))
 
 (defn flush-conversation!
-  [{:keys [db redis minio naming segments logger]} conversation-id]
+  [{:keys [db redis naming segments] :as components} conversation-id]
   (let [stream-prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
         stream (str stream-prefix conversation-id)
         cursor-k (cursor-key naming conversation-id)
@@ -219,34 +253,18 @@
         {:status :skipped :reason :no-new-seq :conversation-id conversation-id})
 
       :else
-      (let [created-at (System/currentTimeMillis)
-            header (build-header conversation-id codec compression prepared created-at)
-            selected (trim-to-fit prepared header max-bytes)]
-        (if (empty? selected)
-          {:status :skipped :reason :segment-too-small :conversation-id conversation-id}
-          (let [header' (assoc header
-                               :seq_start (:seq (first selected))
-                               :seq_end (:seq (last selected))
-                               :message_count (count selected))
-                payloads (mapv :payload selected)
-                result (store-segment! {:db db
-                                        :minio minio
-                                        :naming naming
-                                        :logger logger}
-                                       {:conversation-id conversation-id
-                                        :header header'
-                                        :payloads payloads
-                                        :compression compression
-                                        :created-at created-at})]
-            (if-not (= :ok (:status result))
-              result
-              (do
-                (when-let [last-id (:id (last selected))]
-                  (set-cursor! redis cursor-k last-id))
-                (when trim-stream?
-                  (when-let [last-id (:id (last selected))]
-                    (trim-stream! redis stream last-id trim-min-entries)))
-                result))))))))
+      (commit-flush-conversation!
+       components
+       {:conversation-id conversation-id
+        :prepared prepared
+        :created-at (System/currentTimeMillis)
+        :codec codec
+        :compression compression
+        :max-bytes max-bytes
+        :cursor-k cursor-k
+        :stream stream
+        :trim-stream? trim-stream?
+        :trim-min-entries trim-min-entries}))))
 
 (defn flush-all!
   [{:keys [redis naming] :as components}]
