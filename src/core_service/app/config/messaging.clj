@@ -16,26 +16,12 @@
                       :group "core"}
             :sample-fail {:stream "sample:fail-sample"
                           :group "sample"}
-            :test-queue {}
-            :kafka-test {:kafka-topic "core.kafka_test"
-                         :group "core"}
-            :rabbitmq-test {:queue "core.rabbitmq_test"
-                            :group "core"}
-            :jetstream-test {:subject "core.jetstream_test"
-                             :stream "core_jetstream_test"
-                             :durable "core_jetstream_test"}}
+            :test-queue {}}
    :publish {:default {:targets [{:producer :redis
                                   :stream "core:default"}]}
              :sample-fail {:targets [{:producer :redis
                                       :stream "sample:fail-sample"}]}
-             :test-queue {:targets [{:producer :in-memory}]}
-             :kafka-test {:targets [{:producer :kafka
-                                     :kafka-topic "core.kafka_test"}]}
-             :rabbitmq-test {:targets [{:producer :rabbitmq
-                                        :queue "core.rabbitmq_test"}]}
-             :jetstream-test {:targets [{:producer :jetstream
-                                         :subject "core.jetstream_test"
-                                         :stream "core_jetstream_test"}]}}
+             :test-queue {:targets [{:producer :in-memory}]}}
    :subscriptions {:default {:source :redis
                              :topic :default
                              ;; Resolved at init time from :handlers (d-core routing init).
@@ -49,21 +35,51 @@
                                               :policy :default
                                               :max-attempts 3
                                               :delay-ms 100
-                                              :suffix ".dl"}}
-                   :kafka-test {:source :kafka
-                                :topic :kafka-test
-                                :handler :log-consumed
-                                :options {:poll-ms 250}}
-                   :rabbitmq-test {:source :rabbitmq
-                                   :topic :rabbitmq-test
-                                   :handler :log-consumed
-                                   :options {:block-ms 5000}}
-                   :jetstream-test {:source :jetstream
-                                    :topic :jetstream-test
-                                    :handler :log-consumed
-                                    :options {:pull-batch 1
-                                              :expires-ms 1000}}}})
+                                              :suffix ".dl"}}}})
 
 (defmethod ig/init-key :core-service.app.config.messaging/default-routing
   [_ _]
   default-routing)
+
+(def messaging-storage-names
+  {:redis {:stream-prefix "chat:conv:"
+           :pubsub-prefix "chat:conv:"
+           :receipts-prefix "chat:receipts:"
+           :sequence-prefix "chat:seq:"
+           :flush-prefix "chat:flush:"}
+   :minio {:bucket "messages"
+           :segments-prefix "segments/"
+           :attachments-prefix "attachments/"}})
+
+(defmethod ig/init-key :core-service.app.config.messaging/storage-names
+  [_ opts]
+  (merge messaging-storage-names opts))
+
+(def default-segment-config
+  {:max-bytes 262144
+   :flush-interval-ms 300000
+   :compression :gzip
+   :codec :edn
+   :batch-size 200
+   :trim-stream? true
+   :trim-min-entries 100})
+
+(defmethod ig/init-key :core-service.app.config.messaging/segment-config
+  [_ opts]
+  (merge default-segment-config opts))
+
+(def default-retention-config
+  {:max-age-ms 2592000000
+   :batch-size 200
+   :interval-ms 3600000})
+
+(defmethod ig/init-key :core-service.app.config.messaging/retention-config
+  [_ opts]
+  (merge default-retention-config opts))
+
+(def default-receipt-config
+  {:ttl-ms 3600000})
+
+(defmethod ig/init-key :core-service.app.config.messaging/receipt-config
+  [_ opts]
+  (merge default-receipt-config opts))

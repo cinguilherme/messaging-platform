@@ -1,6 +1,6 @@
 # ADR 01: Low-Cost Real-Time Messaging Storage for Messaging PaaS
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
