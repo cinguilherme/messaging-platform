@@ -12,23 +12,28 @@
                                       :codec codec}))))
 
 (defn fetch-messages
-  "Fetch messages from Minio segments, newest-to-oldest.
-  Options: {:limit n :before-seq seq}."
-  [{:keys [db minio segments]} conversation-id {:keys [limit before-seq]}]
+  "Fetch messages from Minio segments.
+  Options: {:limit n :cursor seq :direction :backward|:forward}."
+  [{:keys [db minio segments]} conversation-id {:keys [limit cursor direction]}]
   (let [limit (long (or limit 50))
         segment-batch (long (or (:segment-batch segments) 10))
         compression (or (:compression segments) :gzip)
-        codec (or (:codec segments) :edn)]
-    (loop [before before-seq
+        codec (or (:codec segments) :edn)
+        direction (or direction :backward)]
+    (loop [cursor cursor
            remaining limit
            acc []]
       (if (<= remaining 0)
         {:messages acc
          :next-seq (when (seq acc) (:seq (last acc)))
          :has-more? true}
-        (let [rows (segments-db/list-segments db {:conversation-id conversation-id
-                                                  :before-seq before
-                                                  :limit segment-batch})]
+        (let [rows (if (= direction :forward)
+                     (segments-db/list-segments-forward db {:conversation-id conversation-id
+                                                            :after-seq cursor
+                                                            :limit segment-batch})
+                     (segments-db/list-segments db {:conversation-id conversation-id
+                                                    :before-seq cursor
+                                                    :limit segment-batch}))]
           (if (empty? rows)
             {:messages acc
              :next-seq (when (seq acc) (:seq (last acc)))
@@ -39,22 +44,30 @@
                                                                              {:compression compression
                                                                               :codec codec})]
                                             (let [msgs (:messages decoded)
-                                                  filtered (if before
-                                                             (filter #(< (:seq %) before) msgs)
-                                                             msgs)]
+                                                  filtered (cond
+                                                             (= direction :forward)
+                                                             (if cursor
+                                                               (filter #(> (:seq %) cursor) msgs)
+                                                               msgs)
+                                                             :else
+                                                             (if cursor
+                                                               (filter #(< (:seq %) cursor) msgs)
+                                                               msgs))]
                                               (->> filtered
-                                                   (sort-by :seq >)
+                                                   (sort-by :seq (if (= direction :forward) < >))
                                                    vec)))))
                                 vec)
                   used (vec (take remaining messages))
                   remaining' (- remaining (count used))
                   acc' (into acc used)
-                  next-before (when-let [last-row (last rows)]
-                                (:seq_start last-row))
+                  next-cursor (when-let [last-row (last rows)]
+                                (if (= direction :forward)
+                                  (:seq_end last-row)
+                                  (:seq_start last-row)))
                   has-more? (or (<= remaining' 0)
                                 (= (count rows) segment-batch))]
-              (if (and next-before (pos? remaining'))
-                (recur next-before remaining' acc')
+              (if (and next-cursor (pos? remaining'))
+                (recur next-cursor remaining' acc')
                 {:messages acc'
                  :next-seq (when (seq acc') (:seq (last acc')))
                  :has-more? has-more?}))))))))

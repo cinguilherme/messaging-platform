@@ -38,6 +38,23 @@
     (sql/execute! db (into [query] params)
                   {:builder-fn rs/as-unqualified-lower-maps})))
 
+(defn list-segments-forward
+  [db {:keys [conversation-id after-seq limit]}]
+  (let [limit (long (or limit 50))
+        [query params] (if after-seq
+                         [(str "SELECT conversation_id, seq_start, seq_end, object_key, byte_size "
+                               "FROM segment_index "
+                               "WHERE conversation_id = ? AND seq_end > ? "
+                               "ORDER BY seq_start ASC LIMIT ?")
+                          [conversation-id after-seq limit]]
+                         [(str "SELECT conversation_id, seq_start, seq_end, object_key, byte_size "
+                               "FROM segment_index "
+                               "WHERE conversation_id = ? "
+                               "ORDER BY seq_start ASC LIMIT ?")
+                          [conversation-id limit]])]
+    (sql/execute! db (into [query] params)
+                  {:builder-fn rs/as-unqualified-lower-maps})))
+
 (defn list-expired-segments
   [db {:keys [cutoff limit]}]
   (let [limit (long (or limit 200))

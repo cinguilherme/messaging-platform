@@ -156,6 +156,7 @@
           token-direction (some-> (:direction token) keyword)
           token-cursor (:cursor token)
           token-seq (when (number? token-cursor) (long token-cursor))
+          token-conv (some-> (:conversation_id token) http/parse-uuid)
           direction (or (some-> (http/param req "direction") keyword)
                         token-direction)
           query (cond-> {:limit limit}
@@ -171,22 +172,24 @@
                                :error "invalid query"
                                :details (me/humanize (m/explain msg-schema/PaginationQuerySchema query))}
                               format)
+        (and token-conv (not= token-conv conv-id))
+        (http/format-response {:ok false :error "cursor conversation mismatch"} format)
         (and (= token-source :minio) (not minio))
         (http/format-response {:ok false :error "minio not configured"} format)
         :else
         (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               segments (or segments {})
-              read-from-minio (fn [before-seq remaining]
+              read-from-minio (fn [cursor remaining direction]
                                 (when (and minio (pos? remaining))
                                   (segment-reader/fetch-messages {:db db
                                                                   :minio minio
                                                                   :segments segments}
                                                                  conv-id
                                                                  {:limit remaining
-                                                                  :before-seq before-seq})))]
+                                                                  :cursor cursor
+                                                                  :direction direction})))]
           (if (= token-source :minio)
-            (let [minio-result (when-not (= direction :forward)
-                                 (read-from-minio token-seq limit))
+            (let [minio-result (read-from-minio token-seq limit direction)
                   minio-messages (vec (:messages minio-result))
                   next-cursor (when (and (seq minio-messages)
                                          (:has-more? minio-result))
@@ -207,7 +210,7 @@
                   before-seq (min-seq redis-messages)
                   minio-result (when (and (pos? remaining)
                                           (not= direction :forward))
-                                 (read-from-minio before-seq remaining))
+                                 (read-from-minio before-seq remaining direction))
                   minio-messages (vec (:messages minio-result))
                   combined (vec (concat redis-messages minio-messages))
                   next-minio (when (and (seq minio-messages)
