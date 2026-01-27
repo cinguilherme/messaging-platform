@@ -80,6 +80,93 @@
                             :direction (name direction)
                             :source "minio"}))
 
+(defn- parse-cursor-token
+  [cursor-param]
+  (let [token (pagination/decode-token cursor-param)
+        source (some-> (:source token) keyword)
+        direction (some-> (:direction token) keyword)
+        cursor (:cursor token)
+        seq-cursor (when (number? cursor) (long cursor))
+        conv-id (some-> (:conversation_id token) http/parse-uuid)]
+    {:token token
+     :source source
+     :direction direction
+     :cursor cursor
+     :seq-cursor seq-cursor
+     :conversation-id conv-id}))
+
+(defn- fetch-minio-page
+  [{:keys [db minio segments]} conversation-id cursor limit direction]
+  (let [result (segment-reader/fetch-messages {:db db
+                                               :minio minio
+                                               :segments segments}
+                                              conversation-id
+                                              {:limit limit
+                                               :cursor cursor
+                                               :direction direction})
+        messages (vec (:messages result))
+        next-cursor (when (and (seq messages)
+                               (:has-more? result))
+                      (minio-token {:conversation-id conversation-id
+                                    :cursor (:next-seq result)
+                                    :direction (or direction :backward)}))]
+    {:messages messages
+     :next-cursor next-cursor}))
+
+(defn- fetch-redis-page
+  [redis stream query]
+  (let [{:keys [entries next-cursor]} (streams/read! redis stream query)
+        messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
+    {:messages messages
+     :next-cursor next-cursor}))
+
+(defn- read-minio-history
+  [{:keys [db minio segments] :as ctx} conversation-id cursor limit direction]
+  (fetch-minio-page ctx conversation-id cursor limit direction))
+
+(defn- read-redis-minio-history
+  [{:keys [db minio segments]} conversation-id redis stream query token-source token-cursor limit direction]
+  (let [redis-cursor (when (= token-source :redis) token-cursor)
+        query (cond-> query
+                redis-cursor (assoc :cursor redis-cursor))
+        {:keys [messages next-cursor]} (fetch-redis-page redis stream query)
+        remaining (- limit (count messages))
+        before-seq (min-seq messages)
+        minio-result (when (and (pos? remaining)
+                                (not= direction :forward)
+                                minio)
+                       (fetch-minio-page {:db db
+                                          :minio minio
+                                          :segments segments}
+                                         conversation-id
+                                         before-seq
+                                         remaining
+                                         direction))
+        minio-messages (vec (:messages minio-result))
+        combined (vec (concat messages minio-messages))
+        next-minio (:next-cursor minio-result)
+        next-redis (when next-cursor
+                     (redis-token {:conversation-id conversation-id
+                                   :cursor next-cursor
+                                   :direction (or direction :backward)}))
+        next-cursor (or next-minio next-redis)]
+    {:messages combined
+     :next-cursor next-cursor}))
+
+(defn- messages-page
+  [ctx {:keys [conversation-id redis stream query token-source token-seq token-cursor limit direction]}]
+  (if (= token-source :minio)
+    (read-minio-history ctx conversation-id token-seq limit direction)
+    (read-redis-minio-history ctx conversation-id redis stream query token-source token-cursor limit direction)))
+
+(defn- format-messages-response
+  [format conversation-id messages next-cursor]
+  (http/format-response {:ok true
+                         :conversation_id (str conversation-id)
+                         :messages messages
+                         :next_cursor next-cursor}
+                        format))
+
 (defn conversations-create
   [{:keys [db]}]
   (fn [req]
@@ -159,17 +246,17 @@
           sender-id (sender-id-from-request req)
           limit (http/parse-long (http/param req "limit") 50)
           cursor-param (http/param req "cursor")
-          token (pagination/decode-token cursor-param)
-          token-source (some-> (:source token) keyword)
-          token-direction (some-> (:direction token) keyword)
-          token-cursor (:cursor token)
-          token-seq (when (number? token-cursor) (long token-cursor))
-          token-conv (some-> (:conversation_id token) http/parse-uuid)
+          {:keys [token source direction cursor seq-cursor conversation-id]}
+          (parse-cursor-token cursor-param)
           direction (or (some-> (http/param req "direction") keyword)
-                        token-direction)
+                        direction)
           query (cond-> {:limit limit}
                   (and cursor-param (not token)) (assoc :cursor cursor-param)
-                  direction (assoc :direction direction))]
+                  direction (assoc :direction direction))
+          token-source source
+          token-cursor cursor
+          token-seq seq-cursor
+          token-conv conversation-id]
       (cond
         (not conv-id) (http/format-response {:ok false :error "invalid conversation id"} format)
         (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
@@ -187,55 +274,18 @@
         :else
         (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               segments (or segments {})
-              read-from-minio (fn [cursor remaining direction]
-                                (when (and minio (pos? remaining))
-                                  (segment-reader/fetch-messages {:db db
-                                                                  :minio minio
-                                                                  :segments segments}
-                                                                 conv-id
-                                                                 {:limit remaining
-                                                                  :cursor cursor
-                                                                  :direction direction})))]
-          (if (= token-source :minio)
-            (let [minio-result (read-from-minio token-seq limit direction)
-                  minio-messages (vec (:messages minio-result))
-                  next-cursor (when (and (seq minio-messages)
-                                         (:has-more? minio-result))
-                                (minio-token {:conversation-id conv-id
-                                              :cursor (:next-seq minio-result)
-                                              :direction (or direction :backward)}))]
-              (http/format-response {:ok true
-                                     :conversation_id (str conv-id)
-                                     :messages minio-messages
-                                     :next_cursor next-cursor}
-                                    format))
-            (let [redis-cursor (when (= token-source :redis) token-cursor)
-                  query (cond-> query
-                          redis-cursor (assoc :cursor redis-cursor))
-                  {:keys [entries next-cursor]} (streams/read! redis stream query)
-                  redis-messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)
-                  remaining (- limit (count redis-messages))
-                  before-seq (min-seq redis-messages)
-                  minio-result (when (and (pos? remaining)
-                                          (not= direction :forward))
-                                 (read-from-minio before-seq remaining direction))
-                  minio-messages (vec (:messages minio-result))
-                  combined (vec (concat redis-messages minio-messages))
-                  next-minio (when (and (seq minio-messages)
-                                        (:has-more? minio-result))
-                               (minio-token {:conversation-id conv-id
-                                             :cursor (:next-seq minio-result)
-                                             :direction (or direction :backward)}))
-                  next-redis (when next-cursor
-                               (redis-token {:conversation-id conv-id
-                                             :cursor next-cursor
-                                             :direction (or direction :backward)}))
-                  next-cursor (or next-minio next-redis)]
-              (http/format-response {:ok true
-                                     :conversation_id (str conv-id)
-                                    :messages combined
-                                    :next_cursor next-cursor}
-                                    format))))))))
+              ctx {:db db :minio minio :segments segments}
+              {:keys [messages next-cursor]}
+              (messages-page ctx {:conversation-id conv-id
+                                  :redis redis
+                                  :stream stream
+                                  :query query
+                                  :token-source token-source
+                                  :token-seq token-seq
+                                  :token-cursor token-cursor
+                                  :limit limit
+                                  :direction direction})]
+          (format-messages-response format conv-id messages next-cursor))))))
 
 (defn receipts-create
   [{:keys [db redis naming receipt]}]
