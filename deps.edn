@@ -28,6 +28,9 @@
         ;; JSON dependencies
         cheshire/cheshire {:mvn/version "5.13.0"}
 
+        ;; Schema validation
+        metosin/malli {:mvn/version "0.16.4"}
+
         ;; HTTP dependencies
         clj-http/clj-http {:mvn/version "3.12.3"}
 
