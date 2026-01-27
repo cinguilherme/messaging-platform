@@ -104,9 +104,10 @@
   :core-service.app.server.conversation.v1.authed/conversations-get {}
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client
-                                                                   :producer #ig/ref :d-core.core.producers.common/producer
                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names}
-  :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common}
+  :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
+                                                                 :redis #ig/ref :d-core.core.clients.redis/client
+                                                                 :naming #ig/ref :core-service.app.config.messaging/storage-names}
   :core-service.app.server.conversation.v1.public/auth-register {:token-client #ig/ref :d-core.core.auth/token-client
                                                                  :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.conversation.v1.public/auth-login {:keycloak #ig/ref :core-service.app.config.auth/keycloak}

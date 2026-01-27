@@ -1,10 +1,11 @@
 (ns core-service.app.server.conversation.v1.authed
   (:require [cheshire.core :as json]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.http :as http]
-            [d-core.core.producers.protocol :as producer]
+            [core-service.app.streams.redis :as streams]
             [malli.core :as m]
             [malli.error :as me]
             [taoensso.carmine :as car]))
@@ -49,6 +50,28 @@
   (-> data
       (update :type (fn [v] (if (string? v) (keyword v) v)))))
 
+(defn- normalize-field-key
+  [k]
+  (cond
+    (string? k) k
+    (keyword? k) (name k)
+    (bytes? k) (String. ^bytes k "UTF-8")
+    :else (str k)))
+
+(defn- fields->map
+  [fields]
+  (let [pairs (partition 2 fields)]
+    (into {}
+          (map (fn [[k v]] [(normalize-field-key k) v]))
+          pairs)))
+
+(defn- decode-message
+  [payload]
+  (cond
+    (bytes? payload) (edn/read-string (String. ^bytes payload "UTF-8"))
+    (string? payload) (edn/read-string payload)
+    :else nil))
+
 (defn conversations-create
   [{:keys [db]}]
   (fn [req]
@@ -82,7 +105,7 @@
         (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
 
 (defn messages-create
-  [{:keys [db redis producer naming]}]
+  [{:keys [db redis naming]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -112,19 +135,18 @@
                        :meta (:meta data)}
               stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               channel (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
-              ack (producer/produce! producer message {:topic :messages
-                                                       :stream stream
-                                                       :producer :redis})]
+              payload-bytes (.getBytes (pr-str message) "UTF-8")
+              entry-id (streams/append! redis stream payload-bytes)]
           (publish! redis channel (json/generate-string message))
           (http/format-response {:ok true
                                  :conversation_id (str conv-id)
                                  :message message
                                  :stream stream
-                                 :publish ack}
+                                 :entry_id entry-id}
                                 format))))))
 
 (defn messages-list
-  [{:keys [db]}]
+  [{:keys [db redis naming]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -132,9 +154,9 @@
           limit (http/parse-long (http/param req "limit") 50)
           cursor (http/param req "cursor")
           direction (some-> (http/param req "direction") keyword)
-          query {:limit limit
-                 :cursor cursor
-                 :direction direction}]
+          query (cond-> {:limit limit}
+                  cursor (assoc :cursor cursor)
+                  direction (assoc :direction direction))]
       (cond
         (not conv-id) (http/format-response {:ok false :error "invalid conversation id"} format)
         (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
@@ -146,8 +168,11 @@
                                :details (me/humanize (m/explain msg-schema/PaginationQuerySchema query))}
                               format)
         :else
-        (http/format-response {:ok true
-                               :conversation_id (str conv-id)
-                               :messages []
-                               :next_cursor nil}
-                              format)))))
+        (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
+              {:keys [entries next-cursor]} (streams/read! redis stream query)
+              messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
+          (http/format-response {:ok true
+                                 :conversation_id (str conv-id)
+                                 :messages messages
+                                 :next_cursor next-cursor}
+                                format))))))
