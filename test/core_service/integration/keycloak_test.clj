@@ -2,7 +2,9 @@
   (:require [cheshire.core :as json]
             [clj-http.client :as http]
             [clojure.test :refer [deftest is testing]]
+            [d-core.core.authn.jwt]
             [d-core.core.authn.protocol :as authn]
+            [d-core.core.auth.token-client]
             [d-core.core.auth.token-client :as token-client]
             [integrant.core :as ig]))
 
@@ -54,28 +56,29 @@
 
 (deftest keycloak-auth-components
   (let [cfg (keycloak-config)]
-    (if-not (keycloak-up? cfg)
-      (is false "Keycloak not reachable. Start docker-compose and retry.")
-      (testing "JWT authenticator verifies a token from Keycloak"
-        (let [token (password-token cfg)
-              authenticator (ig/init-key :d-core.core.authn.jwt/authenticator
-                                         {:issuer (:issuer cfg)
-                                          :aud (:aud cfg)
-                                          :jwks-uri (:jwks-uri cfg)
-                                          :tenant-claim (:tenant-claim cfg)
-                                          :scope-claim (:scope-claim cfg)})
-              {:keys [principal]} (authn/authenticate authenticator
-                                                     {:headers {"authorization"
-                                                                (str "Bearer " token)}}
-                                                     {})]
-          (is (= "tenant-1" (:tenant-id principal)))
-          (is (contains? (:scopes principal) "messages:read"))
-          (is (contains? (:scopes principal) "messages:write"))))
-      (testing "Token client can obtain a client-credentials token"
-        (let [client (ig/init-key :d-core.core.auth/token-client
-                                  {:token-url (:token-url cfg)
-                                   :client-id (:admin-client-id cfg)
-                                   :client-secret (:admin-client-secret cfg)})
-              resp (token-client/client-credentials client {})]
-          (is (string? (:access-token resp)))
-          (is (pos? (count (:access-token resp)))))))))
+    (if (keycloak-up? cfg)
+      (do
+        (testing "JWT authenticator verifies a token from Keycloak"
+          (let [token (password-token cfg)
+                authenticator (ig/init-key :d-core.core.authn.jwt/authenticator
+                                           {:issuer (:issuer cfg)
+                                            :aud (:aud cfg)
+                                            :jwks-uri (:jwks-uri cfg)
+                                            :tenant-claim (:tenant-claim cfg)
+                                            :scope-claim (:scope-claim cfg)})
+                {:keys [principal]} (authn/authenticate authenticator
+                                                       {:headers {"authorization"
+                                                                  (str "Bearer " token)}}
+                                                       {})]
+            (is (= "tenant-1" (:tenant-id principal)))
+            (is (contains? (:scopes principal) "messages:read"))
+            (is (contains? (:scopes principal) "messages:write"))))
+        (testing "Token client can obtain a client-credentials token"
+          (let [client (ig/init-key :d-core.core.auth/token-client
+                                    {:token-url (:token-url cfg)
+                                     :client-id (:admin-client-id cfg)
+                                     :client-secret (:admin-client-secret cfg)})
+                resp (token-client/client-credentials client {})]
+            (is (string? (:access-token resp)))
+            (is (pos? (count (:access-token resp)))))))
+      (is false "Keycloak not reachable. Start docker-compose and retry."))))
