@@ -66,3 +66,12 @@
 (defmethod ig/init-key :core-service.app.config.messaging/segment-config
   [_ opts]
   (merge default-segment-config opts))
+
+(def default-retention-config
+  {:max-age-ms 2592000000
+   :batch-size 200
+   :interval-ms 3600000})
+
+(defmethod ig/init-key :core-service.app.config.messaging/retention-config
+  [_ opts]
+  (merge default-retention-config opts))

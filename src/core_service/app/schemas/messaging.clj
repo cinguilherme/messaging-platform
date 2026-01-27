@@ -67,9 +67,9 @@
 (def PaginationTokenSchema
   [:map
    [:conversation_id :uuid]
-   [:last_seq [:int {:min 0}]]
    [:direction [:enum :backward :forward]]
-   [:source [:enum :redis :minio]]])
+   [:source [:enum :redis :minio]]
+   [:cursor [:or :string [:int {:min 0}]]]])
 
 (defn valid?
   "Schema helper for quick REPL validation."

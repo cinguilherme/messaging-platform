@@ -93,15 +93,15 @@ Token is base64url-encoded JSON:
 ```json
 {
   "conversation_id": "uuid",
-  "last_seq": 12500,
+  "cursor": "stream-id-or-seq",
   "direction": "backward|forward",
   "source": "redis|minio"
 }
 ```
 
 Semantics
-- `direction=backward` returns older messages (seq < last_seq).
-- `direction=forward` returns newer messages (seq > last_seq).
+- `direction=backward` returns older messages (seq < cursor for Minio, stream id for Redis).
+- `direction=forward` returns newer messages (seq > cursor for Minio, stream id for Redis).
 - The server returns a new token when more pages are available.
 
 ### 5) Auth Model (High Level)

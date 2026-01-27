@@ -6,20 +6,10 @@
             [next.jdbc.result-set :as rs]
             [core-service.app.config.databases]
             [core-service.app.db.migrations]
+            [core-service.integration.helpers :as helpers]
             [d-core.core.clients.postgres]
             [d-core.core.databases.postgres]
             [d-core.core.databases.sql.common]))
-
-(defn- init-db
-  []
-  (let [pg-cfg (ig/init-key :core-service.app.config.databases/postgres {})
-        client (ig/init-key :d-core.core.clients.postgres/client pg-cfg)
-        pg-db (ig/init-key :d-core.core.databases.postgres/db {:postgres-client client})
-        common (ig/init-key :d-core.core.databases.sql/common
-                            {:default-engine :postgres
-                             :engines {:postgres pg-db}})]
-    {:client client
-     :db common}))
 
 (defn- table-exists?
   [db table]
@@ -31,7 +21,7 @@
 
 (deftest migrations-create-tables
   (try
-    (let [{:keys [db client]} (init-db)]
+    (let [{:keys [db client]} (helpers/init-db)]
       (try
         (ig/init-key :core-service.app.db/migrations
                      {:db db

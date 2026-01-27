@@ -37,3 +37,27 @@
                           [conversation-id limit]])]
     (sql/execute! db (into [query] params)
                   {:builder-fn rs/as-unqualified-lower-maps})))
+
+(defn list-expired-segments
+  [db {:keys [cutoff limit]}]
+  (let [limit (long (or limit 200))
+        cutoff (or cutoff (java.time.Instant/now))
+        cutoff-ts (cond
+                    (instance? java.sql.Timestamp cutoff) cutoff
+                    (instance? java.time.Instant cutoff) (java.sql.Timestamp/from cutoff)
+                    (instance? java.util.Date cutoff) (java.sql.Timestamp. (.getTime ^java.util.Date cutoff))
+                    (number? cutoff) (java.sql.Timestamp. (long cutoff))
+                    :else (java.sql.Timestamp/from (java.time.Instant/now)))]
+    (sql/execute! db
+                  [(str "SELECT conversation_id, seq_start, object_key, created_at "
+                        "FROM segment_index "
+                        "WHERE created_at < ? "
+                        "ORDER BY created_at ASC LIMIT ?")
+                   cutoff-ts limit]
+                  {:builder-fn rs/as-unqualified-lower-maps})))
+
+(defn delete-segment!
+  [db {:keys [conversation-id seq-start]}]
+  (sql/delete! db {:table :segment_index
+                   :where {:conversation_id conversation-id
+                           :seq_start seq-start}}))

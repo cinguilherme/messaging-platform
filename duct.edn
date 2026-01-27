@@ -148,6 +148,10 @@
                                              :minio #ig/ref :core-service.app.storage.minio/client
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config}
+  :core-service.app.workers.segment-retention/system {:logger #ig/ref :duct/logger
+                                                      :db #ig/ref :d-core.core.databases.sql/common
+                                                      :minio #ig/ref :core-service.app.storage.minio/client
+                                                      :retention #ig/ref :core-service.app.config.messaging/retention-config}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)

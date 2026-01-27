@@ -2,21 +2,15 @@
   (:require [clojure.test :refer [deftest is testing]]
             [core-service.app.config.clients]
             [core-service.app.streams.redis :as streams]
+            [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
             [integrant.core :as ig]
             [taoensso.carmine :as car]))
 
-(defn- redis-up?
-  [redis-client]
-  (try
-    (let [resp (car/wcar (:conn redis-client) (car/ping))]
-      (= "PONG" resp))
-    (catch Exception _ false)))
-
 (deftest stream-append-and-read
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)]
-    (if-not (redis-up? redis-client)
+    (if-not (helpers/redis-up? redis-client)
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [stream (str "test:stream:" (java.util.UUID/randomUUID))
             payload-1 (.getBytes "one" "UTF-8")
