@@ -1,6 +1,5 @@
 (ns core-service.app.server.conversation.v1.authed
-  (:require [cheshire.core :as json]
-            [clojure.edn :as edn]
+  (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.schemas.messaging :as msg-schema]
@@ -18,11 +17,6 @@
   [redis-client key]
   (car/wcar (redis-conn redis-client)
     (car/incr key)))
-
-(defn- publish!
-  [redis-client channel payload]
-  (car/wcar (redis-conn redis-client)
-    (car/publish channel payload)))
 
 (defn- coerce-conversation-create
   [data]
@@ -49,21 +43,6 @@
   [data]
   (-> data
       (update :type (fn [v] (if (string? v) (keyword v) v)))))
-
-(defn- normalize-field-key
-  [k]
-  (cond
-    (string? k) k
-    (keyword? k) (name k)
-    (bytes? k) (String. ^bytes k "UTF-8")
-    :else (str k)))
-
-(defn- fields->map
-  [fields]
-  (let [pairs (partition 2 fields)]
-    (into {}
-          (map (fn [[k v]] [(normalize-field-key k) v]))
-          pairs)))
 
 (defn- decode-message
   [payload]
@@ -134,10 +113,8 @@
                        :client_ref (:client_ref data)
                        :meta (:meta data)}
               stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-              channel (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
               payload-bytes (.getBytes (pr-str message) "UTF-8")
               entry-id (streams/append! redis stream payload-bytes)]
-          (publish! redis channel (json/generate-string message))
           (http/format-response {:ok true
                                  :conversation_id (str conv-id)
                                  :message message

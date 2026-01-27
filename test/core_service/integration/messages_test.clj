@@ -37,7 +37,7 @@
     {:client client
      :db common}))
 
-(deftest message-create-writes-stream-and-publishes
+(deftest message-create-writes-stream
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)]
     (if-not (redis-up? redis-client)
@@ -50,15 +50,8 @@
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-            channel (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
             seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-            payload (json/generate-string {:type "text" :body {:text "hi"}})
-            pubsub-msg (promise)
-            listener (car/with-new-pubsub-listener (:conn redis-client)
-                       {channel (fn [msg]
-                                  (when (= "message" (first msg))
-                                    (deliver pubsub-msg msg)))}
-                       (car/subscribe channel))]
+            payload (json/generate-string {:type "text" :body {:text "hi"}})]
         (try
           ;; ensure membership exists for authorization
           (sql/insert! db {:id conv-id
@@ -95,16 +88,8 @@
                                    (str payload))
                     message (edn/read-string payload-text)]
                 (is (= (str conv-id) (str (:conversation_id message))))
-                (is (= "hi" (get-in message [:body :text])))))
-            (testing "pubsub receives payload"
-              (let [msg (deref pubsub-msg 1000 nil)]
-                (is msg "expected pubsub message")
-                (let [[kind ch payload] msg]
-                  (is (= "message" kind))
-                  (is (= channel ch))
-                  (is (string? payload))))))
+                (is (= "hi" (get-in message [:body :text]))))))
           (finally
-            (car/close-listener listener)
             (car/wcar (:conn redis-client)
               (car/del stream)
               (car/del seq-key))
