@@ -6,26 +6,41 @@
   [uri]
   (contains? #{"/v1/auth/register" "/v1/auth/login"} uri))
 
-(defn- conversation-path?
+(defn- conversation-root?
   [uri]
-  (str/starts-with? uri "/v1/conversations"))
+  (= "/v1/conversations" uri))
 
-(defn- scope-for-request
-  [req]
-  (let [method (:request-method req)]
-    (case method
-      :get {:scopes #{"messages:read"}}
-      :post {:scopes #{"messages:write"}}
-      :put {:scopes #{"messages:write"}}
-      :patch {:scopes #{"messages:write"}}
-      :delete {:scopes #{"messages:write"}}
-      {:scopes #{"messages:read"}})))
+(defn- conversation-id?
+  [uri]
+  (boolean (re-matches #"^/v1/conversations/[^/]+$" uri)))
+
+(defn- conversation-messages?
+  [uri]
+  (boolean (re-matches #"^/v1/conversations/[^/]+/messages$" uri)))
+
+(defn- read-scope []
+  {:scopes #{"messages:read"}})
+
+(defn- write-scope []
+  {:scopes #{"messages:write"}})
+
+(defn- scope-for-conversations
+  [method uri]
+  (cond
+    (and (conversation-root? uri) (= method :post)) (write-scope)
+    (conversation-root? uri) (read-scope)
+    (and (conversation-id? uri) (= method :get)) (read-scope)
+    (conversation-id? uri) (write-scope)
+    (and (conversation-messages? uri) (= method :get)) (read-scope)
+    (and (conversation-messages? uri) (= method :post)) (write-scope)
+    :else nil))
 
 (defmethod ig/init-key :core-service.app.server.auth/require-fn
   [_ _]
   (fn [req]
-    (let [uri (:uri req)]
+    (let [uri (:uri req)
+          method (:request-method req)]
       (cond
         (public-path? uri) nil
-        (conversation-path? uri) (scope-for-request req)
+        (str/starts-with? uri "/v1/conversations") (scope-for-conversations method uri)
         :else nil))))
