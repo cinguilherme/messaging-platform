@@ -92,6 +92,31 @@
         ext (if (= compression :gzip) ".seg.gz" ".seg")]
     (str prefix conversation-id "/" seq-start "-" seq-end "-" created-at ext)))
 
+(defn- parse-stream-id
+  [id]
+  (when (and id (string? id) (str/includes? id "-"))
+    (let [[ms seq] (str/split id #"-" 2)]
+      [(Long/parseLong ms) (Long/parseLong (or seq "0"))])))
+
+(defn- stream-id<=?
+  [a b]
+  (let [[ams aseq] (parse-stream-id a)
+        [bms bseq] (parse-stream-id b)]
+    (or (< ams bms)
+        (and (= ams bms) (<= aseq bseq)))))
+
+(defn- retention-trim-id
+  [redis stream last-id trim-min-entries]
+  (let [trim-min-entries (long (or trim-min-entries 0))]
+    (if (<= trim-min-entries 0)
+      last-id
+      (let [entries (car/wcar (redis-conn redis)
+                      (car/xrevrange stream "+" "-" "COUNT" trim-min-entries))
+            retain-id (some-> entries last first)]
+        (if (and retain-id (stream-id<=? retain-id last-id))
+          retain-id
+          last-id)))))
+
 (defn flush-conversation!
   [{:keys [db redis minio naming segments logger]} conversation-id]
   (let [stream-prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
@@ -100,7 +125,7 @@
         last-cursor (get-cursor redis cursor-k)
         last-seq (segments-db/last-seq-end db conversation-id)
         last-seq (long (or last-seq -1))
-        {:keys [max-bytes batch-size compression codec trim-stream?]} segments
+        {:keys [max-bytes batch-size compression codec trim-stream? trim-min-entries]} segments
         batch-size (long (or batch-size 200))
         max-bytes (long (or max-bytes 262144))
         compression (or compression :gzip)
@@ -193,8 +218,11 @@
                 (when-let [last-id (:id (last selected))]
                   (set-cursor! redis cursor-k last-id))
                 (when trim-stream?
-                  (car/wcar (redis-conn redis)
-                    (car/xtrim stream "MINID" (str (:id (last selected))))))
+                  (when-let [last-id (:id (last selected))]
+                    (let [trim-id (retention-trim-id redis stream last-id trim-min-entries)]
+                      (when (and trim-id (not (str/blank? trim-id)))
+                        (car/wcar (redis-conn redis)
+                          (car/xtrim stream "MINID" trim-id))))))
                 {:status :ok
                  :conversation-id conversation-id
                  :seq-start seq-start'

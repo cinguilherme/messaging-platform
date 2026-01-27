@@ -18,6 +18,12 @@
    [:user_id :uuid]
    [:at [:int {:min 0}]]])
 
+(def ReceiptCreateSchema
+  [:map
+   [:receipt_type [:enum :delivered :read]]
+   [:message_id :uuid]
+   [:at {:optional true} [:int {:min 0}]]])
+
 (def MessageEnvelopeSchema
   [:map
    [:message_id :uuid]

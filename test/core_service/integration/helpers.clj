@@ -47,6 +47,11 @@
       (car/del seq-key)
       (car/del flush-key))))
 
+(defn stream-len
+  [redis-client stream]
+  (car/wcar (:conn redis-client)
+    (car/xlen stream)))
+
 (defn ensure-conversation!
   [db {:keys [conversation-id tenant-id type title]}]
   (sql/insert! db {:id conversation-id

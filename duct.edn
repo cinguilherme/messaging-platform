@@ -82,6 +82,7 @@
             ["/v1/conversations/:id" {:get :core-service.app.server.conversation.v1.authed/conversations-get}]
             ["/v1/conversations/:id/messages" {:post :core-service.app.server.conversation.v1.authed/messages-create
                                                :get :core-service.app.server.conversation.v1.authed/messages-list}]
+            ["/v1/conversations/:id/receipts" {:post :core-service.app.server.conversation.v1.authed/receipts-create}]
             ["/v1/auth/register" {:post :core-service.app.server.conversation.v1.public/auth-register}]
             ["/v1/auth/login" {:post :core-service.app.server.conversation.v1.public/auth-login}]
 
@@ -110,6 +111,10 @@
                                                                  :minio #ig/ref :core-service.app.storage.minio/client
                                                                  :naming #ig/ref :core-service.app.config.messaging/storage-names
                                                                  :segments #ig/ref :core-service.app.config.messaging/segment-config}
+  :core-service.app.server.conversation.v1.authed/receipts-create {:db #ig/ref :d-core.core.databases.sql/common
+                                                                   :redis #ig/ref :d-core.core.clients.redis/client
+                                                                   :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                   :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
   :core-service.app.server.conversation.v1.public/auth-register {:token-client #ig/ref :d-core.core.auth/token-client
                                                                  :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.conversation.v1.public/auth-login {:keycloak #ig/ref :core-service.app.config.auth/keycloak}

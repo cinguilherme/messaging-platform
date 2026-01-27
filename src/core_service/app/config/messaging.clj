@@ -61,7 +61,8 @@
    :compression :gzip
    :codec :edn
    :batch-size 200
-   :trim-stream? false})
+   :trim-stream? true
+   :trim-min-entries 100})
 
 (defmethod ig/init-key :core-service.app.config.messaging/segment-config
   [_ opts]
@@ -75,3 +76,10 @@
 (defmethod ig/init-key :core-service.app.config.messaging/retention-config
   [_ opts]
   (merge default-retention-config opts))
+
+(def default-receipt-config
+  {:ttl-ms 3600000})
+
+(defmethod ig/init-key :core-service.app.config.messaging/receipt-config
+  [_ opts]
+  (merge default-receipt-config opts))

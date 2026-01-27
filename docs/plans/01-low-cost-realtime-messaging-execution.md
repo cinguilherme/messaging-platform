@@ -81,17 +81,13 @@ Status: In Progress (retention worker + tests done; trimming/backups pending)
 Remaining Work (Phase 4)
 - Enable stream trimming after successful flush and validate safety guardrails.
 - Implement receipt expiry aligned to Redis retention policy.
-- Add daily backup jobs for Minio and Postgres to Cloudflare R2.
-- Document backup/restore procedure and validate with a dry run.
 Deliverables
 - Retention worker deletes segment objects and index rows older than 30 days.
 - Stream trimming aligned to retention policy.
 - Receipt expiry aligned to Redis retention.
-- Daily backup jobs for Minio and Postgres to Cloudflare R2.
 
 Definition of Done
 - Retention jobs run on schedule and reduce storage within expected bounds.
-- Restore procedure documented for Postgres and Minio backups.
 
 ## Phase 5: Observability and Ops
 Deliverables

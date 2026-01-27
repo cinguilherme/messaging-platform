@@ -138,3 +138,51 @@
             (helpers/clear-redis-conversation! redis-client naming conv-id)
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest segment-flush-trims-stream
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
+        minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+    (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
+      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            segment-config (assoc (ig/init-key :core-service.app.config.messaging/segment-config {})
+                                  :trim-stream? true
+                                  :trim-min-entries 2)
+            handler (authed/messages-create {:db db
+                                             :redis redis-client
+                                             :naming naming})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            {:keys [stream]} (helpers/redis-keys naming conv-id)
+            payloads [(json/generate-string {:type "text" :body {:text "one"}})
+                      (json/generate-string {:type "text" :body {:text "two"}})
+                      (json/generate-string {:type "text" :body {:text "three"}})
+                      (json/generate-string {:type "text" :body {:text "four"}})]]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis-client naming conv-id)
+          (doseq [payload payloads]
+            (handler {:request-method :post
+                      :headers {"accept" "application/json"}
+                      :params {:id (str conv-id)}
+                      :body payload
+                      :auth/principal {:subject (str sender-id)
+                                       :tenant-id "tenant-1"}}))
+          (segments/flush-conversation! {:db db
+                                         :redis redis-client
+                                         :minio minio-client
+                                         :naming naming
+                                         :segments segment-config
+                                         :logger nil}
+                                        conv-id)
+          (testing "stream trimmed to min entries"
+            (is (= 2 (helpers/stream-len redis-client stream))))
+          (finally
+            (helpers/cleanup-segment-object-and-index! db minio-client conv-id)
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
