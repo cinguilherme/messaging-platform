@@ -76,11 +76,10 @@ Definition of Done
 - Ordering is consistent by sequence number.
 
 ## Phase 4: Retention and Cleanup
-Status: In Progress (retention worker + tests done; trimming/backups pending)
+Status: Complete
 
 Remaining Work (Phase 4)
-- Enable stream trimming after successful flush and validate safety guardrails.
-- Implement receipt expiry aligned to Redis retention policy.
+- None.
 Deliverables
 - Retention worker deletes segment objects and index rows older than 30 days.
 - Stream trimming aligned to retention policy.
