@@ -3,6 +3,7 @@
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.libs.redis :as redis-lib]
+            [core-service.app.metrics :as app-metrics]
             [core-service.app.pagination :as pagination]
             [core-service.app.redis.receipts :as receipts]
             [core-service.app.schemas.messaging :as msg-schema]
@@ -14,9 +15,10 @@
             [taoensso.carmine :as car]))
 
 (defn- next-seq!
-  [redis-client key]
-  (car/wcar (redis-lib/conn redis-client)
-    (car/incr key)))
+  [redis-client metrics key]
+  (app-metrics/with-redis metrics :incr
+    #(car/wcar (redis-lib/conn redis-client)
+       (car/incr key))))
 
 (defn- coerce-conversation-create
   [data]
@@ -114,8 +116,8 @@
      :next-cursor next-cursor}))
 
 (defn- fetch-redis-page
-  [redis stream query]
-  (let [{:keys [entries next-cursor]} (streams/read! redis stream query)
+  [redis metrics stream query]
+  (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream query)
         messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
     {:messages messages
      :next-cursor next-cursor}))
@@ -125,11 +127,11 @@
   (fetch-minio-page ctx conversation-id cursor limit direction))
 
 (defn- read-redis-minio-history
-  [{:keys [db minio segments]} conversation-id redis stream query token-source token-cursor limit direction]
+  [{:keys [db minio segments metrics]} conversation-id redis stream query token-source token-cursor limit direction]
   (let [redis-cursor (when (= token-source :redis) token-cursor)
         query (cond-> query
                 redis-cursor (assoc :cursor redis-cursor))
-        {:keys [messages next-cursor]} (fetch-redis-page redis stream query)
+        {:keys [messages next-cursor]} (fetch-redis-page redis metrics stream query)
         remaining (- limit (count messages))
         before-seq (min-seq messages)
         minio-result (when (and (pos? remaining)
@@ -200,7 +202,7 @@
         (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
 
 (defn messages-create
-  [{:keys [db redis naming]}]
+  [{:keys [db redis naming metrics]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -217,7 +219,7 @@
         (http/invalid-response format msg-schema/MessageCreateSchema data)
         :else
         (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-              seq (next-seq! redis seq-key)
+              seq (next-seq! redis metrics seq-key)
               message {:message_id (java.util.UUID/randomUUID)
                        :conversation_id conv-id
                        :seq seq
@@ -230,7 +232,7 @@
                        :meta (:meta data)}
               stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               payload-bytes (.getBytes (pr-str message) "UTF-8")
-              entry-id (streams/append! redis stream payload-bytes)]
+              entry-id (streams/append! redis metrics stream payload-bytes)]
           (http/format-response {:ok true
                                  :conversation_id (str conv-id)
                                  :message message
@@ -239,7 +241,7 @@
                                 format))))))
 
 (defn messages-list
-  [{:keys [db redis minio naming segments]}]
+  [{:keys [db redis minio naming segments metrics]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -274,7 +276,7 @@
         :else
         (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               segments (or segments {})
-              ctx {:db db :minio minio :segments segments}
+              ctx {:db db :minio minio :segments segments :metrics metrics}
               {:keys [messages next-cursor]}
               (messages-page ctx {:conversation-id conv-id
                                   :redis redis
@@ -288,7 +290,7 @@
           (format-messages-response format conv-id messages next-cursor))))))
 
 (defn receipts-create
-  [{:keys [db redis naming receipt]}]
+  [{:keys [db redis naming receipt metrics]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -307,7 +309,8 @@
         (do
           (receipts/record! {:redis redis
                              :naming naming
-                             :receipt receipt}
+                             :receipt receipt
+                             :metrics metrics}
                             {:conversation-id conv-id
                              :message-id (:message_id data)
                              :user-id sender-id

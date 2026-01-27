@@ -15,11 +15,12 @@
             [taoensso.carmine :as car]))
 
 (defn- scan-keys
-  [redis-client pattern]
+  [redis-client metrics pattern]
   (loop [cursor "0"
          acc []]
-    (let [[next-cursor keys] (car/wcar (redis-lib/conn redis-client)
-                                       (car/scan cursor "MATCH" pattern "COUNT" 200))
+    (let [[next-cursor keys] (app-metrics/with-redis metrics :scan
+                              #(car/wcar (redis-lib/conn redis-client)
+                                 (car/scan cursor "MATCH" pattern "COUNT" 200)))
           keys (mapv redis-lib/normalize-key keys)
           acc (into acc keys)]
       (if (= "0" next-cursor)
@@ -39,14 +40,16 @@
   (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id))
 
 (defn- get-cursor
-  [redis-client key]
-  (car/wcar (redis-lib/conn redis-client)
-            (car/get key)))
+  [redis-client metrics key]
+  (app-metrics/with-redis metrics :get
+    #(car/wcar (redis-lib/conn redis-client)
+       (car/get key))))
 
 (defn- set-cursor!
-  [redis-client key cursor]
-  (car/wcar (redis-lib/conn redis-client)
-            (car/set key cursor)))
+  [redis-client metrics key cursor]
+  (app-metrics/with-redis metrics :set
+    #(car/wcar (redis-lib/conn redis-client)
+       (car/set key cursor))))
 
 (defn- decode-message
   [payload]
@@ -97,12 +100,13 @@
         (and (= ams bms) (<= aseq bseq)))))
 
 (defn- retention-trim-id
-  [redis stream last-id trim-min-entries]
+  [redis metrics stream last-id trim-min-entries]
   (let [trim-min-entries (long (or trim-min-entries 0))]
     (if (<= trim-min-entries 0)
       last-id
-      (let [entries (car/wcar (redis-lib/conn redis)
-                              (car/xrevrange stream "+" "-" "COUNT" trim-min-entries))
+      (let [entries (app-metrics/with-redis metrics :xrevrange
+                       #(car/wcar (redis-lib/conn redis)
+                          (car/xrevrange stream "+" "-" "COUNT" trim-min-entries)))
             retain-id (some-> entries last first)]
         (if (and retain-id (stream-id<=? retain-id last-id))
           retain-id
@@ -137,10 +141,10 @@
        vec))
 
 (defn- read-prepared
-  [redis stream batch-size cursor codec last-seq]
-  (let [{:keys [entries]} (streams/read! redis stream {:direction :forward
-                                                       :limit batch-size
-                                                       :cursor cursor})
+  [redis metrics stream batch-size cursor codec last-seq]
+  (let [{:keys [entries]} (streams/read! redis metrics stream {:direction :forward
+                                                               :limit batch-size
+                                                               :cursor cursor})
         prepared (entry->prepared entries codec last-seq)]
     {:entries entries
      :prepared prepared}))
@@ -190,14 +194,15 @@
          :byte_size byte-size}))))
 
 (defn- trim-stream!
-  [redis stream last-id trim-min-entries]
-  (when-let [trim-id (retention-trim-id redis stream last-id trim-min-entries)]
+  [redis metrics stream last-id trim-min-entries]
+  (when-let [trim-id (retention-trim-id redis metrics stream last-id trim-min-entries)]
     (when (and trim-id (not (str/blank? trim-id)))
-      (car/wcar (redis-lib/conn redis)
-                (car/xtrim stream "MINID" trim-id)))))
+      (app-metrics/with-redis metrics :xtrim
+        #(car/wcar (redis-lib/conn redis)
+           (car/xtrim stream "MINID" trim-id))))))
 
 (defn- commit-flush-conversation!
-  [{:keys [db redis minio naming logger]}
+  [{:keys [db redis minio naming logger metrics]}
    {:keys [conversation-id prepared created-at
            codec compression max-bytes
            cursor-k stream trim-stream?
@@ -224,10 +229,10 @@
           result
           (do
             (when-let [last-id (:id (last selected))]
-              (set-cursor! redis cursor-k last-id))
+              (set-cursor! redis metrics cursor-k last-id))
             (when trim-stream?
               (when-let [last-id (:id (last selected))]
-                (trim-stream! redis stream last-id trim-min-entries)))
+                (trim-stream! redis metrics stream last-id trim-min-entries)))
             (assoc result :message-count (:message_count header'))))))))
 
 (defn- record-flush-metrics!
@@ -255,7 +260,7 @@
   (let [stream-prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
         stream (str stream-prefix conversation-id)
         cursor-k (cursor-key naming conversation-id)
-        last-cursor (get-cursor redis cursor-k)
+        last-cursor (get-cursor redis metrics cursor-k)
         last-seq (segments-db/last-seq-end db conversation-id)
         last-seq (long (or last-seq -1))
         {:keys [max-bytes batch-size compression codec trim-stream? trim-min-entries]} segments
@@ -264,7 +269,7 @@
         compression (or compression :gzip)
         codec (or codec :edn)
         start (System/nanoTime)
-        {:keys [entries prepared]} (read-prepared redis stream batch-size last-cursor codec last-seq)
+        {:keys [entries prepared]} (read-prepared redis metrics stream batch-size last-cursor codec last-seq)
         result (cond
                  (empty? entries)
                  {:status :empty :conversation-id conversation-id}
@@ -272,7 +277,7 @@
                  (empty? prepared)
                  (do
                    (when-let [last-id (:id (last entries))]
-                     (set-cursor! redis cursor-k last-id))
+                     (set-cursor! redis metrics cursor-k last-id))
                    {:status :skipped :reason :no-new-seq :conversation-id conversation-id})
 
                  :else
@@ -293,9 +298,9 @@
     result))
 
 (defn flush-all!
-  [{:keys [redis naming] :as components}]
+  [{:keys [redis naming metrics] :as components}]
   (let [prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
-        keys (scan-keys redis (str prefix "*"))]
+        keys (scan-keys redis metrics (str prefix "*"))]
     (mapv (fn [stream-key]
             (if-let [conv-id (parse-conversation-id stream-key prefix)]
               (flush-conversation! components conv-id)

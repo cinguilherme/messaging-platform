@@ -69,8 +69,10 @@
 
 
   ;; App handlers
-  :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger}
-  :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger}
+  :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger
+                                                    :metrics #ig/ref :core-service.app.metrics/component}
+  :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger
+                                                 :metrics #ig/ref :core-service.app.metrics/component}
 
   ;; Web (Duct)
   :duct.module/web
@@ -117,15 +119,18 @@
   :core-service.app.server.conversation.v1.authed/conversations-get {}
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client
-                                                                   :naming #ig/ref :core-service.app.config.messaging/storage-names}
+                                                                   :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                   :metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
                                                                  :redis #ig/ref :d-core.core.clients.redis/client
                                                                  :minio #ig/ref :core-service.app.storage.minio/client
                                                                  :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                 :metrics #ig/ref :core-service.app.metrics/component
                                                                  :segments #ig/ref :core-service.app.config.messaging/segment-config}
   :core-service.app.server.conversation.v1.authed/receipts-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client
                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                   :metrics #ig/ref :core-service.app.metrics/component
                                                                    :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
   :core-service.app.server.conversation.v1.public/auth-register {:token-client #ig/ref :d-core.core.auth/token-client
                                                                  :keycloak #ig/ref :core-service.app.config.auth/keycloak}
@@ -152,7 +157,8 @@
 
   ;; Image processing workers (resize + store)
   :core-service.app.storage.minio/client
-  #ig/ref :core-service.app.config.storage/minio
+  {:config #ig/ref :core-service.app.config.storage/minio
+   :metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.workers.images/system {:logger #ig/ref :duct/logger
                                            :minio #ig/ref :core-service.app.storage.minio/client
                                            :metrics #ig/ref :core-service.app.metrics/component

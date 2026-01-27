@@ -102,8 +102,9 @@ Deliverables
 
 Notes / Gaps
 - Prometheus registry + `/metrics` endpoint are now wired via D-Core metrics.
-- HTTP request metrics and worker drop/error counters are instrumented.
-- Remaining: Redis/Minio metrics, async consumer metrics, alerts, dashboards.
+- HTTP request metrics, worker drop/error counters, consumer handler metrics,
+  and Redis/Minio operation metrics are instrumented.
+- Remaining: async consumer queue/lag metrics, alerts, dashboards.
 
 Definition of Done
 - Dashboards and alert rules exist with sample thresholds.
