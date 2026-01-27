@@ -51,5 +51,12 @@ services:
       - ./docker/keycloak/realm-d-core.json:/opt/keycloak/data/import/realm-d-core.json
 
 networks:
-  d-core_default:
+  core_service_default:
     external: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  keycloak_data:

@@ -42,6 +42,7 @@
 (defmethod ig/init-key :core-service.app.config.auth/keycloak
   [_ {:keys [base-url realm issuer aud jwks-uri token-url admin-url
              client-id client-secret admin-client-id admin-client-secret
+             tenant-claim scope-claim
              http-opts]}]
   (let [base-url (or base-url (getenv "KEYCLOAK_BASE_URL") "http://localhost:8080")
         realm (or realm (getenv "KEYCLOAK_REALM") "core-service")
@@ -56,7 +57,9 @@
         client-id (or client-id (getenv "KEYCLOAK_CLIENT_ID"))
         client-secret (or client-secret (getenv "KEYCLOAK_CLIENT_SECRET"))
         admin-client-id (or admin-client-id (getenv "KEYCLOAK_ADMIN_CLIENT_ID"))
-        admin-client-secret (or admin-client-secret (getenv "KEYCLOAK_ADMIN_CLIENT_SECRET"))]
+        admin-client-secret (or admin-client-secret (getenv "KEYCLOAK_ADMIN_CLIENT_SECRET"))
+        tenant-claim (or tenant-claim (getenv "KEYCLOAK_TENANT_CLAIM") "tenant_id")
+        scope-claim (or scope-claim (getenv "KEYCLOAK_SCOPE_CLAIM") "dcore_scope")]
     {:base-url base-url
      :realm realm
      :issuer issuer
@@ -68,6 +71,8 @@
      :client-secret client-secret
      :admin-client-id admin-client-id
      :admin-client-secret admin-client-secret
+     :tenant-claim tenant-claim
+     :scope-claim scope-claim
      :http-opts http-opts}))
 
 (defmethod ig/init-key :core-service.app.config.auth/keycloak-admin

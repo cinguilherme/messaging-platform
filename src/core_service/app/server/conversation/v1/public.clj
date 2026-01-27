@@ -30,7 +30,7 @@
     last_name (assoc :lastName last_name)
     password (assoc :credentials [{:type "password"
                                    :value password
-                                   :temporary false}]))))
+                                   :temporary false}])))
 
 (defn auth-register
   "Proxy endpoint for user registration (backed by Keycloak)."

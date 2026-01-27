@@ -8,10 +8,13 @@ dev:
 	duct --main
 
 lint:
-	clj-kondo --lint src
+	clojure -M:lint --lint src
 
-test:
+tests:
 	clojure -M:test
+
+integration-tests:
+	INTEGRATION=1 clojure -M:test
 
 format:
 	cljfmt check
