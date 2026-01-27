@@ -92,8 +92,19 @@ Definition of Done
 Deliverables
 - Metrics: flush latency, stream depth, segment sizes, Redis memory, Minio
   error rates, delivery latency.
+- HTTP request metrics (latency, status counts, error rate) and auth failures.
+- Async messaging/worker metrics (queue depth, handler latency, error counts).
+- Expose Prometheus-compatible `/metrics` endpoint for scraping; Grafana
+  dashboards for core KPIs.
 - Alerts: flush backlog, Redis memory pressure, Minio error spikes.
 - Operational runbook (how to recover, how to tune thresholds).
+
+Notes / Gaps
+- D-Core workers emit observability events when an `:observability` / `:obs`
+  component is provided; we can map these to Prometheus counters/histograms.
+- No built-in Prometheus/Grafana integration is currently present in this
+  codebase; we will need to add a metrics component + HTTP middleware and wire
+  `/metrics` into the server routes.
 
 Definition of Done
 - Dashboards and alert rules exist with sample thresholds.
