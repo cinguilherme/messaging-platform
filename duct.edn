@@ -26,6 +26,9 @@
   :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
   :core-service.app.config.messaging/default-routing {}
   :core-service.app.config.messaging/storage-names {}
+  :core-service.app.config.messaging/segment-config {}
+  :core-service.app.config.messaging/retention-config {}
+  :core-service.app.config.messaging/receipt-config {}
   :core-service.app.config.auth/keycloak {}
   :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.config.auth/api-keys {}
