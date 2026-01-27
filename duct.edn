@@ -34,6 +34,11 @@
   :core-service.app.config.auth/api-keys {}
   :core-service.app.config.databases/run-migrations {}
 
+  ;; Metrics (Prometheus)
+  :d-core.core.metrics.prometheus/registry {}
+  :d-core.core.metrics.prometheus/metrics {:registry #ig/ref :d-core.core.metrics.prometheus/registry}
+  :core-service.app.metrics/component {:metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
+
   ;; Auth components (Keycloak + scope authz + API keys)
   :d-core.core.authn.jwt/authenticator #ig/ref :core-service.app.config.auth/keycloak
   :d-core.core.authz.scope/authorizer {}
@@ -45,7 +50,7 @@
                                                    :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
                                                    :logger #ig/ref :duct/logger}
   :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login"]}
+                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/metrics"]}
   :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
 
   ;; Database components (Postgres + SQL protocol)
@@ -71,6 +76,7 @@
   :duct.module/web
   {:port 3000
    :middleware [:d-core.core.tracing.http/middleware
+                :core-service.app.server.middleware/metrics
                 :core-service.app.server.middleware/api-key
                 :d-core.core.auth.http/authentication-middleware
                 :d-core.core.auth.http/authorization-middleware
@@ -79,6 +85,7 @@
             ["/test" {:get :core-service.app.server.routes/test}]
             ["/test/image-upload" {:post :core-service.app.server.routes/image-upload}]
             ["/test/image-upload/list" {:get :core-service.app.server.routes/image-list}]
+            ["/metrics" {:get :core-service.app.server.metrics/handler}]
 
             ;; v1 conversation routes
             ["/v1/conversations" {:post :core-service.app.server.conversation.v1.authed/conversations-create}]
@@ -104,6 +111,8 @@
                                                 :max-dim 1024}
   :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
                                               :logger #ig/ref :duct/logger}
+  :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
+  :core-service.app.server.middleware/metrics {:metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.server.conversation.v1.authed/conversations-create {:db #ig/ref :d-core.core.databases.sql/common}
   :core-service.app.server.conversation.v1.authed/conversations-get {}
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
@@ -146,6 +155,7 @@
   #ig/ref :core-service.app.config.storage/minio
   :core-service.app.workers.images/system {:logger #ig/ref :duct/logger
                                            :minio #ig/ref :core-service.app.storage.minio/client
+                                           :metrics #ig/ref :core-service.app.metrics/component
                                            :cleanup {:interval-ms 60000
                                                      :max-age-ms 600000
                                                      :prefix "images/resized/"
@@ -155,10 +165,12 @@
                                              :redis #ig/ref :d-core.core.clients.redis/client
                                              :minio #ig/ref :core-service.app.storage.minio/client
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                             :metrics #ig/ref :core-service.app.metrics/component
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config}
   :core-service.app.workers.segment-retention/system {:logger #ig/ref :duct/logger
                                                       :db #ig/ref :d-core.core.databases.sql/common
                                                       :minio #ig/ref :core-service.app.storage.minio/client
+                                                      :metrics #ig/ref :core-service.app.metrics/component
                                                       :retention #ig/ref :core-service.app.config.messaging/retention-config}
 
   ;; =============================================================================

@@ -1,6 +1,6 @@
 # Execution Plan: Low-Cost Real-Time Messaging PaaS
 
-Status: In Progress (Phases 0-3 complete; Phase 4 in progress)
+Status: In Progress (Phases 0-4 complete; Phase 5 in progress)
 Source ADR: docs/adr/01-low-cost-realtime-messaging-paas.md
 
 ## Goals
@@ -89,6 +89,7 @@ Definition of Done
 - Retention jobs run on schedule and reduce storage within expected bounds.
 
 ## Phase 5: Observability and Ops
+Status: In Progress
 Deliverables
 - Metrics: flush latency, stream depth, segment sizes, Redis memory, Minio
   error rates, delivery latency.
@@ -100,11 +101,9 @@ Deliverables
 - Operational runbook (how to recover, how to tune thresholds).
 
 Notes / Gaps
-- D-Core workers emit observability events when an `:observability` / `:obs`
-  component is provided; we can map these to Prometheus counters/histograms.
-- No built-in Prometheus/Grafana integration is currently present in this
-  codebase; we will need to add a metrics component + HTTP middleware and wire
-  `/metrics` into the server routes.
+- Prometheus registry + `/metrics` endpoint are now wired via D-Core metrics.
+- HTTP request metrics and worker drop/error counters are instrumented.
+- Remaining: Redis/Minio metrics, async consumer metrics, alerts, dashboards.
 
 Definition of Done
 - Dashboards and alert rules exist with sample thresholds.

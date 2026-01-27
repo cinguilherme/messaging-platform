@@ -39,7 +39,13 @@
         io.nats/jnats {:mvn/version "2.20.5"}
 
         ;; Kafka dependencies
-        org.apache.kafka/kafka-clients {:mvn/version "3.6.1"}}
+        org.apache.kafka/kafka-clients {:mvn/version "3.6.1"}
+
+        ;; Metrics (Prometheus)
+        io.prometheus/simpleclient {:mvn/version "0.16.0"}
+        io.prometheus/simpleclient_common {:mvn/version "0.16.0"}
+        io.prometheus/simpleclient_httpserver {:mvn/version "0.16.0"}
+        io.prometheus/simpleclient_hotspot {:mvn/version "0.16.0"}}
  :aliases {:duct {:main-opts ["-m" "duct.main"]}
            :lint
            {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2024.03.13"}}

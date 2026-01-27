@@ -58,7 +58,7 @@
     definition))
 
 (defmethod ig/init-key :core-service.app.workers.segment-retention/system
-  [_ {:keys [logger db minio retention definition]}]
+  [_ {:keys [logger db minio retention definition metrics]}]
   (let [retention (merge {:max-age-ms 2592000000
                           :batch-size 200
                           :interval-ms 3600000}
@@ -69,6 +69,8 @@
                 {:channels (keys (:channels definition))
                  :workers (keys (:workers definition))})
     (workers/start-workers definition {:logger logger
+                                       :metrics metrics
+                                       :observability metrics
                                        :db db
                                        :minio minio
                                        :retention retention})))

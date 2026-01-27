@@ -204,7 +204,7 @@
     definition))
 
 (defmethod ig/init-key :core-service.app.workers.images/system
-  [_ {:keys [logger minio definition cleanup]}]
+  [_ {:keys [logger minio definition cleanup metrics]}]
   (let [cleanup (merge {:prefix "images/resized/"
                         :max-age-ms 600000
                         :batch-size 200}
@@ -214,7 +214,11 @@
     (logger/log logger :info ::initializing-image-workers
                 {:channels (keys (:channels definition))
                  :workers (keys (:workers definition))})
-    (workers/start-workers definition {:logger logger :minio minio :cleanup cleanup})))
+    (workers/start-workers definition {:logger logger
+                                       :metrics metrics
+                                       :observability metrics
+                                       :minio minio
+                                       :cleanup cleanup})))
 
 (defmethod ig/halt-key! :core-service.app.workers.images/system
   [_ system]

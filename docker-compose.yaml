@@ -50,6 +50,28 @@ services:
       - keycloak_data:/opt/keycloak/data
       - ./docker/keycloak/realm-d-core.json:/opt/keycloak/data/import/realm-d-core.json
 
+  metrics:
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    volumes:
+      - metrics_data:/prometheus
+    command: ["--config.file=/prometheus/prometheus.yml"]
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+    command: ["--config=/etc/grafana/grafana.ini"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - metrics
+
 networks:
   core_service_default:
     external: true
