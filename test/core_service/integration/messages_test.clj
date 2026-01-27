@@ -5,7 +5,10 @@
             [core-service.app.config.clients]
             [core-service.app.config.databases]
             [core-service.app.config.messaging]
+            [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.storage.minio :as minio]
+            [core-service.app.workers.segments :as segments]
             [d-core.core.clients.redis]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [d-core.core.clients.postgres]
@@ -19,6 +22,12 @@
   (try
     (let [resp (car/wcar (:conn redis-client) (car/ping))]
       (= "PONG" resp))
+    (catch Exception _ false)))
+
+(defn- minio-up?
+  [minio-client]
+  (try
+    (:ok (minio/list-objects minio-client {:prefix "" :limit 1}))
     (catch Exception _ false)))
 
 (defn- latest-stream-entry
@@ -118,7 +127,7 @@
             stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
             seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
             payload-one (json/generate-string {:type "text" :body {:text "one"}})
-            payload-two (json/generate-string {:type "text" :body {:text "two"}})]
+            payload-two (json/generate-string {:type "text" :body {:text "two 😀"}})]
         (try
           (sql/insert! db {:id conv-id
                            :tenant_id "tenant-1"
@@ -155,7 +164,7 @@
                 cursor (:next_cursor body)]
             (testing "first page returns latest"
               (is (= 200 (:status resp)))
-              (is (= "two" (get-in msg [:body :text])))
+              (is (= "two 😀" (get-in msg [:body :text])))
               (is (string? cursor)))
             (let [resp2 (list-handler {:request-method :get
                                        :headers {"accept" "application/json"}
@@ -172,6 +181,98 @@
             (car/wcar (:conn redis-client)
               (car/del stream)
               (car/del seq-key))
+            (sql/delete! db {:table :memberships
+                             :where {:conversation_id conv-id
+                                     :user_id sender-id}})
+            (sql/delete! db {:table :conversations
+                             :where {:id conv-id}})
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest message-read-from-minio
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
+        minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+    (if-not (and (redis-up? redis-client) (minio-up? minio-client))
+      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
+            create-handler (authed/messages-create {:db db
+                                                    :redis redis-client
+                                                    :naming naming})
+            list-handler (authed/messages-list {:db db
+                                                :redis redis-client
+                                                :minio minio-client
+                                                :naming naming
+                                                :segments segment-config})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
+            seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
+            flush-key (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id)
+            payload-one (json/generate-string {:type "text" :body {:text "one 🧩"}})
+            payload-two (json/generate-string {:type "text" :body {:text "two 🚀"}})]
+        (try
+          (sql/insert! db {:id conv-id
+                           :tenant_id "tenant-1"
+                           :type "direct"
+                           :title "Test"}
+                       {:table :conversations})
+          (sql/insert! db {:conversation_id conv-id
+                           :user_id sender-id
+                           :role "member"}
+                       {:table :memberships})
+          (car/wcar (:conn redis-client)
+            (car/del stream)
+            (car/del seq-key)
+            (car/del flush-key))
+          (create-handler {:request-method :post
+                           :headers {"accept" "application/json"}
+                           :params {:id (str conv-id)}
+                           :body payload-one
+                           :auth/principal {:subject (str sender-id)
+                                            :tenant-id "tenant-1"}})
+          (create-handler {:request-method :post
+                           :headers {"accept" "application/json"}
+                           :params {:id (str conv-id)}
+                           :body payload-two
+                           :auth/principal {:subject (str sender-id)
+                                            :tenant-id "tenant-1"}})
+          (segments/flush-conversation! {:db db
+                                         :redis redis-client
+                                         :minio minio-client
+                                         :naming naming
+                                         :segments segment-config
+                                         :logger nil}
+                                        conv-id)
+          ;; simulate older history living only in Minio
+          (car/wcar (:conn redis-client)
+            (car/del stream))
+          (let [resp (list-handler {:request-method :get
+                                    :headers {"accept" "application/json"}
+                                    :params {:id (str conv-id)}
+                                    :query-params {"limit" "2"}
+                                    :auth/principal {:subject (str sender-id)
+                                                     :tenant-id "tenant-1"}})
+                body (json/parse-string (:body resp) true)
+                msgs (:messages body)]
+            (testing "minio read returns messages"
+              (is (= 200 (:status resp)))
+              (is (= 2 (count msgs)))
+              (is (= "two 🚀" (get-in (first msgs) [:body :text])))
+              (is (= "one 🧩" (get-in (second msgs) [:body :text])))))
+          (finally
+            (when-let [row (first (sql/select db {:table :segment_index
+                                                  :where {:conversation_id conv-id}}))]
+              (minio/delete-object! minio-client (:object_key row))
+              (sql/delete! db {:table :segment_index
+                               :where {:conversation_id conv-id
+                                       :seq_start (:seq_start row)}}))
+            (car/wcar (:conn redis-client)
+              (car/del stream)
+              (car/del seq-key)
+              (car/del flush-key))
             (sql/delete! db {:table :memberships
                              :where {:conversation_id conv-id
                                      :user_id sender-id}})

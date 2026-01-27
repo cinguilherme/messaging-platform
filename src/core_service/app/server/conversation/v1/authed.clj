@@ -2,7 +2,9 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
+            [core-service.app.pagination :as pagination]
             [core-service.app.schemas.messaging :as msg-schema]
+            [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
             [core-service.app.streams.redis :as streams]
             [malli.core :as m]
@@ -50,6 +52,18 @@
     (bytes? payload) (edn/read-string (String. ^bytes payload "UTF-8"))
     (string? payload) (edn/read-string payload)
     :else nil))
+
+(defn- min-seq
+  [messages]
+  (when (seq messages)
+    (reduce min (map :seq messages))))
+
+(defn- minio-token
+  [{:keys [conversation-id last-seq direction]}]
+  (pagination/encode-token {:conversation_id (str conversation-id)
+                            :last_seq last-seq
+                            :direction (name direction)
+                            :source "minio"}))
 
 (defn conversations-create
   [{:keys [db]}]
@@ -123,16 +137,21 @@
                                 format))))))
 
 (defn messages-list
-  [{:keys [db redis naming]}]
+  [{:keys [db redis minio naming segments]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
           sender-id (sender-id-from-request req)
           limit (http/parse-long (http/param req "limit") 50)
-          cursor (http/param req "cursor")
-          direction (some-> (http/param req "direction") keyword)
+          cursor-param (http/param req "cursor")
+          token (pagination/decode-token cursor-param)
+          token-source (some-> (:source token) keyword)
+          token-direction (some-> (:direction token) keyword)
+          token-last-seq (some-> (:last_seq token) long)
+          direction (or (some-> (http/param req "direction") keyword)
+                        token-direction)
           query (cond-> {:limit limit}
-                  cursor (assoc :cursor cursor)
+                  (and cursor-param (not token)) (assoc :cursor cursor-param)
                   direction (assoc :direction direction))]
       (cond
         (not conv-id) (http/format-response {:ok false :error "invalid conversation id"} format)
@@ -144,12 +163,50 @@
                                :error "invalid query"
                                :details (me/humanize (m/explain msg-schema/PaginationQuerySchema query))}
                               format)
+        (and (= token-source :minio) (not minio))
+        (http/format-response {:ok false :error "minio not configured"} format)
         :else
         (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-              {:keys [entries next-cursor]} (streams/read! redis stream query)
-              messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
-          (http/format-response {:ok true
-                                 :conversation_id (str conv-id)
-                                 :messages messages
-                                 :next_cursor next-cursor}
-                                format))))))
+              segments (or segments {})
+              read-from-minio (fn [before-seq remaining]
+                                (when (and minio (pos? remaining))
+                                  (segment-reader/fetch-messages {:db db
+                                                                  :minio minio
+                                                                  :segments segments}
+                                                                 conv-id
+                                                                 {:limit remaining
+                                                                  :before-seq before-seq})))]
+          (if (= token-source :minio)
+            (let [minio-result (when-not (= direction :forward)
+                                 (read-from-minio token-last-seq limit))
+                  minio-messages (vec (:messages minio-result))
+                  next-cursor (when (and (seq minio-messages)
+                                         (:has-more? minio-result))
+                                (minio-token {:conversation-id conv-id
+                                              :last-seq (:next-seq minio-result)
+                                              :direction (or direction :backward)}))]
+              (http/format-response {:ok true
+                                     :conversation_id (str conv-id)
+                                     :messages minio-messages
+                                     :next_cursor next-cursor}
+                                    format))
+            (let [{:keys [entries next-cursor]} (streams/read! redis stream query)
+                  redis-messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)
+                  remaining (- limit (count redis-messages))
+                  before-seq (min-seq redis-messages)
+                  minio-result (when (and (pos? remaining)
+                                          (not= direction :forward))
+                                 (read-from-minio before-seq remaining))
+                  minio-messages (vec (:messages minio-result))
+                  combined (vec (concat redis-messages minio-messages))
+                  next-minio (when (and (seq minio-messages)
+                                        (:has-more? minio-result))
+                               (minio-token {:conversation-id conv-id
+                                             :last-seq (:next-seq minio-result)
+                                             :direction (or direction :backward)}))
+                  next-cursor (or next-minio next-cursor)]
+              (http/format-response {:ok true
+                                     :conversation_id (str conv-id)
+                                     :messages combined
+                                     :next_cursor next-cursor}
+                                    format))))))))

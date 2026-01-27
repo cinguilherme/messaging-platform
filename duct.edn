@@ -107,7 +107,9 @@
                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names}
   :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
                                                                  :redis #ig/ref :d-core.core.clients.redis/client
-                                                                 :naming #ig/ref :core-service.app.config.messaging/storage-names}
+                                                                 :minio #ig/ref :core-service.app.storage.minio/client
+                                                                 :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                 :segments #ig/ref :core-service.app.config.messaging/segment-config}
   :core-service.app.server.conversation.v1.public/auth-register {:token-client #ig/ref :d-core.core.auth/token-client
                                                                  :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.conversation.v1.public/auth-login {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
@@ -140,6 +142,12 @@
                                                      :max-age-ms 600000
                                                      :prefix "images/resized/"
                                                      :batch-size 200}}
+  :core-service.app.workers.segments/system {:logger #ig/ref :duct/logger
+                                             :db #ig/ref :d-core.core.databases.sql/common
+                                             :redis #ig/ref :d-core.core.clients.redis/client
+                                             :minio #ig/ref :core-service.app.storage.minio/client
+                                             :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                             :segments #ig/ref :core-service.app.config.messaging/segment-config}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)

@@ -45,7 +45,8 @@
   {:redis {:stream-prefix "chat:conv:"
            :pubsub-prefix "chat:conv:"
            :receipts-prefix "chat:receipts:"
-           :sequence-prefix "chat:seq:"}
+           :sequence-prefix "chat:seq:"
+           :flush-prefix "chat:flush:"}
    :minio {:bucket "messages"
            :segments-prefix "segments/"
            :attachments-prefix "attachments/"}})
@@ -53,3 +54,15 @@
 (defmethod ig/init-key :core-service.app.config.messaging/storage-names
   [_ opts]
   (merge messaging-storage-names opts))
+
+(def default-segment-config
+  {:max-bytes 262144
+   :flush-interval-ms 300000
+   :compression :gzip
+   :codec :edn
+   :batch-size 200
+   :trim-stream? false})
+
+(defmethod ig/init-key :core-service.app.config.messaging/segment-config
+  [_ opts]
+  (merge default-segment-config opts))
