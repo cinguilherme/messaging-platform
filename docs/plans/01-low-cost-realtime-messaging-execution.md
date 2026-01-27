@@ -1,6 +1,6 @@
 # Execution Plan: Low-Cost Real-Time Messaging PaaS
 
-Status: Draft
+Status: In Progress (Phases 0-3 complete; Phase 4 in progress)
 Source ADR: docs/adr/01-low-cost-realtime-messaging-paas.md
 
 ## Goals
@@ -23,6 +23,7 @@ Source ADR: docs/adr/01-low-cost-realtime-messaging-paas.md
 - Minio is self-hosted; daily backups for Minio and Postgres go to Cloudflare R2.
 
 ## Phase 0: Contracts and API Surface
+Status: Complete
 Deliverables
 - Message envelope schema (ids, timestamps, seq, sender, payload, attachments,
   receipt fields).
@@ -38,6 +39,7 @@ Definition of Done
 - Keycloak realm/client requirements defined.
 
 ## Phase 1: Infrastructure Wiring
+Status: Complete
 Deliverables
 - D-Core config for Postgres, Redis, Minio, and worker system.
 - Bucket layout and naming conventions for segments and attachments.
@@ -48,6 +50,7 @@ Definition of Done
 - Health checks for all dependencies.
 
 ## Phase 2: Write Path (MVP)
+Status: Complete
 Deliverables
 - Message ingestion endpoint with auth, validation, and rate limits.
 - Sequence assignment per conversation (Redis INCR or Postgres sequence).
@@ -62,6 +65,7 @@ Definition of Done
 - Segment objects appear in Minio with index rows in Postgres.
 
 ## Phase 3: Read Path (MVP)
+Status: Complete
 Deliverables
 - History endpoint with pagination (Redis tail + Minio fallback).
 - Range queries resolve to segment indices and scan segments for results.
@@ -72,6 +76,13 @@ Definition of Done
 - Ordering is consistent by sequence number.
 
 ## Phase 4: Retention and Cleanup
+Status: In Progress (retention worker + tests done; trimming/backups pending)
+
+Remaining Work (Phase 4)
+- Enable stream trimming after successful flush and validate safety guardrails.
+- Implement receipt expiry aligned to Redis retention policy.
+- Add daily backup jobs for Minio and Postgres to Cloudflare R2.
+- Document backup/restore procedure and validate with a dry run.
 Deliverables
 - Retention worker deletes segment objects and index rows older than 30 days.
 - Stream trimming aligned to retention policy.
