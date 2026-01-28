@@ -29,6 +29,7 @@
   :core-service.app.config.messaging/segment-config {}
   :core-service.app.config.messaging/retention-config {}
   :core-service.app.config.messaging/receipt-config {}
+  :core-service.app.config.observability/logging {}
   :core-service.app.config.auth/keycloak {}
   :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.config.auth/api-keys {}
@@ -173,12 +174,14 @@
                                              :minio #ig/ref :core-service.app.storage.minio/client
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
                                              :metrics #ig/ref :core-service.app.metrics/component
-                                             :segments #ig/ref :core-service.app.config.messaging/segment-config}
+                                             :segments #ig/ref :core-service.app.config.messaging/segment-config
+                                             :logging #ig/ref :core-service.app.config.observability/logging}
   :core-service.app.workers.segment-retention/system {:logger #ig/ref :duct/logger
                                                       :db #ig/ref :d-core.core.databases.sql/common
                                                       :minio #ig/ref :core-service.app.storage.minio/client
                                                       :metrics #ig/ref :core-service.app.metrics/component
-                                                      :retention #ig/ref :core-service.app.config.messaging/retention-config}
+                                                      :retention #ig/ref :core-service.app.config.messaging/retention-config
+                                                      :logging #ig/ref :core-service.app.config.observability/logging}
 
   ;; =============================================================================
   ;; CORE BITS (src/core_service/core/*)

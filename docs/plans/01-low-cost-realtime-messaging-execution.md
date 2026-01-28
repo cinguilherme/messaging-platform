@@ -110,6 +110,70 @@ Definition of Done
 - Dashboards and alert rules exist with sample thresholds.
 - Runbook reviewed.
 
+## Phase 5b: Debug Logging and Traceability (Revision)
+Status: Planned
+Deliverables
+- Component-level debug logs for all async workers (flush, retention, fanout,
+  consumer handlers).
+- Tick logs for ticker-based workers (schedule interval, last/next tick time).
+- Structured log fields: component, worker, conversation-id, segment-id,
+  seq-range, duration-ms, error.
+- Explicit success/failure logs around segment flush stages (buffer snapshot,
+  encode, Minio put, Postgres index write).
+- Log sampling/throttling rules for high-frequency paths; defaults documented.
+
+Draft: Log Schema / Fields (structured)
+- timestamp, level, message
+- component (e.g., "segment-flush", "retention", "fanout", "consumer")
+- worker (name/id), tick-id, tick-scheduled-at, tick-started-at, tick-ended-at
+- conversation-id, segment-id, seq-start, seq-end, message-count, payload-bytes
+- stage (buffer-snapshot|encode|minio-put|index-write|publish|trim)
+- duration-ms, retry-count, attempt, success (true/false)
+- error.kind, error.message, error.stack (when error)
+- storage.bucket, storage.key (for Minio ops)
+- pg.table, pg.operation, pg.rows (for index writes)
+- redis.stream, redis.op, redis.bytes (for stream/publish ops)
+- sampled (true/false), sample-rate
+
+Draft: Config Toggles
+- :observability :logging :level (info|debug)
+- :observability :logging :components (set of component names)
+- :observability :logging :workers (set of worker ids)
+- :observability :logging :segment-flush :enabled (true/false)
+- :observability :logging :segment-flush :stage-logs (true/false)
+- :observability :logging :ticker :enabled (true/false)
+- :observability :logging :ticker :tick-log-interval-ms
+- :observability :logging :sampling :enabled (true/false)
+- :observability :logging :sampling :default-rate
+- :observability :logging :sampling :per-component (map of component->rate)
+- :observability :logging :redact-fields (set of field names)
+- :observability :logging :include-stacktraces (true/false)
+
+Sample Log Lines (segment flush)
+```
+{"ts":"2026-01-28T14:02:10.120Z","level":"debug","message":"segment flush tick start","component":"segment-flush","worker":"segment-flush-1","tick-id":"c2c8d1","tick-scheduled-at":"2026-01-28T14:02:10.000Z","tick-started-at":"2026-01-28T14:02:10.120Z","conversation-id":"3e3b0b0a-7cbb-4c6b-9b1c-64f5413c75b2","message-count":42}
+{"ts":"2026-01-28T14:02:10.134Z","level":"debug","message":"segment flush stage ok","component":"segment-flush","worker":"segment-flush-1","tick-id":"c2c8d1","stage":"encode","duration-ms":9,"seq-start":901,"seq-end":942,"payload-bytes":18432}
+{"ts":"2026-01-28T14:02:10.162Z","level":"info","message":"segment flush stage ok","component":"segment-flush","worker":"segment-flush-1","tick-id":"c2c8d1","stage":"minio-put","duration-ms":18,"storage.bucket":"segments","storage.key":"conv/3e3b0b0a/seg/901-942.msgpack","payload-bytes":18432}
+{"ts":"2026-01-28T14:02:10.190Z","level":"info","message":"segment flush stage ok","component":"segment-flush","worker":"segment-flush-1","tick-id":"c2c8d1","stage":"index-write","duration-ms":21,"pg.table":"segments","pg.operation":"insert","pg.rows":1}
+{"ts":"2026-01-28T14:02:10.202Z","level":"info","message":"segment flush tick complete","component":"segment-flush","worker":"segment-flush-1","tick-id":"c2c8d1","tick-ended-at":"2026-01-28T14:02:10.202Z","duration-ms":82,"conversation-id":"3e3b0b0a-7cbb-4c6b-9b1c-64f5413c75b2","segment-id":"seg-901-942","seq-start":901,"seq-end":942,"message-count":42,"payload-bytes":18432,"success":true}
+```
+
+Sample Log Lines (segment flush failures)
+```
+{"ts":"2026-01-28T14:05:10.120Z","level":"warn","message":"segment flush tick start (empty buffer)","component":"segment-flush","worker":"segment-flush-1","tick-id":"7c1a9e","tick-scheduled-at":"2026-01-28T14:05:10.000Z","tick-started-at":"2026-01-28T14:05:10.120Z","message-count":0,"success":true}
+{"ts":"2026-01-28T14:06:10.144Z","level":"error","message":"segment flush stage failed","component":"segment-flush","worker":"segment-flush-1","tick-id":"ab901f","stage":"minio-put","duration-ms":31,"storage.bucket":"segments","storage.key":"conv/3e3b0b0a/seg/943-980.msgpack","error.kind":"minio.error","error.message":"Timeout waiting for response","retry-count":1,"success":false}
+{"ts":"2026-01-28T14:06:10.145Z","level":"error","message":"segment flush tick failed","component":"segment-flush","worker":"segment-flush-1","tick-id":"ab901f","tick-ended-at":"2026-01-28T14:06:10.145Z","duration-ms":44,"conversation-id":"3e3b0b0a-7cbb-4c6b-9b1c-64f5413c75b2","seq-start":943,"seq-end":980,"message-count":38,"payload-bytes":16920,"success":false,"error.kind":"minio.error","error.message":"Timeout waiting for response"}
+```
+
+Notes / Gaps
+- Load tests show missing visibility for segment flush activity.
+- Need to disambiguate "never ticks" vs "ticks but fails silently."
+
+Definition of Done
+- Segment flush emits clear start/finish logs per tick and on failure paths.
+- Ticker workers log when they start and when ticks are skipped/backlogged.
+- Debug logs are enabled via config without code changes.
+
 ## Phase 6: Load Tests and Tuning
 Deliverables
 - Load test plan for 1k users x 10 msg/min and beyond.
