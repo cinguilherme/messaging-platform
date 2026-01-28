@@ -72,6 +72,29 @@ services:
     depends_on:
       - metrics
 
+  #core service using GH registry image
+  # core-service:
+  #   image: ghcr.io/d-core/core-service:latest
+  #   ports:
+  #     - 3000:3000
+  #   environment:
+  #     - DOCKER=1
+  #     - API_KEYS=dev-key-1,dev-key-2
+  #     - POSTGRES_URI=jdbc:postgresql://postgres:5432/core-service
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #     - REDIS_URI=redis://redis:6379
+  #     - RABBITMQ_URI=amqp://rabbitmq:5672
+  #     - MINIO_ENDPOINT=http://minio:9000
+  #     - MINIO_ACCESS_KEY=minio
+  #     - MINIO_SECRET_KEY=minio123
+  #     - MINIO_BUCKET=messaging-platform
+  #     - KEYCLOAK_BASE_URL=http://keycloak:8080
+  #     - KEYCLOAK_REALM=d-core
+  #     - KEYCLOAK_CLIENT_ID=d-core-api
+  #     - KEYCLOAK_ADMIN_CLIENT_ID=d-core-service
+  #     - KEYCLOAK_ADMIN_CLIENT_SECRET=d-core-secret
+
   core-service:
     build:
       context: .
