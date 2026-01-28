@@ -1,5 +1,6 @@
 (ns core-service.app.server.middleware
   (:require [clojure.string :as str]
+            [duct.logger :as logger]
             [integrant.core :as ig]
             [ring.middleware.multipart-params :as multipart]))
 
@@ -31,7 +32,13 @@
               {:status 401 :body "Unauthorized"})))))))
 
 (defmethod ig/init-key :core-service.app.server.middleware/api-key
-  [_ {:keys [keys header bypass-paths bypass-prefixes]}]
+  [_ {:keys [keys header bypass-paths bypass-prefixes logger]}]
+  (when logger
+    (logger/log logger :info ::api-key-middleware
+                {:header (or header "x-api-key")
+                 :keys-count (count keys)
+                 :bypass-paths (vec bypass-paths)
+                 :bypass-prefixes (vec (or bypass-prefixes []))}))
   (fn [handler]
     (wrap-api-key handler {:keys keys
                            :header header

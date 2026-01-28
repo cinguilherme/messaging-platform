@@ -50,7 +50,8 @@
                                                    :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
                                                    :logger #ig/ref :duct/logger}
   :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/metrics"]}
+                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/metrics"]
+                                               :logger #ig/ref :duct/logger}
   :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
 
   ;; Database components (Postgres + SQL protocol)

@@ -45,19 +45,19 @@
              tenant-claim scope-claim
              http-opts]}]
   (let [base-url (or base-url (getenv "KEYCLOAK_BASE_URL") "http://localhost:8080")
-        realm (or realm (getenv "KEYCLOAK_REALM") "core-service")
+        realm (or realm (getenv "KEYCLOAK_REALM") "d-core")
         issuer (or issuer (getenv "KEYCLOAK_ISSUER") (str base-url "/realms/" realm))
-        aud (or aud (getenv "KEYCLOAK_AUDIENCE") (getenv "KEYCLOAK_CLIENT_ID"))
+        aud (or aud (getenv "KEYCLOAK_AUDIENCE") (getenv "KEYCLOAK_CLIENT_ID") "d-core-api")
         jwks-uri (or jwks-uri (getenv "KEYCLOAK_JWKS_URI")
                      (str base-url "/realms/" realm "/protocol/openid-connect/certs"))
         token-url (or token-url (getenv "KEYCLOAK_TOKEN_URL")
                       (str base-url "/realms/" realm "/protocol/openid-connect/token"))
         admin-url (or admin-url (getenv "KEYCLOAK_ADMIN_URL")
                       (str base-url "/admin/realms/" realm))
-        client-id (or client-id (getenv "KEYCLOAK_CLIENT_ID"))
+        client-id (or client-id (getenv "KEYCLOAK_CLIENT_ID") "d-core-api")
         client-secret (or client-secret (getenv "KEYCLOAK_CLIENT_SECRET"))
-        admin-client-id (or admin-client-id (getenv "KEYCLOAK_ADMIN_CLIENT_ID"))
-        admin-client-secret (or admin-client-secret (getenv "KEYCLOAK_ADMIN_CLIENT_SECRET"))
+        admin-client-id (or admin-client-id (getenv "KEYCLOAK_ADMIN_CLIENT_ID") "d-core-service")
+        admin-client-secret (or admin-client-secret (getenv "KEYCLOAK_ADMIN_CLIENT_SECRET") "d-core-secret")
         tenant-claim (or tenant-claim (getenv "KEYCLOAK_TENANT_CLAIM") "tenant_id")
         scope-claim (or scope-claim (getenv "KEYCLOAK_SCOPE_CLAIM") "dcore_scope")]
     {:base-url base-url

@@ -113,8 +113,20 @@ Definition of Done
 ## Phase 6: Load Tests and Tuning
 Deliverables
 - Load test plan for 1k users x 10 msg/min and beyond.
+- Simple CLI load runner for local/dev to generate traffic and observe metrics.
 - Tune segment size/time thresholds, Redis retention, and batch sizes.
 - Document recommended default configuration for low-cost VPS.
+
+CLI (local/dev)
+```
+clojure -M -m core-service.dev.load-cli api-key --write true
+clojure -M -m core-service.dev.load-cli login --base-url http://localhost:3000 --api-key $KEY --user 1
+clojure -M -m core-service.dev.load-cli token --direct true --user 1
+clojure -M -m core-service.dev.load-cli whoami --token $TOKEN
+clojure -M -m core-service.dev.load-cli create-conversation --base-url http://localhost:3000 --api-key $KEY --token $TOKEN
+clojure -M -m core-service.dev.load-cli send --base-url http://localhost:3000 --api-key $KEY --token $TOKEN --conversation-id <uuid> --count 100 --delay-ms 10
+clojure -M -m core-service.dev.load-cli load --base-url http://localhost:3000 --api-key $KEY --token $TOKEN --conversation-id <uuid> --rate 10 --duration-s 60
+```
 
 Definition of Done
 - Target load runs within CPU/memory limits on 1 vCPU / 4GB RAM.
