@@ -96,9 +96,10 @@ services:
   #     - KEYCLOAK_ADMIN_CLIENT_SECRET=d-core-secret
 
   core-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    image: ghcr.io/cinguilherme/messaging-platform:latest
     ports:
       - 3000:3000
     environment:
