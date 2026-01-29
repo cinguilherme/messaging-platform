@@ -217,6 +217,8 @@
                       {:type "text"
                        :body {:text text}})
         body (parse-json-body resp)]
+    (println (pr-str {:status (:status resp)
+                      :body body}))
     (if (= 200 (:status resp))
       body
       (throw (ex-info "send message failed" {:status (:status resp) :body body})))))

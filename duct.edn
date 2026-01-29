@@ -29,7 +29,10 @@
   :core-service.app.config.messaging/segment-config {}
   :core-service.app.config.messaging/retention-config {}
   :core-service.app.config.messaging/receipt-config {}
-  :core-service.app.config.observability/logging {}
+  :core-service.app.config.observability/logging {:level :debug
+                                                  :components #{:segment-flush}
+                                                  :ticker {:enable true :tick-log-interval-ms 1000}
+                                                  :segment-flush {:enabled true :stage-logs true}}
   :core-service.app.config.auth/keycloak {}
   :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.config.auth/api-keys {}
@@ -122,7 +125,9 @@
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client
                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                   :metrics #ig/ref :core-service.app.metrics/component}
+                                                                   :metrics #ig/ref :core-service.app.metrics/component
+                                                                   :logger #ig/ref :duct/logger
+                                                                   :logging #ig/ref :core-service.app.config.observability/logging}
   :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
                                                                  :redis #ig/ref :d-core.core.clients.redis/client
                                                                  :minio #ig/ref :core-service.app.storage.minio/client

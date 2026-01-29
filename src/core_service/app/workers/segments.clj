@@ -242,18 +242,24 @@
                                                :seq-end (:seq_end header)
                                                :object-key object-key
                                                :byte-size byte-size})
-              (log-stage! logger logging log-ctx :info :index-write
-                          {:duration-ms (duration-ms index-start)
-                           :pg.table :segment_index
-                           :pg.operation :insert
-                           :pg.rows 1})
-              {:status :ok
-               :conversation-id conversation-id
-               :segment-id segment-id
-               :seq-start (:seq_start header)
-               :seq-end (:seq_end header)
-               :object-key object-key
-               :byte_size byte-size}
+              (let [row-count (when (and (obs-log/stage-logs-enabled? logging segment-component)
+                                         (obs-log/log-enabled? logging :info segment-component segment-worker))
+                                (segments-db/segment-row-count db {:conversation-id conversation-id
+                                                                   :seq-start (:seq_start header)
+                                                                   :seq-end (:seq_end header)}))]
+                (log-stage! logger logging log-ctx :info :index-write
+                            (cond-> {:duration-ms (duration-ms index-start)
+                                     :pg.table :segment_index
+                                     :pg.operation :insert
+                                     :pg.rows 1}
+                              (some? row-count) (assoc :db.row-count row-count)))
+                {:status :ok
+                 :conversation-id conversation-id
+                 :segment-id segment-id
+                 :seq-start (:seq_start header)
+                 :seq-end (:seq_end header)
+                 :object-key object-key
+                 :byte_size byte-size})
               (catch Exception e
                 (log-stage! logger logging log-ctx :error :index-write
                             {:duration-ms (duration-ms index-start)

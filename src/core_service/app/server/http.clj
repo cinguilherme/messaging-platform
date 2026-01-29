@@ -28,7 +28,11 @@
   [req k]
   (or (get-in req [:query-params k])
       (get-in req [:params k])
-      (get-in req [:params (keyword k)])))
+      (get-in req [:params (keyword k)])
+      (get-in req [:path-params k])
+      (get-in req [:path-params (keyword k)])
+      (get-in req [:route-params k])
+      (get-in req [:route-params (keyword k)])))
 
 (defn parse-long
   [value default]

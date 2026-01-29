@@ -21,6 +21,15 @@
                    :byte_size byte-size}
                {:table :segment_index}))
 
+(defn segment-row-count
+  [db {:keys [conversation-id seq-start seq-end]}]
+  (let [rows (sql/execute! db
+                           ["SELECT count(*) AS row_count FROM segment_index WHERE conversation_id = ? AND seq_start = ? AND seq_end = ?"
+                            conversation-id seq-start seq-end]
+                           {:builder-fn rs/as-unqualified-lower-maps})
+        count-val (:row_count (first rows))]
+    (long (or count-val 0))))
+
 (defn list-segments
   [db {:keys [conversation-id before-seq limit]}]
   (let [limit (long (or limit 50))

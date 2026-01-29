@@ -10,6 +10,8 @@
             [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
             [core-service.app.streams.redis :as streams]
+            [core-service.app.observability.logging :as obs-log]
+            [duct.logger :as logger]
             [malli.core :as m]
             [malli.error :as me]
             [taoensso.carmine :as car]))
@@ -169,6 +171,27 @@
                          :next_cursor next-cursor}
                         format))
 
+(defn- log-message-create-reject!
+  [logger logging {:keys [conversation-id sender-id]} reason details]
+  (let [fields (cond-> {:component :messages-create
+                        :conversation-id conversation-id
+                        :sender-id sender-id
+                        :reason reason}
+                 (some? details) (assoc :details details))
+        debug? (obs-log/log-enabled? logging :debug :messages-create nil)]
+    (if debug?
+      (obs-log/log! logger logging :debug ::message-create-rejected fields)
+      (when logger
+        (logger/log logger :info ::message-create-rejected fields)))))
+
+(defn- log-message-create!
+  [logger logging event fields]
+  (let [debug? (obs-log/log-enabled? logging :debug :messages-create nil)]
+    (if debug?
+      (obs-log/log! logger logging :debug event fields)
+      (when logger
+        (logger/log logger :info event (dissoc fields :message))))))
+
 (defn conversations-create
   [{:keys [db]}]
   (fn [req]
@@ -202,7 +225,7 @@
         (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
 
 (defn messages-create
-  [{:keys [db redis naming metrics]}]
+  [{:keys [db redis naming metrics logger logging]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
@@ -210,13 +233,31 @@
           {:keys [ok data error]} (http/read-json-body req)
           data (when ok (coerce-message-create data))]
       (cond
-        (not conv-id) (http/format-response {:ok false :error "invalid conversation id"} format)
-        (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
+        (not conv-id)
+        (do
+          (log-message-create-reject! logger logging {:conversation-id nil :sender-id sender-id}
+                                      :invalid-conversation-id nil)
+          (http/format-response {:ok false :error "invalid conversation id"} format))
+        (nil? sender-id)
+        (do
+          (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id nil}
+                                      :invalid-sender-id nil)
+          (http/format-response {:ok false :error "invalid sender id"} format))
         (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-        (http/format-response {:ok false :error "not a member"} format)
-        (not ok) (http/format-response {:ok false :error error} format)
+        (do
+          (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
+                                      :not-a-member nil)
+          (http/format-response {:ok false :error "not a member"} format))
+        (not ok)
+        (do
+          (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
+                                      :invalid-json error)
+          (http/format-response {:ok false :error error} format))
         (not (m/validate msg-schema/MessageCreateSchema data))
-        (http/invalid-response format msg-schema/MessageCreateSchema data)
+        (let [details (me/humanize (m/explain msg-schema/MessageCreateSchema data))]
+          (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
+                                      :invalid-schema details)
+          (http/invalid-response format msg-schema/MessageCreateSchema data))
         :else
         (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
               seq (next-seq! redis metrics seq-key)
@@ -232,13 +273,28 @@
                        :meta (:meta data)}
               stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
               payload-bytes (.getBytes (pr-str message) "UTF-8")
-              entry-id (streams/append! redis metrics stream payload-bytes)]
-          (http/format-response {:ok true
-                                 :conversation_id (str conv-id)
-                                 :message message
-                                 :stream stream
-                                 :entry_id entry-id}
-                                format))))))
+              log-ctx {:component :messages-create
+                       :conversation-id conv-id
+                       :sender-id sender-id
+                       :seq seq
+                       :stream stream
+                       :payload-bytes (alength payload-bytes)}]
+          (log-message-create! logger logging ::message-create
+                               (merge log-ctx {:message message}))
+          (try
+            (let [entry-id (streams/append! redis metrics stream payload-bytes)]
+              (log-message-create! logger logging ::redis-append
+                                   (merge log-ctx {:entry-id entry-id}))
+              (http/format-response {:ok true
+                                     :conversation_id (str conv-id)
+                                     :message message
+                                     :stream stream
+                                     :entry_id entry-id}
+                                    format))
+            (catch Exception e
+              (obs-log/log! logger logging :error ::redis-append-failed
+                            (merge log-ctx {:error (.getMessage e)}))
+              (throw e))))))))
 
 (defn messages-list
   [{:keys [db redis minio naming segments metrics]}]
