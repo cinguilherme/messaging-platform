@@ -11,3 +11,6 @@ logs/
 ./storage/
 .api_keys.edn
 resized_images/
+.token1
+.token2
+.conv-id

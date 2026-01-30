@@ -29,6 +29,7 @@
   :core-service.app.config.messaging/segment-config {}
   :core-service.app.config.messaging/retention-config {}
   :core-service.app.config.messaging/receipt-config {}
+  :core-service.app.config.messaging/idempotency-config {}
   :core-service.app.config.observability/logging {:level :debug
                                                   :components #{:segment-flush}
                                                   :ticker {:enable true :tick-log-interval-ms 1000}
@@ -125,6 +126,7 @@
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client
                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                   :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
                                                                    :metrics #ig/ref :core-service.app.metrics/component
                                                                    :logger #ig/ref :duct/logger
                                                                    :logging #ig/ref :core-service.app.config.observability/logging}

@@ -48,6 +48,30 @@
   (-> data
       (update :type (fn [v] (if (string? v) (keyword v) v)))))
 
+(defn- normalize-idempotency-key
+  [value]
+  (let [value (some-> value str str/trim)]
+    (when (and value (not (str/blank? value)))
+      value)))
+
+(defn- idempotency-key-from-request
+  [req data {:keys [header require? allow-client-ref? max-length]}]
+  (let [header-name (str/lower-case (or header "idempotency-key"))
+        header-key (normalize-idempotency-key (get-in req [:headers header-name]))
+        client-key (when allow-client-ref?
+                     (normalize-idempotency-key (:client_ref data)))
+        key (or header-key client-key)
+        max-length (long (or max-length 0))
+        too-long? (and key (pos? max-length) (> (count key) max-length))]
+    (cond
+      too-long? {:ok false :reason :idempotency-key-too-long}
+      (and require? (nil? key)) {:ok false :reason :missing-idempotency-key}
+      :else {:ok true
+             :key key
+             :source (cond
+                       header-key :header
+                       client-key :client-ref)})))
+
 (defn- coerce-receipt-create
   [data]
   (cond-> data
@@ -225,13 +249,14 @@
         (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
 
 (defn messages-create
-  [{:keys [db redis naming metrics logger logging]}]
+  [{:keys [db redis naming metrics logger logging idempotency]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           conv-id (http/parse-uuid (http/param req "id"))
           sender-id (sender-id-from-request req)
           {:keys [ok data error]} (http/read-json-body req)
-          data (when ok (coerce-message-create data))]
+          data (when ok (coerce-message-create data))
+          idempotency-result (idempotency-key-from-request req data idempotency)]
       (cond
         (not conv-id)
         (do
@@ -258,6 +283,15 @@
           (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
                                       :invalid-schema details)
           (http/invalid-response format msg-schema/MessageCreateSchema data))
+        (not (:ok idempotency-result))
+        (let [reason (:reason idempotency-result)
+              error (case reason
+                      :missing-idempotency-key "missing idempotency key"
+                      :idempotency-key-too-long "invalid idempotency key"
+                      "invalid idempotency key")]
+          (log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
+                                      reason nil)
+          (http/format-response {:ok false :error error} format))
         :else
         (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
               seq (next-seq! redis metrics seq-key)
@@ -277,6 +311,7 @@
                        :conversation-id conv-id
                        :sender-id sender-id
                        :seq seq
+                       :idempotency-source (:source idempotency-result)
                        :stream stream
                        :payload-bytes (alength payload-bytes)}]
           (log-message-create! logger logging ::message-create

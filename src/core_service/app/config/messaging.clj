@@ -45,6 +45,7 @@
   {:redis {:stream-prefix "chat:conv:"
            :pubsub-prefix "chat:conv:"
            :receipts-prefix "chat:receipts:"
+           :idempotency-prefix "chat:idemp:"
            :sequence-prefix "chat:seq:"
            :flush-prefix "chat:flush:"}
    :minio {:bucket "messages"
@@ -83,3 +84,14 @@
 (defmethod ig/init-key :core-service.app.config.messaging/receipt-config
   [_ opts]
   (merge default-receipt-config opts))
+
+(def default-idempotency-config
+  {:ttl-ms 21600000
+   :header "idempotency-key"
+   :require? true
+   :allow-client-ref? true
+   :max-length 128})
+
+(defmethod ig/init-key :core-service.app.config.messaging/idempotency-config
+  [_ opts]
+  (merge default-idempotency-config opts))
