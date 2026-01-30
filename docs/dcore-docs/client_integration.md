@@ -48,11 +48,13 @@ export API_KEYS="dev-key-1,dev-key-2"
 
 ## Core Messaging Endpoints (v1)
 
-All endpoints below require `X-Api-Key`. The messaging endpoints also require
-`Authorization: Bearer <jwt>`.
+All endpoints below require `X-Api-Key`. The messaging, user lookup, and
+conversation endpoints also require `Authorization: Bearer <jwt>`.
 
 - `POST /v1/auth/register` (optional, Keycloak proxy)
 - `POST /v1/auth/login` (optional, Keycloak proxy)
+- `GET /v1/users/lookup?email=`
+- `GET /v1/conversations`
 - `POST /v1/conversations`
 - `GET /v1/conversations/:id`
 - `POST /v1/conversations/:id/messages`
@@ -68,6 +70,33 @@ All endpoints below require `X-Api-Key`. The messaging endpoints also require
   "title": "Optional group title"
 }
 ```
+
+### Conversation list (response body)
+
+Query params:
+- `limit` (default 50)
+- `cursor` (use `next_cursor` from previous response)
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "conversation_id": "uuid",
+      "type": "direct|group",
+      "title": "string|null",
+      "updated_at": 1730000000000,
+      "last_message": null,
+      "unread_count": 0
+    }
+  ],
+  "next_cursor": "opaque"
+}
+```
+
+Notes:
+- `next_cursor` is currently the `updated_at` value (epoch millis) of the last
+  item in the page. Treat it as opaque.
 
 ### Message create (request body)
 
@@ -100,6 +129,28 @@ All endpoints below require `X-Api-Key`. The messaging endpoints also require
 - `direction`: `backward` (older) or `forward` (newer)
 
 Use `next_cursor` from the response as the `cursor` query param to continue.
+
+### User lookup (by email)
+
+- `GET /v1/users/lookup?email=user@example.com`
+- Response includes `user_id` plus basic profile fields when available.
+  Email-only lookup for now.
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "user_id": "uuid",
+      "email": "user@example.com",
+      "username": "user",
+      "first_name": "User",
+      "last_name": "Example",
+      "enabled": true
+    }
+  ]
+}
+```
 
 ### Receipt create (request body)
 

@@ -38,6 +38,14 @@
   (or (get-in req [:auth/principal :tenant-id])
       (get-in req [:auth/principal :tenant_id])))
 
+(defn- timestamp-from-ms
+  [value]
+  (when (some? value)
+    (try
+      (java.sql.Timestamp. (long value))
+      (catch Exception _
+        nil))))
+
 (defn- sender-id-from-request
   [req]
   (or (http/parse-uuid (get-in req [:auth/principal :subject]))
@@ -247,6 +255,124 @@
       (if-not conv-id
         (http/format-response {:ok false :error "invalid conversation id"} format)
         (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
+
+(defn- conversation-row->item
+  [row]
+  (let [created-at (:created_at row)
+        updated-at (when created-at (.getTime ^java.util.Date created-at))
+        type-val (some-> (:type row) keyword)]
+    {:conversation_id (str (:id row))
+     :type (or type-val (:type row))
+     :title (:title row)
+     :updated_at updated-at}))
+
+(defn- redis-last-message
+  [redis metrics stream]
+  (when (and redis stream)
+    (let [{:keys [entries]} (streams/read! redis metrics stream {:direction :backward :limit 1})
+          payload (:payload (first entries))]
+      (when payload
+        (decode-message payload)))))
+
+(defn- minio-last-message
+  [{:keys [db minio segments]} conversation-id]
+  (when minio
+    (let [segments (or segments {})
+          result (segment-reader/fetch-messages {:db db
+                                                 :minio minio
+                                                 :segments segments}
+                                                conversation-id
+                                                {:limit 1
+                                                 :cursor nil
+                                                 :direction :backward})
+          messages (vec (:messages result))]
+      (first messages))))
+
+(defn- receipt-read?
+  [redis metrics naming conversation-id message-id user-id]
+  (let [key (receipts/receipt-key naming conversation-id message-id)
+        field (str "read:" user-id)]
+    (app-metrics/with-redis metrics :hget
+      #(car/wcar (redis-lib/conn redis)
+         (car/hget key field)))))
+
+(defn- unread-count-from-redis
+  [redis metrics naming conversation-id user-id]
+  (when (and redis naming conversation-id user-id)
+    (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conversation-id)
+          batch-size 100]
+      (loop [cursor nil
+             unread 0]
+        (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream {:direction :backward
+                                                                                :limit batch-size
+                                                                                :cursor cursor})
+              remaining (seq entries)]
+          (if-not remaining
+            unread
+            (loop [entries remaining
+                   unread unread]
+              (if-not (seq entries)
+                (if next-cursor
+                  (recur next-cursor unread)
+                  unread)
+                (let [payload (:payload (first entries))
+                      message (when payload (decode-message payload))
+                      sender-id (:sender_id message)
+                      message-id (:message_id message)
+                      readable? (and message-id sender-id (not= sender-id user-id))
+                      read? (and readable?
+                                 (receipt-read? redis metrics naming conversation-id message-id user-id))]
+                  (cond
+                    (and readable? read?) unread
+                    readable? (recur (rest entries) (inc unread))
+                    :else (recur (rest entries) unread)))))))))))
+
+(defn- conversation-item
+  [ctx row user-id]
+  (let [conv-id (:id row)
+        naming (:naming ctx)
+        redis (:redis ctx)
+        metrics (:metrics ctx)
+        stream (when (and naming conv-id)
+                 (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
+        last-message (or (redis-last-message redis metrics stream)
+                         (minio-last-message ctx conv-id))
+        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)]
+    (assoc (conversation-row->item row)
+           :last_message last-message
+           :unread_count unread-count)))
+
+(defn conversations-list
+  [{:keys [db redis naming metrics minio segments]}]
+  (fn [req]
+    (let [format (http/get-accept-format req)
+          sender-id (sender-id-from-request req)
+          limit (http/parse-long (http/param req "limit") 50)
+          cursor-param (http/param req "cursor")
+          before-ms (http/parse-long cursor-param ::invalid)
+          invalid-cursor? (and (some? cursor-param) (= before-ms ::invalid))
+          before-ms (when-not invalid-cursor? before-ms)
+          before-ts (timestamp-from-ms before-ms)
+          ctx {:db db
+               :redis redis
+               :naming naming
+               :metrics metrics
+               :minio minio
+               :segments segments}]
+      (cond
+        (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
+        invalid-cursor? (http/format-response {:ok false :error "invalid cursor"} format)
+        :else
+        (let [rows (conversations-db/list-conversations db {:user-id sender-id
+                                                            :limit limit
+                                                            :before-ts before-ts})
+              items (mapv #(conversation-item ctx % sender-id) rows)
+              next-cursor (when (= (count rows) limit)
+                            (some-> (last rows) :created_at (.getTime) str))]
+          (http/format-response {:ok true
+                                 :items items
+                                 :next_cursor next-cursor}
+                                format))))))
 
 (defn messages-create
   [{:keys [db redis naming metrics logger logging idempotency]}]

@@ -38,6 +38,19 @@ Definition of Done
 - Schemas and API contract documented and reviewed.
 - Keycloak realm/client requirements defined.
 
+## API Gaps (Next Backend Deliverables)
+Status: Planned
+Deliverables
+- `GET /v1/conversations` list endpoint for the authenticated user, with
+  pagination tokens consistent with message history and fields for
+  `conversation_id`, `type`, `title`, `updated_at`, `last_message`, and
+  `unread_count` (if available).
+- `GET /v1/users/lookup?email=` endpoint to resolve email -> user_id for
+  conversation creation. Email-only lookup for now (no handle-based lookup).
+
+Definition of Done
+- Both endpoints implemented and documented in the client integration guide.
+
 ## Phase 1: Infrastructure Wiring
 Status: Complete
 Deliverables
