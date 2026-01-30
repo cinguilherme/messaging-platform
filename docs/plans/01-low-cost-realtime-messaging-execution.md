@@ -202,6 +202,51 @@ Deliverables
 - Backfill/recovery worker for gaps between Redis and Minio.
 - Optional async queue backend integration (Redis queues/RabbitMQ).
 
+Idempotency Review (Opportunities)
+- **Ingest API**: Require an `Idempotency-Key` (and/or client message id) per message; persist a short-lived key map so retries return the same message id/seq and do not enqueue duplicates.
+- **Sequence assignment**: Tie sequence allocation to idempotency key; if a retry arrives, return the original sequence rather than incrementing.
+- **Segment flush + index write**: Use deterministic segment ids (seq-start/seq-end) and `ON CONFLICT DO NOTHING` (or upsert) on segment index rows; Minio `put` should be overwrite-safe for the same key.
+- **Realtime fanout**: Treat Redis Pub/Sub and Streams as at-least-once; consumer handlers should dedupe by message id (or seq) to avoid double delivery.
+- **Client reads/reconnect**: Include message id/seq in payloads so clients can dedupe when reconnecting and re-consuming stream ranges.
+- **Attachments (if used)**: Key objects by content hash (or message id + attachment index) so retries do not create duplicate objects.
+- **Receipts**: Make receipt updates idempotent on (conversation_id, message_id, user_id); use `ON CONFLICT` to avoid duplicates.
+- **Retention + cleanup**: Deletions should be safe to re-run (ignore missing objects/rows).
+- **Backfill/recovery worker**: Ensure it is idempotent by checking existing segment indices/object keys before writing.
+
+Acceptance Criteria
+- **Ingest idempotency**: Repeating the same `Idempotency-Key` returns the original message id/seq and does not create extra Redis stream entries or duplicate segment records.
+- **Sequence stability**: For a given conversation + idempotency key, the sequence number is allocated once and never increments on retry.
+- **Segment write safety**: Re-running a segment flush for the same seq range results in a single segment index row and a single Minio object key.
+- **Fanout dedupe**: At-least-once Redis delivery does not create duplicate deliveries to consumers that process by message id/seq.
+- **Client reconnection**: Clients can reconnect and re-read a range without duplicating messages locally when dedupe is enabled.
+- **Attachment idempotency**: Retrying an attachment upload with the same content hash or message id does not create duplicate objects.
+- **Receipt idempotency**: Repeated receipt updates for the same (conversation_id, message_id, user_id) result in a single stored receipt.
+- **Retention safety**: Retention and cleanup jobs are safe to retry with no errors on missing objects/rows.
+- **Backfill safety**: Backfill/recovery worker can be re-run without duplicating segments or indexes.
+
+Tests
+- **Ingest idempotency**: Send the same message request 3x with the same `Idempotency-Key`; assert one message id/seq and one Redis stream entry.
+- **Sequence stability**: Force retries after sequence allocation but before ack; assert the seq stays constant on retry.
+- **Segment flush repeat**: Trigger flush retry for the same buffer; assert one segment index row and one Minio object key.
+- **Fanout dedupe**: Simulate double delivery from Redis; assert consumer handler stores/acknowledges only once per message id/seq.
+- **Client reconnection**: Reconnect and re-read overlapping ranges; assert client-side dedupe yields unique messages.
+- **Attachment retry**: Upload same attachment twice with identical hash; assert a single object and single attachment reference.
+- **Receipt retry**: Post the same receipt twice; assert one receipt row/state change.
+- **Retention retry**: Run retention twice on the same window; assert no errors and no negative side effects.
+- **Backfill retry**: Run backfill twice for the same gap; assert no duplicated segments or index rows.
+
+Plan (Phase 7)
+- **Design + decisions**: Choose idempotency key scope (per conversation + sender), TTL, and storage (Redis hash or Postgres table) and define API contract (required header vs optional client message id).
+- **Schema + storage**: Add idempotency key map/table keyed by (conversation_id, sender_id, idempotency_key) with TTL/expiry; include message_id + seq in stored value.
+- **Ingest enforcement**: Validate/require idempotency key on ingest; look up existing entry and short-circuit to original response; only allocate seq on first insert.
+- **Sequence allocation guard**: Move seq allocation behind idempotency check to avoid increments on retries; add unit tests around retry timing.
+- **Segment flush safety**: Use deterministic segment ids and upsert index rows; ensure Minio object keys are idempotent and safe to overwrite.
+- **Fanout + consumer dedupe**: Add dedupe at consumer boundaries using message_id/seq; document at-least-once delivery semantics.
+- **Client payloads**: Ensure payloads include message_id + seq to support client-side dedupe on reconnect.
+- **Attachments + receipts**: Make attachment keys deterministic; enforce receipt upserts on conflict.
+- **Retention + cleanup**: Ensure delete operations ignore missing rows/objects; make jobs safe to rerun.
+- **Testing + fault injection**: Execute the tests above, add retry/failure injection, and capture results in the runbook.
+
 Definition of Done
 - Retry paths produce no duplicate messages.
 - Recovery worker validated with fault injection tests.
