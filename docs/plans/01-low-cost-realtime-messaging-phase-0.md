@@ -47,7 +47,7 @@ shape below is expressed in JSON for interoperability):
 
 Notes
 - `seq` is monotonic per conversation.
-- `client_ref` is optional and can be used for idempotency.
+- `client_ref` is optional for client-side correlation; server idempotency uses the `Idempotency-Key` header (preferred) and may accept `client_ref` as a fallback.
 - `attachments` are stored in Minio; the message only references them.
 - System events (e.g., join/leave) are represented via `type: system`.
 

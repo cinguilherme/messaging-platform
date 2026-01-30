@@ -43,7 +43,8 @@
   (cond-> {"accept" "application/json"
            "content-type" "application/json"}
     (:api-key opts) (assoc "x-api-key" (:api-key opts))
-    (:token opts) (assoc "authorization" (str "Bearer " (:token opts)))))
+    (:token opts) (assoc "authorization" (str "Bearer " (:token opts)))
+    (:idempotency-key opts) (assoc "idempotency-key" (:idempotency-key opts))))
 
 (defn- request
   [method url opts body]
@@ -211,9 +212,10 @@
 (defn send-message!
   [opts conversation-id text]
   (let [token (ensure-token opts)
+        idempotency-key (random-key 16)
         resp (request :post
                       (str (base-url opts) "/v1/conversations/" conversation-id "/messages")
-                      (assoc opts :token token)
+                      (assoc opts :token token :idempotency-key idempotency-key)
                       {:type "text"
                        :body {:text text}})
         body (parse-json-body resp)]

@@ -38,6 +38,19 @@ Definition of Done
 - Schemas and API contract documented and reviewed.
 - Keycloak realm/client requirements defined.
 
+## API Gaps (Next Backend Deliverables)
+Status: Planned
+Deliverables
+- `GET /v1/conversations` list endpoint for the authenticated user, with
+  pagination tokens consistent with message history and fields for
+  `conversation_id`, `type`, `title`, `updated_at`, `last_message`, and
+  `unread_count` (if available).
+- `GET /v1/users/lookup?email=` endpoint to resolve email -> user_id for
+  conversation creation. Email-only lookup for now (no handle-based lookup).
+
+Definition of Done
+- Both endpoints implemented and documented in the client integration guide.
+
 ## Phase 1: Infrastructure Wiring
 Status: Complete
 Deliverables
@@ -235,8 +248,14 @@ Tests
 - **Retention retry**: Run retention twice on the same window; assert no errors and no negative side effects.
 - **Backfill retry**: Run backfill twice for the same gap; assert no duplicated segments or index rows.
 
+Decisions (Phase 7)
+- Idempotency key scope is per (conversation_id, sender_id).
+- Storage is Redis with one key per idempotency key (prefix `chat:idemp:`).
+- Default TTL is 6 hours (config `:idempotency :ttl-ms`).
+- API contract: `Idempotency-Key` header is required for `POST /v1/conversations/:id/messages`; `client_ref` may be used as a fallback idempotency key for legacy clients.
+
 Plan (Phase 7)
-- **Design + decisions**: Choose idempotency key scope (per conversation + sender), TTL, and storage (Redis hash or Postgres table) and define API contract (required header vs optional client message id).
+- **Design + decisions**: Lock decisions above into config and API docs; align any legacy clients to send `Idempotency-Key`.
 - **Schema + storage**: Add idempotency key map/table keyed by (conversation_id, sender_id, idempotency_key) with TTL/expiry; include message_id + seq in stored value.
 - **Ingest enforcement**: Validate/require idempotency key on ingest; look up existing entry and short-circuit to original response; only allocate seq on first insert.
 - **Sequence allocation guard**: Move seq allocation behind idempotency check to avoid increments on retries; add unit tests around retry timing.

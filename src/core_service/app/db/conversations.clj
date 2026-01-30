@@ -30,3 +30,24 @@
                       :where {:conversation_id conversation-id
                               :user_id user-id}
                       :limit 1}))))
+
+(defn list-conversations
+  [db {:keys [user-id limit before-ts]}]
+  (let [limit (long (or limit 50))
+        [query params] (if before-ts
+                         [(str "SELECT c.id, c.tenant_id, c.type, c.title, c.created_at "
+                               "FROM memberships m "
+                               "JOIN conversations c ON c.id = m.conversation_id "
+                               "WHERE m.user_id = ? AND c.created_at < ? "
+                               "ORDER BY c.created_at DESC "
+                               "LIMIT ?")
+                          [user-id before-ts limit]]
+                         [(str "SELECT c.id, c.tenant_id, c.type, c.title, c.created_at "
+                               "FROM memberships m "
+                               "JOIN conversations c ON c.id = m.conversation_id "
+                               "WHERE m.user_id = ? "
+                               "ORDER BY c.created_at DESC "
+                               "LIMIT ?")
+                          [user-id limit]])]
+    (sql/execute! db (into [query] params)
+                  {:builder-fn rs/as-unqualified-lower-maps})))
