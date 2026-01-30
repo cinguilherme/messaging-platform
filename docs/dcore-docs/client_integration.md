@@ -86,8 +86,16 @@ Query params:
       "type": "direct|group",
       "title": "string|null",
       "updated_at": 1730000000000,
-      "last_message": null,
-      "unread_count": 0
+      "last_message": {
+        "message_id": "uuid",
+        "conversation_id": "uuid",
+        "seq": 123,
+        "sender_id": "uuid",
+        "sent_at": 1730000000000,
+        "type": "text",
+        "body": {"text": "hello"}
+      },
+      "unread_count": 3
     }
   ],
   "next_cursor": "opaque"
@@ -97,6 +105,10 @@ Query params:
 Notes:
 - `next_cursor` is currently the `updated_at` value (epoch millis) of the last
   item in the page. Treat it as opaque.
+- `last_message` is sourced from the Redis stream tail; if none is found,
+  Minio history is used as a fallback.
+- `unread_count` reflects unread messages in the Redis tail for that
+  conversation (based on `read` receipts).
 
 ### Message create (request body)
 
