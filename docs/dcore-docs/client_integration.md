@@ -85,6 +85,22 @@ Query params:
       "conversation_id": "uuid",
       "type": "direct|group",
       "title": "string|null",
+      "members": [
+        {
+          "user_id": "uuid",
+          "username": "user",
+          "first_name": "User",
+          "last_name": "Example",
+          "avatar_url": "https://..."
+        }
+      ],
+      "counterpart": {
+        "user_id": "uuid",
+        "username": "user",
+        "first_name": "User",
+        "last_name": "Example",
+        "avatar_url": "https://..."
+      },
       "updated_at": 1730000000000,
       "last_message": {
         "message_id": "uuid",
@@ -103,12 +119,40 @@ Query params:
 ```
 
 Notes:
+- `members` is optional and may be empty for now. When present it contains
+  minimal profile fields needed for UI labeling.
+- `counterpart` is optional and only set for `type=direct` to simplify sidebar
+  labeling. When present it is a subset of `members`.
 - `next_cursor` is currently the `updated_at` value (epoch millis) of the last
   item in the page. Treat it as opaque.
 - `last_message` is sourced from the Redis stream tail; if none is found,
   Minio history is used as a fallback.
 - `unread_count` reflects unread messages in the Redis tail for that
   conversation (based on `read` receipts).
+
+### Conversation detail (response body)
+
+```json
+{
+  "ok": true,
+  "item": {
+    "conversation_id": "uuid",
+    "type": "direct|group",
+    "title": "string|null",
+    "members": [
+      {
+        "user_id": "uuid",
+        "username": "user",
+        "first_name": "User",
+        "last_name": "Example",
+        "avatar_url": "https://..."
+      }
+    ],
+    "created_at": 1730000000000,
+    "updated_at": 1730000000000
+  }
+}
+```
 
 ### Message create (request body)
 
@@ -142,11 +186,69 @@ Notes:
 
 Use `next_cursor` from the response as the `cursor` query param to continue.
 
+### Messages list (response body)
+
+Items follow the message envelope schema (below).
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "message_id": "uuid",
+      "conversation_id": "uuid",
+      "seq": 12345,
+      "sender_id": "uuid",
+      "sent_at": 1730000000000,
+      "type": "text|image|file|system",
+      "body": {"text": "hello"},
+      "attachments": [
+        {
+          "attachment_id": "uuid",
+          "object_key": "attachments/path",
+          "mime_type": "image/png",
+          "size_bytes": 123,
+          "checksum": "sha256:..."
+        }
+      ],
+      "client_ref": "optional-client-ref",
+      "meta": {"any": "extra"}
+    }
+  ],
+  "next_cursor": "opaque"
+}
+```
+
+### Message envelope (canonical schema)
+
+```json
+{
+  "message_id": "uuid",
+  "conversation_id": "uuid",
+  "seq": 12345,
+  "sender_id": "uuid",
+  "sent_at": 1730000000000,
+  "type": "text|image|file|system",
+  "body": {"text": "hello"},
+  "attachments": [
+    {
+      "attachment_id": "uuid",
+      "object_key": "attachments/path",
+      "mime_type": "image/png",
+      "size_bytes": 123,
+      "checksum": "sha256:..."
+    }
+  ],
+  "client_ref": "optional-client-ref",
+  "meta": {"any": "extra"}
+}
+```
+
 ### User lookup (by email)
 
 - `GET /v1/users/lookup?email=user@example.com`
 - Response includes `user_id` plus basic profile fields when available.
-  Email-only lookup for now.
+  Email-only lookup for v1 (no username/handle lookup).
 
 ```json
 {
@@ -186,6 +288,13 @@ For realtime UX today, poll `GET /v1/conversations/:id/messages` with cursors.
 
 GraphQL is exposed on its own port. The module supports `graphql-transport-ws`
 subscriptions when enabled. See `docs/dcore-docs/graphql.md` for config details.
+
+## Not Supported in V1 (Explicit)
+
+- Realtime conversation stream (`/v1/conversations/:id/stream`); polling only.
+- Public attachment upload/download flow (attachments are schema-only).
+- Username/handle lookup (`/v1/users/lookup` is email-only).
+- User profile lookup by id (no `GET /v1/users/:id` or bulk lookup).
 
 ## Web App Example (Fetch)
 
@@ -253,3 +362,4 @@ val request = Request.Builder()
   default in this service; add CORS at your reverse proxy or middleware.
 - Attachments are referenced by metadata in messages, but a public upload flow
   is not exposed yet (the `/test/image-upload` endpoint is for internal testing).
+  For v1, clients should treat attachments as not supported and send text-only.
