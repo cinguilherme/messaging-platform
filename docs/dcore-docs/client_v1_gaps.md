@@ -10,40 +10,52 @@ plans and contracts are complete and should not be re-litigated.
 - Execution plan phases are considered complete for scope definition.
 - Realtime WebSocket stream is not wired yet; polling is the current path.
 
-## Gap 1: Conversation list lacks participant display info
+## Status Legend
 
-Current: `GET /v1/conversations` returns metadata, last_message, and unread_count
-but no member profiles or counterpart data for direct chats.
+- Addressed: Documented and implemented; no blocker for v1.
+- Partially addressed: Implemented but still gaps or weak guarantees.
+- Open: Missing or unclear; blocks or constrains v1.
+- Decision: Agreed v1 behavior; not a backend change (unless revised).
+
+## Gap 1: Conversation list participant display info
+
+Status: Addressed.
+
+Current: `GET /v1/conversations` returns `members` and `counterpart` with local
+profile cache enrichment. Missing profiles fall back to Keycloak admin lookup
+and are cached. If neither is available, only `user_id` is populated.
 
 Options:
-- A) Embed `members` with minimal profile fields per item (id, username, name, avatar).
-- B) For `direct`, return a `counterpart` object; for `group`, return `member_ids`
-     plus a separate bulk profile lookup endpoint.
-- C) Add `GET /v1/conversations/:id/members` and let the client fetch as needed.
+- Implemented: local `user_profiles` store + bulk lookup by ids.
 
-## Gap 2: Conversation detail response schema is undefined
+## Gap 2: Conversation detail response schema is incomplete
 
-Current: `GET /v1/conversations/:id` exists, but the response shape is not
-documented.
+Status: Open.
+
+Current: `GET /v1/conversations/:id` exists but does not return the documented
+metadata + members shape. It needs implementation to match the contract in
+`client_integration.md`.
 
 Options:
 - A) Mirror the list item shape and add `members`.
 - B) Return `conversation` + `members` as top-level keys for explicitness.
 - C) Return `member_ids` only, and rely on a user lookup endpoint for profiles.
 
-## Gap 3: Message list item schema is undefined
+## Gap 3: Message list response shape alignment
 
-Current: pagination for `GET /v1/conversations/:id/messages` is documented, but
-the item schema is not.
+Status: Partially addressed.
+
+Current: The message envelope is documented, but the list response key name is
+not standardized (`messages` vs `items`).
 
 Options:
-- A) Adopt the Phase 0 message envelope as the response item shape.
-- B) Add an `included` map of user profiles keyed by `user_id` to avoid extra
-     lookups for sender display info.
-- C) Keep `sender_id` only and require the client to resolve profiles via a
-     separate endpoint.
+- A) Standardize on `items` to match other list endpoints.
+- B) Keep `messages` and update docs to match.
+- C) Add an `included` map of user profiles keyed by `user_id`.
 
 ## Gap 4: Handle-based user lookup is missing
+
+Status: Decision (email-only for v1).
 
 Current: only `GET /v1/users/lookup?email=` is supported.
 
@@ -54,15 +66,17 @@ Options:
 
 ## Gap 5: User profile lookup by user_id is missing
 
-Current: conversations/messages reference `user_id` but there is no endpoint
-to resolve ids to profiles.
+Status: Addressed.
+
+Current: `POST /v1/users/lookup` accepts `{ "ids": [...] }` and returns local
+profile fields when available.
 
 Options:
-- A) Add `GET /v1/users/:id` for single lookups.
-- B) Add bulk lookup: `POST /v1/users/lookup` with `{ "ids": [...] }`.
-- C) Embed minimal profiles directly in conversation/message responses.
+- Implemented: bulk lookup via `POST /v1/users/lookup`.
 
 ## Gap 6: Auth response + identity mapping are unclear
+
+Status: Open.
 
 Current: `/v1/auth/login` and `/v1/auth/register` exist but response shapes and
 the canonical `user_id` claim are not documented.
@@ -71,8 +85,11 @@ Options:
 - A) Document auth responses (tokens, expiry) and declare the JWT `sub` claim
      as the canonical `user_id`.
 - B) Add `GET /v1/users/me` to map the access token to the user profile.
+- C) Add a stable `user_id` field to the auth response (derived from Keycloak).
 
 ## Gap 7: Realtime not available in v1
+
+Status: Open.
 
 Current: WebSocket endpoint is echo-only in dev; no production realtime stream.
 
@@ -84,6 +101,8 @@ Options:
 
 ## Gap 8: Attachments scope for v1 is ambiguous
 
+Status: Decision (text-only for v1).
+
 Current: message schema includes attachments, but public upload is not exposed.
 
 Options:
@@ -91,6 +110,8 @@ Options:
 - B) Keep attachments in schema but mark them as "not yet supported" for clients.
 
 ## Gap 9: SPA hosting and CORS
+
+Status: Open.
 
 Current: CORS is not configured; browser clients need a proxy or same-origin.
 
@@ -100,6 +121,8 @@ Options:
 
 ## Gap 10: Conversation list pagination stability
 
+Status: Open.
+
 Current: `next_cursor` is `updated_at` of the last item; collisions can reorder
 items with identical timestamps.
 
@@ -107,3 +130,15 @@ Options:
 - A) Keep as-is and treat as best-effort ordering.
 - B) Use a composite opaque cursor `(updated_at, conversation_id)` encoded
      as base64url JSON.
+
+## Gap 11: Receipt read/delivered state is not readable
+
+Status: Open.
+
+Current: receipts are write-only; message items do not include read/delivered
+state, so the UI can only show optimistic status.
+
+Options:
+- A) Add `GET /v1/conversations/:id/receipts` (cursor/pagination) for receipt events.
+- B) Include receipt state in message list items (aggregate or per-user fields).
+- C) Add conversation-level read markers (e.g., `last_read_seq` per user).

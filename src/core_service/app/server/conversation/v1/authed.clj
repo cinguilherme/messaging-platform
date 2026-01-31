@@ -4,6 +4,7 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
+            [core-service.app.db.users :as users-db]
             [core-service.app.libs.redis :as redis-lib]
             [core-service.app.metrics :as app-metrics]
             [core-service.app.pagination :as pagination]
@@ -284,7 +285,19 @@
      :first_name (:firstName user)
      :last_name (:lastName user)
      :avatar_url (or (attribute-value attrs :avatar_url)
-                     (attribute-value attrs :avatarUrl))}))
+                     (attribute-value attrs :avatarUrl))
+     :email (:email user)
+     :enabled (:enabled user)}))
+
+(defn- profiles-by-id
+  [rows]
+  (reduce (fn [acc row]
+            (let [user-id (some-> (:user_id row) str)]
+              (if user-id
+                (assoc acc user-id (assoc row :user_id user-id))
+                acc)))
+          {}
+          rows))
 
 (defn- fetch-keycloak-profiles
   [{:keys [token-client keycloak]} user-ids]
@@ -446,9 +459,15 @@
               conv-ids (mapv :id rows)
               members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
               member-ids (->> members-by-conv vals (mapcat identity) distinct)
-              profiles (fetch-keycloak-profiles {:token-client token-client
-                                                 :keycloak keycloak}
-                                                member-ids)
+              local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
+              profiles-by-id (profiles-by-id local-profiles)
+              missing-ids (remove #(contains? profiles-by-id (str %)) member-ids)
+              fallback-profiles (fetch-keycloak-profiles {:token-client token-client
+                                                          :keycloak keycloak}
+                                                         missing-ids)
+              _ (doseq [[user-id profile] fallback-profiles]
+                  (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+              profiles (merge profiles-by-id fallback-profiles)
               items (mapv (fn [row]
                             (let [member-ids (get members-by-conv (:id row))]
                               (conversation-item ctx row sender-id member-ids profiles)))

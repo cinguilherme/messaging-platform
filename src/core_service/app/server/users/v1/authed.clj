@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [clojure.string :as str]
+            [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
             [d-core.core.auth.token-client :as token-client]))
 
@@ -17,6 +18,14 @@
    :first_name (:firstName user)
    :last_name (:lastName user)
    :enabled (:enabled user)})
+
+(defn- coerce-user-ids
+  [ids]
+  (when (sequential? ids)
+    (->> ids
+         (map http/parse-uuid)
+         (remove nil?)
+         vec)))
 
 (defn users-lookup
   "Lookup users by email via Keycloak admin API."
@@ -59,3 +68,24 @@
                                    :error "lookup failed"
                                    :details (.getMessage ex)}
                                   format)))))))
+
+(defn users-lookup-by-ids
+  "Lookup users by id via local user_profiles store."
+  [{:keys [db]}]
+  (fn [req]
+    (let [format (http/get-accept-format req)
+          {:keys [ok data error]} (http/read-json-body req)
+          ids (when ok (coerce-user-ids (:ids data)))]
+      (cond
+        (not ok)
+        (http/format-response {:ok false :error error} format)
+
+        (not (seq ids))
+        (http/format-response {:ok false :error "missing ids"} format)
+
+        :else
+        (let [rows (users-db/fetch-user-profiles db {:user-ids ids})
+              items (mapv (fn [row]
+                            (assoc row :user_id (str (:user_id row))))
+                          rows)]
+          (http/format-response {:ok true :items items} format))))))

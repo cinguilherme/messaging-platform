@@ -54,6 +54,7 @@ conversation endpoints also require `Authorization: Bearer <jwt>`.
 - `POST /v1/auth/register` (optional, Keycloak proxy)
 - `POST /v1/auth/login` (optional, Keycloak proxy)
 - `GET /v1/users/lookup?email=`
+- `POST /v1/users/lookup`
 - `GET /v1/conversations`
 - `POST /v1/conversations`
 - `GET /v1/conversations/:id`
@@ -119,9 +120,10 @@ Query params:
 ```
 
 Notes:
-- `members` is optional and may be empty for now. When present it contains
-  minimal profile fields needed for UI labeling. If profile lookup is not
-  configured, only `user_id` is populated and other fields may be null/omitted.
+- `members` is populated from the local `user_profiles` store (cached). If a
+  profile is missing, the server may fetch it from Keycloak admin and upsert
+  into the cache; otherwise only `user_id` is populated and other fields may be
+  null/omitted.
 - `counterpart` is optional and only set for `type=direct` to simplify sidebar
   labeling. When present it is a subset of `members`.
 - `next_cursor` is currently the `updated_at` value (epoch millis) of the last
@@ -267,6 +269,36 @@ Items follow the message envelope schema (below).
 }
 ```
 
+### User lookup (by ids)
+
+Request body:
+
+```json
+{
+  "ids": ["uuid-1", "uuid-2"]
+}
+```
+
+Response includes local profile fields when available (populated on login/register
+or via Keycloak fallback on conversation list):
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "user_id": "uuid",
+      "username": "user",
+      "first_name": "User",
+      "last_name": "Example",
+      "avatar_url": "https://...",
+      "email": "user@example.com",
+      "enabled": true
+    }
+  ]
+}
+```
+
 ### Receipt create (request body)
 
 ```json
@@ -295,7 +327,6 @@ subscriptions when enabled. See `docs/dcore-docs/graphql.md` for config details.
 - Realtime conversation stream (`/v1/conversations/:id/stream`); polling only.
 - Public attachment upload/download flow (attachments are schema-only).
 - Username/handle lookup (`/v1/users/lookup` is email-only).
-- User profile lookup by id (no `GET /v1/users/:id` or bulk lookup).
 
 ## Web App Example (Fetch)
 

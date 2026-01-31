@@ -34,7 +34,22 @@
               "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
               "PRIMARY KEY (conversation_id, seq_start)"
               ")")
-    :indexes ["CREATE INDEX IF NOT EXISTS segment_index_conv_end_idx ON segment_index (conversation_id, seq_end)"]}})
+    :indexes ["CREATE INDEX IF NOT EXISTS segment_index_conv_end_idx ON segment_index (conversation_id, seq_end)"]}
+
+   :user_profiles
+   {:ddl (str "CREATE TABLE IF NOT EXISTS user_profiles ("
+              "user_id UUID PRIMARY KEY, "
+              "username TEXT NULL, "
+              "first_name TEXT NULL, "
+              "last_name TEXT NULL, "
+              "avatar_url TEXT NULL, "
+              "email TEXT NULL, "
+              "enabled BOOLEAN NULL, "
+              "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
+              "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+              ")")
+    :indexes ["CREATE INDEX IF NOT EXISTS user_profiles_username_idx ON user_profiles (username)"
+              "CREATE INDEX IF NOT EXISTS user_profiles_email_idx ON user_profiles (email)"]}})
 
 (defn- apply-ddl!
   [db ddl logger]

@@ -1,8 +1,10 @@
 (ns core-service.app.server.conversation.v1.public
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
+            [clojure.string :as str]
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
+            [core-service.app.db.users :as users-db]
             [d-core.core.auth.token-client :as token-client]
             [malli.core :as m]))
 
@@ -32,9 +34,56 @@
                                    :value password
                                    :temporary false}])))
 
+(defn- attribute-value
+  [attrs k]
+  (let [v (or (get attrs k) (get attrs (keyword (name k))))]
+    (cond
+      (vector? v) (first v)
+      (sequential? v) (first v)
+      :else v)))
+
+(defn- keycloak-user->profile
+  [user]
+  (let [attrs (:attributes user)]
+    {:user-id (:id user)
+     :username (:username user)
+     :first-name (:firstName user)
+     :last-name (:lastName user)
+     :avatar-url (or (attribute-value attrs :avatar_url)
+                     (attribute-value attrs :avatarUrl))
+     :email (:email user)
+     :enabled (:enabled user)}))
+
+(defn- parse-user-id-from-location
+  [location]
+  (when (string? location)
+    (try
+      (java.util.UUID/fromString (last (str/split location #"/")))
+      (catch Exception _
+        nil))))
+
+(defn- fetch-user-by-username
+  [{:keys [token-client keycloak]} username]
+  (when (and token-client (:admin-url keycloak) (seq username))
+    (let [admin-token (token-client/client-credentials token-client {})
+          access-token (:access-token admin-token)
+          admin-url (:admin-url keycloak)
+          resp (http-client/get (str admin-url "/users")
+                                (merge {:headers {"authorization" (str "Bearer " access-token)}
+                                        :query-params {:username username
+                                                       :exact "true"}
+                                        :as :text
+                                        :throw-exceptions false}
+                                       (:http-opts keycloak)))
+          status (:status resp)
+          parsed (some-> (:body resp) (json/parse-string true))
+          user (first parsed)]
+      (when (and (<= 200 status 299) user)
+        (keycloak-user->profile user)))))
+
 (defn auth-register
   "Proxy endpoint for user registration (backed by Keycloak)."
-  [{:keys [token-client keycloak]}]
+  [{:keys [db token-client keycloak]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           {:keys [ok data error]} (http/read-json-body req)]
@@ -64,10 +113,19 @@
                 status (:status resp)
                 location (get-in resp [:headers "location"])]
             (if (<= 200 status 299)
-              (http/format-response {:ok true
-                                     :action :register
-                                     :location location}
-                                    format)
+              (do
+                (when-let [user-id (parse-user-id-from-location location)]
+                  (when db
+                    (users-db/upsert-user-profile! db {:user-id user-id
+                                                       :username (:username data)
+                                                       :first-name (:first_name data)
+                                                       :last-name (:last_name data)
+                                                       :email (:email data)
+                                                       :enabled (if (some? (:enabled data)) (:enabled data) true)})))
+                (http/format-response {:ok true
+                                       :action :register
+                                       :location location}
+                                      format))
               (http/format-response {:ok false
                                      :error "registration failed"
                                      :status status
@@ -81,7 +139,7 @@
 
 (defn auth-login
   "Proxy endpoint for user login (backed by Keycloak)."
-  [{:keys [keycloak]}]
+  [{:keys [db keycloak token-client]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           {:keys [ok data error]} (http/read-json-body req)]
@@ -101,10 +159,16 @@
                                    :http-opts http-opts}
                                   params)]
           (if (:ok resp)
-            (http/format-response {:ok true
-                                   :action :login
-                                   :token (:data resp)}
-                                  format)
+            (do
+              (when-let [profile (fetch-user-by-username {:token-client token-client
+                                                          :keycloak keycloak}
+                                                         (:username data))]
+                (when db
+                  (users-db/upsert-user-profile! db profile)))
+              (http/format-response {:ok true
+                                     :action :login
+                                     :token (:data resp)}
+                                    format))
             (http/format-response {:ok false
                                    :error "login failed"
                                    :status (:status resp)
