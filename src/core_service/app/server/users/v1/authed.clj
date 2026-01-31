@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [clojure.string :as str]
+            [duct.logger :as logger]
             [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
             [d-core.core.auth.token-client :as token-client]))
@@ -164,11 +165,13 @@
 (defn users-me
   "Resolve the current user from the access token and return a profile.
   Uses local user_profiles cache with a Keycloak admin fallback."
-  [{:keys [db token-client keycloak]}]
+  [{:keys [db token-client keycloak logger]}]
   (fn [req]
     (let [format (http/get-accept-format req)
+          _ (logger/log logger ::users-me-req format)
           user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
                       (http/parse-uuid (get-in req [:auth/principal :user_id])))]
+      (logger/log logger ::users-me user-id)
       (cond
         (nil? user-id)
         (http/format-response {:ok false :error "invalid user id"} format)

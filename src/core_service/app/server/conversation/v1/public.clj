@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [clojure.string :as str]
+            [duct.logger :as logger]
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
             [core-service.app.db.users :as users-db]
@@ -22,6 +23,37 @@
     (if (<= 200 status 299)
       {:ok true :data parsed}
       {:ok false :status status :error parsed})))
+
+(defn- decode-base64-url
+  [value]
+  (try
+    (let [pad (mod (count value) 4)
+          padded (cond
+                   (= pad 2) (str value "==")
+                   (= pad 3) (str value "=")
+                   (= pad 1) (str value "===")
+                   :else value)]
+      (.decode (java.util.Base64/getUrlDecoder) padded))
+    (catch Exception _
+      nil)))
+
+(defn- decode-jwt-claims
+  [token]
+  (try
+    (let [parts (str/split (or token "") #"\.")
+          payload (nth parts 1 nil)
+          bytes (when payload (decode-base64-url payload))]
+      (when bytes
+        (json/parse-string (String. ^bytes bytes "UTF-8") true)))
+    (catch Exception _
+      nil)))
+
+(defn- admin-token-details
+  [token]
+  (let [claims (decode-jwt-claims token)]
+    {:claims claims
+     :realm_roles (get-in claims [:realm_access :roles])
+     :realm_management_roles (get-in claims [:resource_access "realm-management" :roles])}))
 
 (defn- build-user-repr
   [{:keys [username password email first_name last_name enabled]}]
@@ -83,10 +115,11 @@
 
 (defn auth-register
   "Proxy endpoint for user registration (backed by Keycloak)."
-  [{:keys [db token-client keycloak]}]
+  [{:keys [db token-client keycloak logger]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           {:keys [ok data error]} (http/read-json-body req)]
+      (logger/log logger ::auth-register data)
       (cond
         (not ok) (http/format-response {:ok false :error error} format)
         (not (m/validate auth-schema/RegisterSchema data))
@@ -99,8 +132,16 @@
         (http/format-response {:ok false :error "client id not configured"} format)
         :else
         (try
+          (logger/log logger ::auth-register-token-client token-client)
           (let [admin-token (token-client/client-credentials token-client {})
                 access-token (:access-token admin-token)
+                token-details (admin-token-details access-token)
+                admin-client-id (or (:admin-client-id keycloak) (:client-id keycloak))
+                log-details {:realm (:realm keycloak)
+                             :admin-client-id admin-client-id
+                             :admin-url (:admin-url keycloak)
+                             :realm-roles (:realm_roles token-details)
+                             :realm-management-roles (:realm_management_roles token-details)}
                 admin-url (:admin-url keycloak)
                 user-repr (build-user-repr data)
                 resp (http-client/post (str admin-url "/users")
@@ -112,6 +153,8 @@
                                               (:http-opts keycloak)))
                 status (:status resp)
                 location (get-in resp [:headers "location"])]
+            (logger/log logger ::auth-register-admin-token log-details)
+            (logger/log logger ::auth-register-resp resp)
             (if (<= 200 status 299)
               (do
                 (when-let [user-id (parse-user-id-from-location location)]
@@ -129,7 +172,8 @@
               (http/format-response {:ok false
                                      :error "registration failed"
                                      :status status
-                                     :details (some-> (:body resp) (json/parse-string true))}
+                                     :details (some-> (:body resp) (json/parse-string true))
+                                     :debug log-details}
                                     format)))
           (catch Exception ex
             (http/format-response {:ok false
@@ -139,10 +183,11 @@
 
 (defn auth-login
   "Proxy endpoint for user login (backed by Keycloak)."
-  [{:keys [db keycloak token-client]}]
+  [{:keys [db keycloak token-client logger]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           {:keys [ok data error]} (http/read-json-body req)]
+      (logger/log logger ::auth-login data)
       (cond
         (not ok) (http/format-response {:ok false :error error} format)
         (not (m/validate auth-schema/LoginSchema data))
@@ -158,6 +203,7 @@
                                    :client-secret client-secret
                                    :http-opts http-opts}
                                   params)]
+          (logger/log logger ::auth-login-resp resp)
           (if (:ok resp)
             (do
               (when-let [profile (fetch-user-by-username {:token-client token-client
