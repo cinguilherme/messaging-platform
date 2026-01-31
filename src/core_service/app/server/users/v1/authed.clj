@@ -10,6 +10,14 @@
   [value]
   (some-> value str/trim str/lower-case))
 
+(defn- normalize-username
+  [value]
+  (let [value (some-> value str/trim)]
+    (when (and value (not (str/blank? value)))
+      (if (str/starts-with? value "@")
+        (subs value 1)
+        value))))
+
 (defn- user->item
   [user]
   {:user_id (:id user)
@@ -80,14 +88,25 @@
          vec)))
 
 (defn users-lookup
-  "Lookup users by email via Keycloak admin API."
-  [{:keys [token-client keycloak]}]
+  "Lookup users by email via Keycloak admin API or by username via local cache."
+  [{:keys [db token-client keycloak]}]
   (fn [req]
     (let [format (http/get-accept-format req)
-          email (normalize-email (http/param req "email"))]
+          email (normalize-email (http/param req "email"))
+          username (normalize-username (http/param req "username"))]
       (cond
-        (str/blank? email)
-        (http/format-response {:ok false :error "missing email"} format)
+        (and (str/blank? email) (str/blank? username))
+        (http/format-response {:ok false :error "missing email or username"} format)
+
+        (and (seq username) (nil? db))
+        (http/format-response {:ok false :error "lookup backend not configured"} format)
+
+        (seq username)
+        (let [profile (users-db/fetch-user-profile-by-username db {:username username})
+              item (when profile (profile->item profile))]
+          (http/format-response {:ok true
+                                 :items (vec (remove nil? [item]))}
+                                format))
 
         (or (nil? token-client) (nil? (:admin-url keycloak)))
         (http/format-response {:ok false :error "lookup backend not configured"} format)

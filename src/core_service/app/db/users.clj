@@ -69,3 +69,13 @@
 (defn fetch-user-profile
   [db {:keys [user-id]}]
   (first (fetch-user-profiles db {:user-ids [user-id]})))
+
+(defn fetch-user-profile-by-username
+  [db {:keys [username]}]
+  (when (and db username)
+    (first
+     (sql/execute! db
+                   [(str "SELECT user_id, username, first_name, last_name, avatar_url, email, enabled "
+                         "FROM user_profiles WHERE username = ? LIMIT 1")
+                    username]
+                   {:builder-fn rs/as-unqualified-lower-maps}))))

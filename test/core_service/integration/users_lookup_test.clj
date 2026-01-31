@@ -2,11 +2,16 @@
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [clojure.test :refer [deftest is testing]]
+            [core-service.app.db.users :as users-db]
             [core-service.app.server.users.v1.authed :as users]
-            [d-core.core.auth.token-client :as token-client]))
+            [core-service.integration.helpers :as helpers]
+            [d-core.core.auth.token-client :as token-client]
+            [d-core.core.databases.protocols.simple-sql :as sql]
+            [integrant.core :as ig]))
 
 (deftest users-lookup-missing-email
-  (let [handler (users/users-lookup {:token-client :dummy
+  (let [handler (users/users-lookup {:db :dummy
+                                     :token-client :dummy
                                      :keycloak {:admin-url "http://keycloak"}})
         resp (handler {:request-method :get
                        :headers {"accept" "application/json"}
@@ -15,10 +20,11 @@
     (testing "missing email"
       (is (= 200 (:status resp)))
       (is (= false (:ok body)))
-      (is (= "missing email" (:error body))))))
+      (is (= "missing email or username" (:error body))))))
 
 (deftest users-lookup-missing-backend
-  (let [handler (users/users-lookup {:token-client nil
+  (let [handler (users/users-lookup {:db nil
+                                     :token-client nil
                                      :keycloak nil})
         resp (handler {:request-method :get
                        :headers {"accept" "application/json"}
@@ -40,7 +46,8 @@
                                             :firstName "User"
                                             :lastName "Example"
                                             :enabled true}])})]
-    (let [handler (users/users-lookup {:token-client :dummy
+    (let [handler (users/users-lookup {:db :dummy
+                                       :token-client :dummy
                                        :keycloak {:admin-url "http://keycloak"}})
           resp (handler {:request-method :get
                          :headers {"accept" "application/json"}
@@ -56,3 +63,31 @@
         (is (= "User" (:first_name item)))
         (is (= "Example" (:last_name item)))
         (is (= true (:enabled item)))))))
+
+(deftest users-lookup-by-username-local
+  (let [{:keys [db client]} (helpers/init-db)
+        handler (users/users-lookup {:db db
+                                     :token-client nil
+                                     :keycloak nil})
+        user-id (java.util.UUID/randomUUID)]
+    (try
+      (users-db/upsert-user-profile! db {:user-id user-id
+                                         :username "alice"
+                                         :first-name "Alice"
+                                         :last-name "Example"
+                                         :email "alice@example.com"
+                                         :enabled true})
+      (let [resp (handler {:request-method :get
+                           :headers {"accept" "application/json"}
+                           :query-params {"username" "@alice"}})
+            body (json/parse-string (:body resp) true)
+            item (first (:items body))]
+        (testing "username lookup"
+          (is (= 200 (:status resp)))
+          (is (:ok body))
+          (is (= "alice" (:username item)))
+          (is (= (str user-id) (:user_id item)))))
+      (finally
+        (sql/delete! db {:table :user_profiles
+                         :where {:user_id user-id}})
+        (ig/halt-key! :d-core.core.clients.postgres/client client)))))

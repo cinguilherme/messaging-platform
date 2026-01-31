@@ -161,7 +161,8 @@
   :core-service.app.server.conversation.v1.public/auth-login {:db #ig/ref :d-core.core.databases.sql/common
                                                               :token-client #ig/ref :d-core.core.auth/token-client
                                                               :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.users.v1.authed/users-lookup {:token-client #ig/ref :d-core.core.auth/token-client
+  :core-service.app.server.users.v1.authed/users-lookup {:db #ig/ref :d-core.core.databases.sql/common
+                                                         :token-client #ig/ref :d-core.core.auth/token-client
                                                          :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.users.v1.authed/users-lookup-by-ids {:db #ig/ref :d-core.core.databases.sql/common}
   :core-service.app.server.users.v1.authed/users-me {:db #ig/ref :d-core.core.databases.sql/common

@@ -253,7 +253,7 @@ Items follow the message envelope schema (below).
 
 - `GET /v1/users/lookup?email=user@example.com`
 - Response includes `user_id` plus basic profile fields when available.
-  Email-only lookup for v1 (no username/handle lookup).
+  Email-only lookup via Keycloak admin.
 
 ```json
 {
@@ -265,6 +265,27 @@ Items follow the message envelope schema (below).
       "username": "user",
       "first_name": "User",
       "last_name": "Example",
+      "enabled": true
+    }
+  ]
+}
+```
+
+### User lookup (by username/handle)
+
+- `GET /v1/users/lookup?username=@handle` (or without the `@`)
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "user_id": "uuid",
+      "username": "user",
+      "first_name": "User",
+      "last_name": "Example",
+      "avatar_url": "https://...",
+      "email": "user@example.com",
       "enabled": true
     }
   ]
@@ -348,7 +369,6 @@ subscriptions when enabled. See `docs/dcore-docs/graphql.md` for config details.
 
 - Realtime conversation stream (`/v1/conversations/:id/stream`); polling only.
 - Public attachment upload/download flow (attachments are schema-only).
-- Username/handle lookup (`/v1/users/lookup` is email-only).
 
 ## Web App Example (Fetch)
 

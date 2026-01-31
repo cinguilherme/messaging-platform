@@ -52,14 +52,12 @@ Options:
 
 ## Gap 4: Handle-based user lookup is missing
 
-Status: Decision (email-only for v1).
+Status: Addressed.
 
-Current: only `GET /v1/users/lookup?email=` is supported.
+Current: `GET /v1/users/lookup` supports `email=` (Keycloak) and `username=` (local cache).
 
 Options:
-- A) Keep email-only lookup for v1; UI uses email for new conversations.
-- B) Add `?username=` (or `?handle=`) lookup parameter.
-- C) Add a generic `?q=` lookup that matches email or username.
+- Implemented: `?username=` (or handle with `@` prefix).
 
 ## Gap 5: User profile lookup by user_id is missing
 
