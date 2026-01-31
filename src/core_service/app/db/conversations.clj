@@ -32,6 +32,14 @@
                               :user_id user-id}
                       :limit 1}))))
 
+(defn get-conversation
+  [db {:keys [conversation-id]}]
+  (first
+   (sql/select db {:table :conversations
+                   :columns [:id :tenant_id :type :title :created_at]
+                   :where {:id conversation-id}
+                   :limit 1})))
+
 (defn list-conversations
   [db {:keys [user-id limit before-ts]}]
   (let [limit (long (or limit 50))

@@ -30,16 +30,13 @@ Options:
 
 ## Gap 2: Conversation detail response schema is incomplete
 
-Status: Open.
+Status: Addressed.
 
-Current: `GET /v1/conversations/:id` exists but does not return the documented
-metadata + members shape. It needs implementation to match the contract in
-`client_integration.md`.
+Current: `GET /v1/conversations/:id` returns the documented `item` shape,
+including `members` and timestamps.
 
 Options:
-- A) Mirror the list item shape and add `members`.
-- B) Return `conversation` + `members` as top-level keys for explicitness.
-- C) Return `member_ids` only, and rely on a user lookup endpoint for profiles.
+- Implemented: list item shape with `members`.
 
 ## Gap 3: Message list response shape alignment
 

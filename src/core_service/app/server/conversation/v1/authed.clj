@@ -20,6 +20,8 @@
             [malli.error :as me]
             [taoensso.carmine :as car]))
 
+(declare resolve-member-profiles build-member-items conversation-row->detail)
+
 (defn- next-seq!
   [redis-client metrics key]
   (app-metrics/with-redis metrics :incr
@@ -252,13 +254,32 @@
           (http/format-response (assoc result :ok true) format))))))
 
 (defn conversations-get
-  [_options]
+  [{:keys [db token-client keycloak]}]
   (fn [req]
     (let [format (http/get-accept-format req)
-          conv-id (http/parse-uuid (http/param req "id"))]
-      (if-not conv-id
+          conv-id (http/parse-uuid (http/param req "id"))
+          sender-id (sender-id-from-request req)]
+      (cond
+        (not conv-id)
         (http/format-response {:ok false :error "invalid conversation id"} format)
-        (http/format-response {:ok true :conversation_id (str conv-id)} format)))))
+
+        (nil? sender-id)
+        (http/format-response {:ok false :error "invalid sender id"} format)
+
+        (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+        (http/format-response {:ok false :error "not a member"} format)
+
+        :else
+        (let [row (conversations-db/get-conversation db {:conversation-id conv-id})]
+          (if-not row
+            (http/format-response {:ok false :error "conversation not found"} format)
+            (let [members-by-conv (conversations-db/list-memberships db {:conversation-ids [conv-id]})
+                  member-ids (get members-by-conv conv-id)
+                  profiles (resolve-member-profiles db token-client keycloak member-ids)
+                  members (build-member-items member-ids profiles)
+                  item (assoc (conversation-row->detail row)
+                              :members members)]
+              (http/format-response {:ok true :item item} format))))))))
 
 (defn- conversation-row->item
   [row]
@@ -269,6 +290,17 @@
      :type (or type-val (:type row))
      :title (:title row)
      :updated_at updated-at}))
+
+(defn- conversation-row->detail
+  [row]
+  (let [created-at (:created_at row)
+        created-ms (when created-at (.getTime ^java.util.Date created-at))
+        type-val (some-> (:type row) keyword)]
+    {:conversation_id (str (:id row))
+     :type (or type-val (:type row))
+     :title (:title row)
+     :created_at created-ms
+     :updated_at created-ms}))
 
 (defn- attribute-value
   [attrs k]
@@ -327,6 +359,18 @@
                   user-ids))
         (catch Exception _
           {})))))
+
+(defn- resolve-member-profiles
+  [db token-client keycloak member-ids]
+  (let [local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
+        profiles (profiles-by-id local-profiles)
+        missing-ids (remove #(contains? profiles (str %)) member-ids)
+        fallback-profiles (fetch-keycloak-profiles {:token-client token-client
+                                                    :keycloak keycloak}
+                                                   missing-ids)]
+    (doseq [[user-id profile] fallback-profiles]
+      (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+    (merge profiles fallback-profiles)))
 
 (defn- build-member-items
   [member-ids profiles]
@@ -459,15 +503,7 @@
               conv-ids (mapv :id rows)
               members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
               member-ids (->> members-by-conv vals (mapcat identity) distinct)
-              local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
-              profiles-by-id (profiles-by-id local-profiles)
-              missing-ids (remove #(contains? profiles-by-id (str %)) member-ids)
-              fallback-profiles (fetch-keycloak-profiles {:token-client token-client
-                                                          :keycloak keycloak}
-                                                         missing-ids)
-              _ (doseq [[user-id profile] fallback-profiles]
-                  (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
-              profiles (merge profiles-by-id fallback-profiles)
+              profiles (resolve-member-profiles db token-client keycloak member-ids)
               items (mapv (fn [row]
                             (let [member-ids (get members-by-conv (:id row))]
                               (conversation-item ctx row sender-id member-ids profiles)))
