@@ -76,16 +76,13 @@ Options:
 
 ## Gap 6: Auth response + identity mapping are unclear
 
-Status: Open.
+Status: Addressed.
 
-Current: `/v1/auth/login` and `/v1/auth/register` exist but response shapes and
-the canonical `user_id` claim are not documented.
+Current: The canonical `user_id` is the JWT `sub` claim. `GET /v1/users/me`
+returns the resolved user profile (local cache with Keycloak fallback).
 
 Options:
-- A) Document auth responses (tokens, expiry) and declare the JWT `sub` claim
-     as the canonical `user_id`.
-- B) Add `GET /v1/users/me` to map the access token to the user profile.
-- C) Add a stable `user_id` field to the auth response (derived from Keycloak).
+- Implemented: JWT `sub` mapping + `GET /v1/users/me`.
 
 ## Gap 7: Realtime not available in v1
 

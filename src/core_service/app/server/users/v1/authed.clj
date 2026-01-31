@@ -19,6 +19,58 @@
    :last_name (:lastName user)
    :enabled (:enabled user)})
 
+(defn- attribute-value
+  [attrs k]
+  (let [v (or (get attrs k) (get attrs (keyword (name k))))]
+    (cond
+      (vector? v) (first v)
+      (sequential? v) (first v)
+      :else v)))
+
+(defn- keycloak-user->profile
+  [user]
+  (let [attrs (:attributes user)]
+    {:user_id (:id user)
+     :username (:username user)
+     :first_name (:firstName user)
+     :last_name (:lastName user)
+     :avatar_url (or (attribute-value attrs :avatar_url)
+                     (attribute-value attrs :avatarUrl))
+     :email (:email user)
+     :enabled (:enabled user)}))
+
+(defn- profile->item
+  [profile]
+  (-> profile
+      (update :user_id (fn [v] (when v (str v))))
+      (select-keys [:user_id :username :first_name :last_name :avatar_url :email :enabled])))
+
+(defn- profile->db
+  [profile]
+  {:user-id (:user_id profile)
+   :username (:username profile)
+   :first-name (:first_name profile)
+   :last-name (:last_name profile)
+   :avatar-url (:avatar_url profile)
+   :email (:email profile)
+   :enabled (:enabled profile)})
+
+(defn- fetch-user-by-id
+  [{:keys [token-client keycloak]} user-id]
+  (when (and token-client (:admin-url keycloak) user-id)
+    (let [admin-token (token-client/client-credentials token-client {})
+          access-token (:access-token admin-token)
+          admin-url (:admin-url keycloak)
+          resp (http-client/get (str admin-url "/users/" user-id)
+                                (merge {:headers {"authorization" (str "Bearer " access-token)}
+                                        :as :text
+                                        :throw-exceptions false}
+                                       (:http-opts keycloak)))
+          status (:status resp)
+          parsed (some-> (:body resp) (json/parse-string true))]
+      (when (<= 200 status 299)
+        (keycloak-user->profile parsed)))))
+
 (defn- coerce-user-ids
   [ids]
   (when (sequential? ids)
@@ -89,3 +141,28 @@
                             (assoc row :user_id (str (:user_id row))))
                           rows)]
           (http/format-response {:ok true :items items} format))))))
+
+(defn users-me
+  "Resolve the current user from the access token and return a profile.
+  Uses local user_profiles cache with a Keycloak admin fallback."
+  [{:keys [db token-client keycloak]}]
+  (fn [req]
+    (let [format (http/get-accept-format req)
+          user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
+                      (http/parse-uuid (get-in req [:auth/principal :user_id])))]
+      (cond
+        (nil? user-id)
+        (http/format-response {:ok false :error "invalid user id"} format)
+
+        :else
+        (let [local-profile (users-db/fetch-user-profile db {:user-id user-id})
+              fetched-profile (when-not local-profile
+                                (fetch-user-by-id {:token-client token-client
+                                                   :keycloak keycloak}
+                                                  (str user-id)))
+              profile (or local-profile fetched-profile)]
+          (when (and fetched-profile (map? fetched-profile))
+            (users-db/upsert-user-profile! db (profile->db fetched-profile)))
+          (if profile
+            (http/format-response {:ok true :item (profile->item profile)} format)
+            (http/format-response {:ok true :item {:user_id (str user-id)}} format)))))))

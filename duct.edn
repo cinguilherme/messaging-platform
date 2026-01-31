@@ -106,6 +106,7 @@
             ["/v1/auth/login" {:post :core-service.app.server.conversation.v1.public/auth-login}]
             ["/v1/users/lookup" {:get :core-service.app.server.users.v1.authed/users-lookup
                                  :post :core-service.app.server.users.v1.authed/users-lookup-by-ids}]
+            ["/v1/users/me" {:get :core-service.app.server.users.v1.authed/users-me}]
 
             ;; deadletter admin routes
             ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
@@ -161,6 +162,9 @@
   :core-service.app.server.users.v1.authed/users-lookup {:token-client #ig/ref :d-core.core.auth/token-client
                                                          :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.users.v1.authed/users-lookup-by-ids {:db #ig/ref :d-core.core.databases.sql/common}
+  :core-service.app.server.users.v1.authed/users-me {:db #ig/ref :d-core.core.databases.sql/common
+                                                     :token-client #ig/ref :d-core.core.auth/token-client
+                                                     :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
   :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
   :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}

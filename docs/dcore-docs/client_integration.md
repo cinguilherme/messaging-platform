@@ -24,6 +24,7 @@ There are two layers:
 - Header: `Authorization: Bearer <jwt>`
 - Expected to be a Keycloak access token.
 - `tenant_id` (or `tenant-id`) claim is required for `POST /v1/conversations`.
+- The canonical `user_id` for the client is the JWT `sub` (subject) claim.
 
 ### API key file example
 
@@ -55,6 +56,7 @@ conversation endpoints also require `Authorization: Bearer <jwt>`.
 - `POST /v1/auth/login` (optional, Keycloak proxy)
 - `GET /v1/users/lookup?email=`
 - `POST /v1/users/lookup`
+- `GET /v1/users/me`
 - `GET /v1/conversations`
 - `POST /v1/conversations`
 - `GET /v1/conversations/:id`
@@ -296,6 +298,26 @@ or via Keycloak fallback on conversation list):
       "enabled": true
     }
   ]
+}
+```
+
+### User identity (me)
+
+`GET /v1/users/me` resolves the current user based on the access token and
+returns the profile (local cache with Keycloak fallback).
+
+```json
+{
+  "ok": true,
+  "item": {
+    "user_id": "uuid",
+    "username": "user",
+    "first_name": "User",
+    "last_name": "Example",
+    "avatar_url": "https://...",
+    "email": "user@example.com",
+    "enabled": true
+  }
 }
 ```
 
