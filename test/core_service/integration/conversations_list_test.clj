@@ -43,7 +43,8 @@
           (is (= (str conv-id) (:conversation_id item)))
           (is (contains? item :updated_at))
           (is (contains? item :last_message))
-          (is (contains? item :unread_count))))
+          (is (contains? item :unread_count))
+          (is (some #(= (str sender-id) (:user_id %)) (:members item)))))
       (finally
         (helpers/cleanup-conversation! db conv-id)
         (ig/halt-key! :d-core.core.clients.postgres/client client)))))

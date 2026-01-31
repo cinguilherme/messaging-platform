@@ -1,5 +1,7 @@
 (ns core-service.app.server.conversation.v1.authed
-  (:require [clojure.edn :as edn]
+  (:require [cheshire.core :as json]
+            [clj-http.client :as http-client]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.libs.redis :as redis-lib]
@@ -11,6 +13,7 @@
             [core-service.app.server.http :as http]
             [core-service.app.streams.redis :as streams]
             [core-service.app.observability.logging :as obs-log]
+            [d-core.core.auth.token-client :as token-client]
             [duct.logger :as logger]
             [malli.core :as m]
             [malli.error :as me]
@@ -266,6 +269,74 @@
      :title (:title row)
      :updated_at updated-at}))
 
+(defn- attribute-value
+  [attrs k]
+  (let [v (or (get attrs k) (get attrs (keyword (name k))))]
+    (cond
+      (vector? v) (first v)
+      (sequential? v) (first v)
+      :else v)))
+
+(defn- keycloak-user->profile
+  [user]
+  (let [attrs (:attributes user)]
+    {:username (:username user)
+     :first_name (:firstName user)
+     :last_name (:lastName user)
+     :avatar_url (or (attribute-value attrs :avatar_url)
+                     (attribute-value attrs :avatarUrl))}))
+
+(defn- fetch-keycloak-profiles
+  [{:keys [token-client keycloak]} user-ids]
+  (let [user-ids (->> user-ids (map str) distinct vec)]
+    (if (or (empty? user-ids)
+            (nil? token-client)
+            (nil? (:admin-url keycloak)))
+      {}
+      (try
+        (let [admin-token (token-client/client-credentials token-client {})
+              access-token (:access-token admin-token)
+              admin-url (:admin-url keycloak)
+              http-opts (:http-opts keycloak)
+              headers {"authorization" (str "Bearer " access-token)}]
+          (reduce (fn [acc user-id]
+                    (let [resp (http-client/get (str admin-url "/users/" user-id)
+                                                (merge {:headers headers
+                                                        :as :text
+                                                        :throw-exceptions false}
+                                                       http-opts))
+                          status (:status resp)
+                          parsed (some-> (:body resp) (json/parse-string true))]
+                      (if (<= 200 status 299)
+                        (assoc acc user-id (keycloak-user->profile parsed))
+                        acc)))
+                  {}
+                  user-ids))
+        (catch Exception _
+          {})))))
+
+(defn- build-member-items
+  [member-ids profiles]
+  (mapv (fn [user-id]
+          (let [user-id-str (str user-id)
+                profile (get profiles user-id-str)]
+            (merge {:user_id user-id-str} profile)))
+        (or member-ids [])))
+
+(defn- direct-conversation?
+  [conversation-type]
+  (or (= conversation-type :direct)
+      (= conversation-type "direct")))
+
+(defn- build-counterpart
+  [member-ids profiles sender-id]
+  (let [member-ids (or member-ids [])
+        other-id (first (remove #(= % sender-id) member-ids))]
+    (when other-id
+      (let [user-id-str (str other-id)
+            profile (get profiles user-id-str)]
+        (merge {:user_id user-id-str} profile)))))
+
 (defn- redis-last-message
   [redis metrics stream]
   (when (and redis stream)
@@ -328,7 +399,7 @@
                     :else (recur (rest entries) unread)))))))))))
 
 (defn- conversation-item
-  [ctx row user-id]
+  [ctx row user-id member-ids profiles]
   (let [conv-id (:id row)
         naming (:naming ctx)
         redis (:redis ctx)
@@ -337,13 +408,19 @@
                  (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
         last-message (or (redis-last-message redis metrics stream)
                          (minio-last-message ctx conv-id))
-        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)]
-    (assoc (conversation-row->item row)
-           :last_message last-message
-           :unread_count unread-count)))
+        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)
+        base (conversation-row->item row)
+        members (build-member-items member-ids profiles)
+        counterpart (when (direct-conversation? (:type base))
+                      (build-counterpart member-ids profiles user-id))]
+    (cond-> (assoc base
+                   :members members
+                   :last_message last-message
+                   :unread_count unread-count)
+      counterpart (assoc :counterpart counterpart))))
 
 (defn conversations-list
-  [{:keys [db redis naming metrics minio segments]}]
+  [{:keys [db redis naming metrics minio segments token-client keycloak]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           sender-id (sender-id-from-request req)
@@ -366,7 +443,16 @@
         (let [rows (conversations-db/list-conversations db {:user-id sender-id
                                                             :limit limit
                                                             :before-ts before-ts})
-              items (mapv #(conversation-item ctx % sender-id) rows)
+              conv-ids (mapv :id rows)
+              members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
+              member-ids (->> members-by-conv vals (mapcat identity) distinct)
+              profiles (fetch-keycloak-profiles {:token-client token-client
+                                                 :keycloak keycloak}
+                                                member-ids)
+              items (mapv (fn [row]
+                            (let [member-ids (get members-by-conv (:id row))]
+                              (conversation-item ctx row sender-id member-ids profiles)))
+                          rows)
               next-cursor (when (= (count rows) limit)
                             (some-> (last rows) :created_at (.getTime) str))]
           (http/format-response {:ok true

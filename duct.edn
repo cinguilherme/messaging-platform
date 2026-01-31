@@ -129,7 +129,9 @@
                                                                       :naming #ig/ref :core-service.app.config.messaging/storage-names
                                                                       :metrics #ig/ref :core-service.app.metrics/component
                                                                       :minio #ig/ref :core-service.app.storage.minio/client
-                                                                      :segments #ig/ref :core-service.app.config.messaging/segment-config}
+                                                                      :segments #ig/ref :core-service.app.config.messaging/segment-config
+                                                                      :token-client #ig/ref :d-core.core.auth/token-client
+                                                                      :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.conversation.v1.authed/conversations-get {}
   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
                                                                    :redis #ig/ref :d-core.core.clients.redis/client

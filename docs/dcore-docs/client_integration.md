@@ -120,7 +120,8 @@ Query params:
 
 Notes:
 - `members` is optional and may be empty for now. When present it contains
-  minimal profile fields needed for UI labeling.
+  minimal profile fields needed for UI labeling. If profile lookup is not
+  configured, only `user_id` is populated and other fields may be null/omitted.
 - `counterpart` is optional and only set for `type=direct` to simplify sidebar
   labeling. When present it is a subset of `members`.
 - `next_cursor` is currently the `updated_at` value (epoch millis) of the last

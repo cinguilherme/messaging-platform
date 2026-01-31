@@ -1,5 +1,6 @@
 (ns core-service.app.db.conversations
-  (:require [d-core.core.databases.protocols.simple-sql :as sql]
+  (:require [clojure.string :as str]
+            [d-core.core.databases.protocols.simple-sql :as sql]
             [next.jdbc.result-set :as rs]))
 
 (defn create-conversation!
@@ -51,3 +52,19 @@
                           [user-id limit]])]
     (sql/execute! db (into [query] params)
                   {:builder-fn rs/as-unqualified-lower-maps})))
+
+(defn list-memberships
+  [db {:keys [conversation-ids]}]
+  (let [conversation-ids (->> conversation-ids (remove nil?) vec)]
+    (if-not (seq conversation-ids)
+      {}
+      (let [placeholders (str/join "," (repeat (count conversation-ids) "?"))
+            query (str "SELECT conversation_id, user_id "
+                       "FROM memberships "
+                       "WHERE conversation_id IN (" placeholders ")")
+            rows (sql/execute! db (into [query] conversation-ids)
+                               {:builder-fn rs/as-unqualified-lower-maps})]
+        (reduce (fn [acc {:keys [conversation_id user_id]}]
+                  (update acc conversation_id (fnil conj []) user_id))
+                {}
+                rows)))))
