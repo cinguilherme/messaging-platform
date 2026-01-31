@@ -198,7 +198,7 @@ Items follow the message envelope schema (below).
 ```json
 {
   "ok": true,
-  "items": [
+  "messages": [
     {
       "message_id": "uuid",
       "conversation_id": "uuid",
