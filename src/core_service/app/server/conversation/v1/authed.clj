@@ -231,12 +231,13 @@
         (logger/log logger :info event (dissoc fields :message))))))
 
 (defn conversations-create
-  [{:keys [db]}]
+  [{:keys [db logger]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           {:keys [ok data error]} (http/read-json-body req)
           data (when ok (coerce-conversation-create data))
           tenant-id (tenant-id-from-request req)]
+      (logger/log logger ::conversations-create-req format)
       (cond
         (not ok) (http/format-response {:ok false :error error} format)
         (nil? tenant-id) (http/format-response {:ok false :error "missing tenant"} format)
