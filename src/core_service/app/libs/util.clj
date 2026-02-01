@@ -1,6 +1,7 @@
 (ns core-service.app.libs.util
   (:require [cheshire.core :as json]
-            [clojure.edn :as edn]))
+            [clojure.edn :as edn]
+            [duct.logger :as logger]))
 
 (defn msg->bytes [msg]
   (.getBytes (json/generate-string msg) "UTF-8"))
@@ -13,3 +14,7 @@
 
 (defn random-uuid []
   (java.util.UUID/randomUUID))
+
+(defn ltap [logger log-key v]
+  (logger/log logger :info log-key v)
+  v)

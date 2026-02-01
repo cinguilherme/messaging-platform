@@ -14,6 +14,7 @@
             [core-service.app.server.http :as http]
             [core-service.app.streams.redis :as streams]
             [core-service.app.observability.logging :as obs-log]
+            [core-service.app.libs.util :as util]
             [d-core.core.auth.token-client :as token-client]
             [duct.logger :as logger]
             [malli.core :as m]
@@ -404,16 +405,10 @@
         (decode-message payload)))))
 
 (defn- minio-last-message
-  [{:keys [db minio segments]} conversation-id]
+  [{:keys [db minio segments] :as components} conversation-id]
   (when minio
     (let [segments (or segments {})
-          result (segment-reader/fetch-messages {:db db
-                                                 :minio minio
-                                                 :segments segments}
-                                                conversation-id
-                                                {:limit 1
-                                                 :cursor nil
-                                                 :direction :backward})
+          result (segment-reader/fetch-messages components conversation-id {:limit 1 :cursor nil :direction :backward})
           messages (vec (:messages result))]
       (first messages))))
 
@@ -457,15 +452,12 @@
                     :else (recur (rest entries) unread)))))))))))
 
 (defn- conversation-item
-  [ctx row user-id member-ids profiles]
+  [{:keys [redis naming metrics] :as components} row user-id member-ids profiles]
   (let [conv-id (:id row)
-        naming (:naming ctx)
-        redis (:redis ctx)
-        metrics (:metrics ctx)
         stream (when (and naming conv-id)
                  (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
         last-message (or (redis-last-message redis metrics stream)
-                         (minio-last-message ctx conv-id))
+                         (minio-last-message components conv-id))
         unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)
         base (conversation-row->item row)
         members (build-member-items member-ids profiles)
@@ -478,39 +470,36 @@
       counterpart (assoc :counterpart counterpart))))
 
 (defn conversations-list
-  [{:keys [db redis naming metrics minio segments token-client keycloak]}]
+  [{:keys [db token-client keycloak logger] :as components}]
   (fn [req]
-    (let [format (http/get-accept-format req)
+    (let [ttap (partial util/ltap logger ::conversations-list-req)
+          format (ttap (http/get-accept-format req))
           sender-id (sender-id-from-request req)
           limit (http/parse-long (http/param req "limit") 50)
           cursor-param (http/param req "cursor")
           before-ms (http/parse-long cursor-param ::invalid)
           invalid-cursor? (and (some? cursor-param) (= before-ms ::invalid))
           before-ms (when-not invalid-cursor? before-ms)
-          before-ts (timestamp-from-ms before-ms)
-          ctx {:db db
-               :redis redis
-               :naming naming
-               :metrics metrics
-               :minio minio
-               :segments segments}]
+          before-ts (timestamp-from-ms before-ms)]
       (cond
         (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
         invalid-cursor? (http/format-response {:ok false :error "invalid cursor"} format)
         :else
-        (let [rows (conversations-db/list-conversations db {:user-id sender-id
-                                                            :limit limit
-                                                            :before-ts before-ts})
-              conv-ids (mapv :id rows)
-              members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
-              member-ids (->> members-by-conv vals (mapcat identity) distinct)
-              profiles (resolve-member-profiles db token-client keycloak member-ids)
-              items (mapv (fn [row]
-                            (let [member-ids (get members-by-conv (:id row))]
-                              (conversation-item ctx row sender-id member-ids profiles)))
-                          rows)
-              next-cursor (when (= (count rows) limit)
-                            (some-> (last rows) :created_at (.getTime) str))]
+        (let [rows (ttap (conversations-db/list-conversations db {:user-id sender-id
+                                                                  :limit limit
+                                                                  :before-ts before-ts}))
+              conv-ids (ttap (mapv :id rows))
+              members-by-conv (util/ltap logger ::conversations-list-members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids}))
+              member-ids (util/ltap logger ::conversations-list-member-ids (->> members-by-conv vals (mapcat identity) distinct ttap))
+              profiles (util/ltap logger ::conversations-list-profiles (resolve-member-profiles db token-client keycloak member-ids))
+              items (util/ltap logger ::conversations-list-items (mapv (fn [row]
+                                  (let [member-ids (get members-by-conv (:id row))]
+                                    (conversation-item components row sender-id member-ids profiles)))
+                                rows))
+              next-cursor (util/ltap logger ::conversations-list-next-cursor (when (= (count rows) limit)
+                                  (some-> (last rows) :created_at (.getTime) str)))
+              _ (logger/log logger ::conversations-list-end-let items next-cursor)]
+          (logger/log logger ::conversations-list-resp items next-cursor)
           (http/format-response {:ok true
                                  :items items
                                  :next_cursor next-cursor}

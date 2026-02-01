@@ -14,7 +14,7 @@
 (defn fetch-messages
   "Fetch messages from Minio segments.
   Options: {:limit n :cursor seq :direction :backward|:forward}."
-  [{:keys [db minio segments]} conversation-id {:keys [limit cursor direction]}]
+  [{:keys [db minio segments] :as components} conversation-id {:keys [limit cursor direction]}]
   (let [limit (long (or limit 50))
         segment-batch (long (or (:segment-batch segments) 10))
         compression (or (:compression segments) :gzip)

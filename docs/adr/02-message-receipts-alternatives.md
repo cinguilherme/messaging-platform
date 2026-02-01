@@ -84,8 +84,23 @@ Pros
 - Clean separation of state vs. changes.
 
 Cons / complexity
-- Requires push infrastructure and connection management.
-- Harder to operate in low-cost deployments if not already present.
+- Requires long‑lived connection management (auth, reconnect, heartbeats).
+- Needs subscription/fanout logic (which clients receive which events).
+- Horizontal scaling adds state (connection registry, pub/sub, backpressure).
+- Operational overhead vs polling (LB/TLS/WebSocket tuning, monitoring).
+
+Implementation notes
+- Define a WS auth handshake (how access token is presented on connect, how
+  failures are surfaced, and how mid‑connection expiry is handled).
+- Specify reauth/renewal flow for long‑lived connections (refresh token
+  exchange vs forced reconnect) and close codes for auth failures.
+- Add a subscription model (e.g., `subscribe: conversation_id`) and enforce
+  membership ACLs at subscribe time (reuse existing conversation membership).
+- Standardize event envelopes (type, conversation_id, cursor, payload) so one
+  stream carries messages, receipts, typing, etc.
+- Provide resume semantics (client sends last cursor) to avoid gaps on reconnect;
+  if unsupported, document a fallback to refetch recent state with possible
+  misses for transient events.
 
 ## Decision (Proposed)
 

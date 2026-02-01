@@ -18,7 +18,3 @@ Is's purpose is to be a testing service for the D-Core library, allowing for eas
 So some API's will be implemented here:
 
 - Real Time messaging API (meant to power Chat like Apps such as WhatsApp, Telegram, etc) and also isolated chats and group chats that can be used in Backoffice.
-
-- Asset management API (meant to power Asset management for a company, like inventory, assets, etc)
-
-- Payment API (meant to power Payment processing for a company, like invoices, payments, etc)
