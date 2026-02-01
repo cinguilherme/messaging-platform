@@ -16,6 +16,11 @@
    [:password :string]
    [:scope {:optional true} :string]])
 
+(def RefreshSchema
+  [:map
+   [:refresh_token :string]
+   [:scope {:optional true} :string]])
+
 (defn valid?
   "Schema helper for quick REPL validation."
   [schema value]

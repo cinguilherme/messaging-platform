@@ -220,3 +220,39 @@
                                    :status (:status resp)
                                    :details (:error resp)}
                                   format)))))))
+
+(defn auth-refresh
+  "Proxy endpoint for token refresh (backed by Keycloak)."
+  [{:keys [keycloak logger]}]
+  (fn [req]
+    (let [format (http/get-accept-format req)
+          {:keys [ok data error]} (http/read-json-body req)
+          safe-data (cond-> data
+                      (contains? data :refresh_token)
+                      (assoc :refresh_token "<redacted>"))]
+      (logger/log logger ::auth-refresh safe-data)
+      (cond
+        (not ok) (http/format-response {:ok false :error error} format)
+        (not (m/validate auth-schema/RefreshSchema data))
+        (http/invalid-response format auth-schema/RefreshSchema data)
+        :else
+        (let [{:keys [token-url client-id client-secret http-opts]} keycloak
+              params (cond-> {:grant_type "refresh_token"
+                              :refresh_token (:refresh_token data)}
+                       (:scope data) (assoc :scope (:scope data)))
+              resp (token-request {:token-url token-url
+                                   :client-id client-id
+                                   :client-secret client-secret
+                                   :http-opts http-opts}
+                                  params)]
+          (logger/log logger ::auth-refresh-resp resp)
+          (if (:ok resp)
+            (http/format-response {:ok true
+                                   :action :refresh
+                                   :token (:data resp)}
+                                  format)
+            (http/format-response {:ok false
+                                   :error "refresh failed"
+                                   :status (:status resp)
+                                   :details (:error resp)}
+                                  format)))))))

@@ -38,7 +38,7 @@
                             :conn-timeout 1000})]
     (= 200 (:status resp))))
 
-(defn- password-token
+(defn- password-token-response
   [{:keys [token-url client-id client-secret]}]
   (let [params (cond-> {:grant_type "password"
                         :username "alice"
@@ -52,7 +52,26 @@
       (throw (ex-info "Token request failed"
                       {:status (:status resp)
                        :body (:body resp)})))
-    (-> (:body resp) (json/parse-string true) :access_token)))
+    (json/parse-string (:body resp) true)))
+
+(defn- password-token
+  [cfg]
+  (:access_token (password-token-response cfg)))
+
+(defn- refresh-token-response
+  [{:keys [token-url client-id client-secret]} refresh-token]
+  (let [params (cond-> {:grant_type "refresh_token"
+                        :refresh_token refresh-token}
+                 client-id (assoc :client_id client-id)
+                 client-secret (assoc :client_secret client-secret))
+        resp (http/post token-url {:form-params params
+                                   :as :text
+                                   :throw-exceptions false})]
+    (when-not (= 200 (:status resp))
+      (throw (ex-info "Refresh token request failed"
+                      {:status (:status resp)
+                       :body (:body resp)})))
+    (json/parse-string (:body resp) true)))
 
 (deftest keycloak-auth-components
   (let [cfg (keycloak-config)]
@@ -81,4 +100,11 @@
                 resp (token-client/client-credentials client {})]
             (is (string? (:access-token resp)))
             (is (pos? (count (:access-token resp)))))))
-      (is false "Keycloak not reachable. Start docker-compose and retry."))))
+        (testing "Refresh token flow returns a new access token"
+          (let [token-resp (password-token-response cfg)
+                refresh-token (:refresh_token token-resp)]
+            (is (string? refresh-token))
+            (is (pos? (count refresh-token)))
+            (let [refreshed (refresh-token-response cfg refresh-token)]
+              (is (string? (:access_token refreshed)))
+              (is (pos? (count (:access_token refreshed))))))))))

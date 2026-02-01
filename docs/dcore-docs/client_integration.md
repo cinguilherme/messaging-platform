@@ -18,7 +18,7 @@ There are two layers:
 1) **API key** (required for almost all HTTP/WS routes)
 - Header: `X-Api-Key: <key>`
 - Config sources: `API_KEYS` env var or `.api_keys.edn` file (see below).
-- Bypassed routes: `/v1/auth/register`, `/v1/auth/login`, `/metrics`.
+- Bypassed routes: `/v1/auth/register`, `/v1/auth/login`, `/v1/auth/refresh`, `/metrics`.
 
 2) **User access token** (required for conversation/messaging endpoints)
 - Header: `Authorization: Bearer <jwt>`
@@ -54,6 +54,7 @@ conversation endpoints also require `Authorization: Bearer <jwt>`.
 
 - `POST /v1/auth/register` (optional, Keycloak proxy)
 - `POST /v1/auth/login` (optional, Keycloak proxy)
+- `POST /v1/auth/refresh` (optional, Keycloak proxy; body: `refresh_token`, optional `scope`)
 - `GET /v1/users/lookup?email=`
 - `POST /v1/users/lookup`
 - `GET /v1/users/me`

@@ -86,7 +86,8 @@
     (try
       (with-redefs [http-client/post (fn [_ _]
                                        {:status 200
-                                        :body (json/generate-string {:access_token "token"})})
+                                        :body (json/generate-string {:access_token "token"
+                                                                     :refresh_token "refresh-token"})})
                     token-client/client-credentials (fn [_ _] {:access-token "admin-token"})
                     http-client/get (fn [_ _]
                                       {:status 200
@@ -109,7 +110,37 @@
             (is (= "alice" (:username profile)))
             (is (= "Alice" (:first_name profile)))
             (is (= "Example" (:last_name profile)))
-            (is (= "alice@example.com" (:email profile))))))
+            (is (= "alice@example.com" (:email profile))))
+          (testing "token response includes refresh token"
+            (is (= "token" (get-in body [:token :access_token])))
+            (is (= "refresh-token" (get-in body [:token :refresh_token]))))))
       (finally
         (cleanup-user! db user-id)
         (ig/halt-key! :d-core.core.clients.postgres/client client)))))
+
+(deftest auth-refresh-returns-token
+  (let [handler (public/auth-refresh {:keycloak {:token-url "http://token"
+                                                 :client-id "cid"
+                                                 :client-secret "secret"}})
+        seen (atom nil)]
+    (with-redefs [http-client/post (fn [url opts]
+                                     (reset! seen {:url url :opts opts})
+                                     {:status 200
+                                      :body (json/generate-string {:access_token "new-token"
+                                                                   :refresh_token "new-refresh"})})]
+      (let [resp (handler {:request-method :post
+                           :headers {"accept" "application/json"}
+                           :body (json/generate-string {:refresh_token "refresh-123"
+                                                        :scope "openid"})})
+            body (json/parse-string (:body resp) true)
+            {:keys [url opts]} @seen]
+        (is (= 200 (:status resp)))
+        (is (:ok body))
+        (is (= "new-token" (get-in body [:token :access_token])))
+        (is (= "new-refresh" (get-in body [:token :refresh_token])))
+        (is (= "http://token" url))
+        (is (= "refresh_token" (get-in opts [:form-params :grant_type])))
+        (is (= "refresh-123" (get-in opts [:form-params :refresh_token])))
+        (is (= "openid" (get-in opts [:form-params :scope])))
+        (is (= "cid" (get-in opts [:form-params :client_id])))
+        (is (= "secret" (get-in opts [:form-params :client_secret])))))))

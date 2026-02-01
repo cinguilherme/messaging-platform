@@ -4,7 +4,7 @@
 
 (defn- public-path?
   [uri]
-  (contains? #{"/v1/auth/register" "/v1/auth/login"} uri))
+  (contains? #{"/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh"} uri))
 
 (defn- conversation-root?
   [uri]

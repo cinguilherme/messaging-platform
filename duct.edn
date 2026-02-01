@@ -55,7 +55,7 @@
                                                    :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
                                                    :logger #ig/ref :duct/logger}
   :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/metrics"]
+                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
                                                :logger #ig/ref :duct/logger}
   :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
 
@@ -104,6 +104,7 @@
             ["/v1/conversations/:id/receipts" {:post :core-service.app.server.conversation.v1.authed/receipts-create}]
             ["/v1/auth/register" {:post :core-service.app.server.conversation.v1.public/auth-register}]
             ["/v1/auth/login" {:post :core-service.app.server.conversation.v1.public/auth-login}]
+            ["/v1/auth/refresh" {:post :core-service.app.server.conversation.v1.public/auth-refresh}]
             ["/v1/users/lookup" {:get :core-service.app.server.users.v1.authed/users-lookup
                                  :post :core-service.app.server.users.v1.authed/users-lookup-by-ids}]
             ["/v1/users/me" {:get :core-service.app.server.users.v1.authed/users-me}]
@@ -168,6 +169,8 @@
                                                               :logger #ig/ref :duct/logger
                                                               :token-client #ig/ref :d-core.core.auth/token-client
                                                               :keycloak #ig/ref :core-service.app.config.auth/keycloak}
+  :core-service.app.server.conversation.v1.public/auth-refresh {:logger #ig/ref :duct/logger
+                                                                :keycloak #ig/ref :core-service.app.config.auth/keycloak}
   :core-service.app.server.users.v1.authed/users-lookup {:db #ig/ref :d-core.core.databases.sql/common
                                                          :logger #ig/ref :duct/logger
                                                          :token-client #ig/ref :d-core.core.auth/token-client
