@@ -26,9 +26,9 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
-            handler (authed/messages-create {:db db
-                                             :redis redis-client
-                                             :naming naming})
+            handler (authed/messages-create {:webdeps {:db db
+                                                       :redis redis-client
+                                                       :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             {:keys [stream seq-key]} (helpers/redis-keys naming conv-id)
@@ -71,12 +71,12 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
-            create-handler (authed/messages-create {:db db
-                                                    :redis redis-client
-                                                    :naming naming})
-            list-handler (authed/messages-list {:db db
-                                                :redis redis-client
-                                                :naming naming})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming}})
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             payload-one (json/generate-string {:type "text" :body {:text "one"}})
@@ -133,9 +133,9 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
-            list-handler (authed/messages-list {:db db
-                                                :redis redis-client
-                                                :naming naming})
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             other-conv (java.util.UUID/randomUUID)
@@ -175,14 +175,14 @@
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
-            create-handler (authed/messages-create {:db db
-                                                    :redis redis-client
-                                                    :naming naming})
-            list-handler (authed/messages-list {:db db
-                                                :redis redis-client
-                                                :minio minio-client
-                                                :naming naming
-                                                :segments segment-config})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming}})
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :minio minio-client
+                                                          :naming naming
+                                                          :segments segment-config}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             payload-one (json/generate-string {:type "text" :body {:text "one 🧩"}})
@@ -241,14 +241,14 @@
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
-            create-handler (authed/messages-create {:db db
-                                                    :redis redis-client
-                                                    :naming naming})
-            list-handler (authed/messages-list {:db db
-                                                :redis redis-client
-                                                :minio minio-client
-                                                :naming naming
-                                                :segments segment-config})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming}})
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :minio minio-client
+                                                          :naming naming
+                                                          :segments segment-config}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             payload-one (json/generate-string {:type "text" :body {:text "one 🧊"}})
@@ -315,14 +315,14 @@
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
-            create-handler (authed/messages-create {:db db
-                                                    :redis redis-client
-                                                    :naming naming})
-            list-handler (authed/messages-list {:db db
-                                                :redis redis-client
-                                                :minio minio-client
-                                                :naming naming
-                                                :segments segment-config})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming}})
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :minio minio-client
+                                                          :naming naming
+                                                          :segments segment-config}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             payload-one (json/generate-string {:type "text" :body {:text "one ⬆️"}})

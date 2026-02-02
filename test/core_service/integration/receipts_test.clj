@@ -47,10 +47,10 @@
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             receipt-config (ig/init-key :core-service.app.config.messaging/receipt-config {})
             handler (core-service.app.server.conversation.v1.authed/receipts-create
-                      {:db db
-                       :redis redis-client
-                       :naming naming
-                       :receipt receipt-config})
+                      {:webdeps {:db db
+                                 :redis redis-client
+                                 :naming naming
+                                 :receipt receipt-config}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             message-id (util/random-uuid)

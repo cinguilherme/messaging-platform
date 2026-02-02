@@ -126,41 +126,12 @@
                                                :logger #ig/ref :duct/logger}
    :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
    :core-service.app.server.middleware/metrics {:metrics #ig/ref :core-service.app.metrics/component}
-   :core-service.app.server.conversation.v1.authed/conversations-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                         :logger #ig/ref :duct/logger}
-   :core-service.app.server.conversation.v1.authed/conversations-list {:db #ig/ref :d-core.core.databases.sql/common
-                                                                       :logger #ig/ref :duct/logger
-                                                                       :redis #ig/ref :d-core.core.clients.redis/client
-                                                                       :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                       :metrics #ig/ref :core-service.app.metrics/component
-                                                                       :minio #ig/ref :core-service.app.storage.minio/client
-                                                                       :segments #ig/ref :core-service.app.config.messaging/segment-config
-                                                                       :token-client #ig/ref :d-core.core.auth/token-client
-                                                                       :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-   :core-service.app.server.conversation.v1.authed/conversations-get {:db #ig/ref :d-core.core.databases.sql/common
-                                                                      :logger #ig/ref :duct/logger
-                                                                      :token-client #ig/ref :d-core.core.auth/token-client
-                                                                      :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                    :logger #ig/ref :duct/logger
-                                                                    :redis #ig/ref :d-core.core.clients.redis/client
-                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                    :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
-                                                                    :metrics #ig/ref :core-service.app.metrics/component
-                                                                    :logging #ig/ref :core-service.app.config.observability/logging}
-   :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
-                                                                  :logger #ig/ref :duct/logger
-                                                                  :redis #ig/ref :d-core.core.clients.redis/client
-                                                                  :minio #ig/ref :core-service.app.storage.minio/client
-                                                                  :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                  :metrics #ig/ref :core-service.app.metrics/component
-                                                                  :segments #ig/ref :core-service.app.config.messaging/segment-config}
-   :core-service.app.server.conversation.v1.authed/receipts-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                    :logger #ig/ref :duct/logger
-                                                                    :redis #ig/ref :d-core.core.clients.redis/client
-                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                    :metrics #ig/ref :core-service.app.metrics/component
-                                                                    :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
+   :core-service.app.server.conversation.v1.authed/conversations-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.authed/conversations-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.authed/conversations-get {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.authed/messages-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.authed/messages-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.authed/receipts-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.public/auth-register {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.public/auth-login {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.public/auth-refresh {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
@@ -179,13 +150,15 @@
                                              :producer #ig/ref :d-core.core.producers.common/producer
                                              :consumer #ig/ref :d-core.core.consumers.consumer/consumer
                                              :storage #ig/ref :d-core.core.storage/common
-                                             :text-search #ig/ref :d-core.core.text-search/common
-                                             :geo #ig/ref :d-core.core.geo/common
-                                             :rate-limit #ig/ref :d-core.core.rate-limit/common
                                              :token-client #ig/ref :d-core.core.auth/token-client
-                                             :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-   
-   :cron-task #ig/ref :d-core.core.cron.task/common}
+                                             :keycloak #ig/ref :core-service.app.config.auth/keycloak
+                                             :redis #ig/ref :d-core.core.clients.redis/client
+                                             :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                             :minio #ig/ref :core-service.app.storage.minio/client
+                                             :segments #ig/ref :core-service.app.config.messaging/segment-config
+                                             :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
+                                             :logging #ig/ref :core-service.app.config.observability/logging
+                                             :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
 
   ;; WebSocket server (Aleph) - separate port
   ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
@@ -360,4 +333,5 @@
     {:fail-sub {:topic :to-fail :handler :fail-once :source :in-memory}}}}
 
   ;; Tracing
-  :d-core.core.tracing.http/middleware {}}}
+  :d-core.core.tracing.http/middleware {}}
+ }

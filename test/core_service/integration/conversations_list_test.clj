@@ -11,7 +11,7 @@
 
 (deftest conversations-list-requires-sender
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-list {:db db})]
+        handler (authed/conversations-list {:webdeps {:db db}})]
     (try
       (let [resp (handler {:request-method :get
                            :headers {"accept" "application/json"}})
@@ -25,7 +25,7 @@
 
 (deftest conversations-list-returns-items
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-list {:db db})
+        handler (authed/conversations-list {:webdeps {:db db}})
         sender-id (java.util.UUID/randomUUID)
         conv-id (java.util.UUID/randomUUID)]
     (try
@@ -51,7 +51,7 @@
 
 (deftest conversations-list-paginates-with-cursor
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-list {:db db})
+        handler (authed/conversations-list {:webdeps {:db db}})
         sender-id (java.util.UUID/randomUUID)
         conv-old (java.util.UUID/randomUUID)
         conv-new (java.util.UUID/randomUUID)
@@ -102,7 +102,7 @@
 
 (deftest conversations-list-invalid-cursor
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-list {:db db})
+        handler (authed/conversations-list {:webdeps {:db db}})
         sender-id (java.util.UUID/randomUUID)]
     (try
       (let [resp (handler {:request-method :get
@@ -126,17 +126,17 @@
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             idempotency (ig/init-key :core-service.app.config.messaging/idempotency-config {})
             receipt (ig/init-key :core-service.app.config.messaging/receipt-config {})
-            create-handler (authed/messages-create {:db db
-                                                    :redis redis-client
-                                                    :naming naming
-                                                    :idempotency idempotency})
-            receipt-handler (authed/receipts-create {:db db
-                                                     :redis redis-client
-                                                     :naming naming
-                                                     :receipt receipt})
-            list-handler (authed/conversations-list {:db db
-                                                     :redis redis-client
-                                                     :naming naming})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming
+                                                              :idempotency idempotency}})
+            receipt-handler (authed/receipts-create {:webdeps {:db db
+                                                               :redis redis-client
+                                                               :naming naming
+                                                               :receipt receipt}})
+            list-handler (authed/conversations-list {:webdeps {:db db
+                                                               :redis redis-client
+                                                               :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             receiver-id (java.util.UUID/randomUUID)

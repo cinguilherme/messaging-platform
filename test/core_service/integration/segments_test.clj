@@ -24,9 +24,9 @@
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
-            handler (authed/messages-create {:db db
-                                             :redis redis-client
-                                             :naming naming})
+            handler (authed/messages-create {:webdeps {:db db
+                                                       :redis redis-client
+                                                       :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             emoji-text "hello 👋🌍"
@@ -93,9 +93,9 @@
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
             retention-config (ig/init-key :core-service.app.config.messaging/retention-config {})
-            handler (authed/messages-create {:db db
-                                             :redis redis-client
-                                             :naming naming})
+            handler (authed/messages-create {:webdeps {:db db
+                                                       :redis redis-client
+                                                       :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             payload (json/generate-string {:type "text" :body {:text "old 🕰️"}})]
@@ -151,9 +151,9 @@
             segment-config (assoc (ig/init-key :core-service.app.config.messaging/segment-config {})
                                   :trim-stream? true
                                   :trim-min-entries 2)
-            handler (authed/messages-create {:db db
-                                             :redis redis-client
-                                             :naming naming})
+            handler (authed/messages-create {:webdeps {:db db
+                                                       :redis redis-client
+                                                       :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             {:keys [stream]} (helpers/redis-keys naming conv-id)

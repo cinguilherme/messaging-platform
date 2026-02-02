@@ -14,7 +14,7 @@
 
 (deftest conversations-detail-returns-members
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-get {:db db})
+        handler (authed/conversations-get {:webdeps {:db db}})
         sender-id (java.util.UUID/randomUUID)
         other-id (java.util.UUID/randomUUID)
         conv-id (java.util.UUID/randomUUID)]
