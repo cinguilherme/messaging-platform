@@ -17,7 +17,7 @@
 
 (deftest users-lookup-by-ids-returns-items
   (let [{:keys [db client]} (helpers/init-db)
-        handler (users/users-lookup-by-ids {:db db})
+        handler (users/users-lookup-by-ids {:webdeps {:db db}})
         user-id (java.util.UUID/randomUUID)]
     (try
       (users-db/upsert-user-profile! db {:user-id user-id
@@ -44,11 +44,11 @@
 (deftest auth-register-upserts-profile
   (let [{:keys [db client]} (helpers/init-db)
         user-id (java.util.UUID/randomUUID)
-        handler (public/auth-register {:db db
-                                       :token-client :dummy
-                                       :keycloak {:admin-url "http://keycloak"
-                                                  :token-url "http://token"
-                                                  :client-id "cid"}})]
+        handler (public/auth-register {:webdeps {:db db
+                                                 :token-client :dummy
+                                                 :keycloak {:admin-url "http://keycloak"
+                                                            :token-url "http://token"
+                                                            :client-id "cid"}}})]
     (try
       (with-redefs [token-client/client-credentials (fn [_ _] {:access-token "token"})
                     http-client/post (fn [_ _]
@@ -77,12 +77,12 @@
 (deftest auth-login-upserts-profile
   (let [{:keys [db client]} (helpers/init-db)
         user-id (java.util.UUID/randomUUID)
-        handler (public/auth-login {:db db
-                                    :token-client :dummy
-                                    :keycloak {:token-url "http://token"
-                                               :client-id "cid"
-                                               :client-secret "secret"
-                                               :admin-url "http://keycloak"}})]
+        handler (public/auth-login {:webdeps {:db db
+                                              :token-client :dummy
+                                              :keycloak {:token-url "http://token"
+                                                         :client-id "cid"
+                                                         :client-secret "secret"
+                                                         :admin-url "http://keycloak"}}})]
     (try
       (with-redefs [http-client/post (fn [_ _]
                                        {:status 200
@@ -119,9 +119,9 @@
         (ig/halt-key! :d-core.core.clients.postgres/client client)))))
 
 (deftest auth-refresh-returns-token
-  (let [handler (public/auth-refresh {:keycloak {:token-url "http://token"
-                                                 :client-id "cid"
-                                                 :client-secret "secret"}})
+  (let [handler (public/auth-refresh {:webdeps {:keycloak {:token-url "http://token"
+                                                           :client-id "cid"
+                                                           :client-secret "secret"}}})
         seen (atom nil)]
     (with-redefs [http-client/post (fn [url opts]
                                      (reset! seen {:url url :opts opts})

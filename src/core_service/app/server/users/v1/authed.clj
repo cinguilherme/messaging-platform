@@ -90,101 +90,104 @@
 
 (defn users-lookup
   "Lookup users by email via Keycloak admin API or by username via local cache."
-  [{:keys [db token-client keycloak]}]
-  (fn [req]
-    (let [format (http/get-accept-format req)
-          email (normalize-email (http/param req "email"))
-          username (normalize-username (http/param req "username"))]
-      (cond
-        (and (str/blank? email) (str/blank? username))
-        (http/format-response {:ok false :error "missing email or username"} format)
+  [{:keys [webdeps]}]
+  (let [{:keys [db token-client keycloak]} webdeps]
+    (fn [req]
+      (let [format (http/get-accept-format req)
+            email (normalize-email (http/param req "email"))
+            username (normalize-username (http/param req "username"))]
+        (cond
+          (and (str/blank? email) (str/blank? username))
+          (http/format-response {:ok false :error "missing email or username"} format)
 
-        (and (seq username) (nil? db))
-        (http/format-response {:ok false :error "lookup backend not configured"} format)
+          (and (seq username) (nil? db))
+          (http/format-response {:ok false :error "lookup backend not configured"} format)
 
-        (seq username)
-        (let [profile (users-db/fetch-user-profile-by-username db {:username username})
-              item (when profile (profile->item profile))]
-          (http/format-response {:ok true
-                                 :items (vec (remove nil? [item]))}
-                                format))
+          (seq username)
+          (let [profile (users-db/fetch-user-profile-by-username db {:username username})
+                item (when profile (profile->item profile))]
+            (http/format-response {:ok true
+                                   :items (vec (remove nil? [item]))}
+                                  format))
 
-        (or (nil? token-client) (nil? (:admin-url keycloak)))
-        (http/format-response {:ok false :error "lookup backend not configured"} format)
+          (or (nil? token-client) (nil? (:admin-url keycloak)))
+          (http/format-response {:ok false :error "lookup backend not configured"} format)
 
-        :else
-        (try
-          (let [admin-token (token-client/client-credentials token-client {})
-                access-token (:access-token admin-token)
-                admin-url (:admin-url keycloak)
-                resp (http-client/get (str admin-url "/users")
-                                      (merge {:headers {"authorization" (str "Bearer " access-token)}
-                                              :query-params {:email email
-                                                             :exact "true"}
-                                              :as :text
-                                              :throw-exceptions false}
-                                             (:http-opts keycloak)))
-                status (:status resp)
-                parsed (some-> (:body resp) (json/parse-string true))]
-            (if (<= 200 status 299)
-              (http/format-response {:ok true
-                                     :items (vec (map user->item parsed))}
-                                    format)
+          :else
+          (try
+            (let [admin-token (token-client/client-credentials token-client {})
+                  access-token (:access-token admin-token)
+                  admin-url (:admin-url keycloak)
+                  resp (http-client/get (str admin-url "/users")
+                                        (merge {:headers {"authorization" (str "Bearer " access-token)}
+                                                :query-params {:email email
+                                                               :exact "true"}
+                                                :as :text
+                                                :throw-exceptions false}
+                                               (:http-opts keycloak)))
+                  status (:status resp)
+                  parsed (some-> (:body resp) (json/parse-string true))]
+              (if (<= 200 status 299)
+                (http/format-response {:ok true
+                                       :items (vec (map user->item parsed))}
+                                      format)
+                (http/format-response {:ok false
+                                       :error "lookup failed"
+                                       :status status
+                                       :details parsed}
+                                      format)))
+            (catch Exception ex
               (http/format-response {:ok false
                                      :error "lookup failed"
-                                     :status status
-                                     :details parsed}
-                                    format)))
-          (catch Exception ex
-            (http/format-response {:ok false
-                                   :error "lookup failed"
-                                   :details (.getMessage ex)}
-                                  format)))))))
+                                     :details (.getMessage ex)}
+                                    format))))))))
 
 (defn users-lookup-by-ids
   "Lookup users by id via local user_profiles store."
-  [{:keys [db]}]
-  (fn [req]
-    (let [format (http/get-accept-format req)
-          {:keys [ok data error]} (http/read-json-body req)
-          ids (when ok (coerce-user-ids (:ids data)))]
-      (cond
-        (not ok)
-        (http/format-response {:ok false :error error} format)
+  [{:keys [webdeps]}]
+  (let [{:keys [db]} webdeps]
+    (fn [req]
+      (let [format (http/get-accept-format req)
+            {:keys [ok data error]} (http/read-json-body req)
+            ids (when ok (coerce-user-ids (:ids data)))]
+        (cond
+          (not ok)
+          (http/format-response {:ok false :error error} format)
 
-        (not (seq ids))
-        (http/format-response {:ok false :error "missing ids"} format)
+          (not (seq ids))
+          (http/format-response {:ok false :error "missing ids"} format)
 
-        :else
-        (let [rows (users-db/fetch-user-profiles db {:user-ids ids})
-              items (mapv (fn [row]
-                            (assoc row :user_id (str (:user_id row))))
-                          rows)]
-          (http/format-response {:ok true :items items} format))))))
+          :else
+          (let [rows (users-db/fetch-user-profiles db {:user-ids ids})
+                items (mapv (fn [row]
+                              (assoc row :user_id (str (:user_id row))))
+                            rows)]
+            (http/format-response {:ok true :items items} format)))))))
 
 (defn users-me
   "Resolve the current user from the access token and return a profile.
   Uses local user_profiles cache with a Keycloak admin fallback."
-  [{:keys [db token-client keycloak logger]}]
-  (fn [req]
-    (let [format (http/get-accept-format req)
-          _ (logger/log logger ::users-me-req format)
-          user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
-                      (http/parse-uuid (get-in req [:auth/principal :user_id])))]
-      (logger/log logger ::users-me user-id)
-      (cond
-        (nil? user-id)
-        (http/format-response {:ok false :error "invalid user id"} format)
+  [{:keys [webdeps]}]
+  (let [{:keys [db token-client keycloak logger]} webdeps]
+    (fn [req]
+      (let [format (http/get-accept-format req)
+            _ (logger/log logger ::users-me-req format)
+            user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
+                        (http/parse-uuid (get-in req [:auth/principal :user_id])))]
+        (logger/log logger ::users-me user-id)
+        (cond
+          (nil? user-id)
+          (http/format-response {:ok false :error "invalid user id"} format)
 
-        :else
-        (let [local-profile (users-db/fetch-user-profile db {:user-id user-id})
-              fetched-profile (when-not local-profile
-                                (fetch-user-by-id {:token-client token-client
-                                                   :keycloak keycloak}
-                                                  (str user-id)))
-              profile (or local-profile fetched-profile)]
-          (when (and fetched-profile (map? fetched-profile))
-            (users-db/upsert-user-profile! db (profile->db fetched-profile)))
-          (if profile
-            (http/format-response {:ok true :item (profile->item profile)} format)
-            (http/format-response {:ok true :item {:user_id (str user-id)}} format)))))))
+          :else
+          (let [local-profile (users-db/fetch-user-profile db {:user-id user-id})
+                fetched-profile (when-not local-profile
+                                  (fetch-user-by-id {:token-client token-client
+                                                     :keycloak keycloak}
+                                                    (str user-id)))
+                profile (or local-profile fetched-profile)]
+            (when (and fetched-profile (map? fetched-profile))
+              (users-db/upsert-user-profile! db (profile->db fetched-profile)))
+            (if profile
+              (http/format-response {:ok true :item (profile->item profile)} format)
+              (http/format-response {:ok true :item {:user_id (str user-id)}} format))))))))

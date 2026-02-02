@@ -17,9 +17,9 @@
 
 (deftest users-me-returns-cached-profile
   (let [{:keys [db client]} (helpers/init-db)
-        handler (users/users-me {:db db
-                                 :token-client :dummy
-                                 :keycloak {:admin-url "http://keycloak"}})
+        handler (users/users-me {:webdeps {:db db
+                                           :token-client :dummy
+                                           :keycloak {:admin-url "http://keycloak"}}})
         user-id (java.util.UUID/randomUUID)]
     (try
       (users-db/upsert-user-profile! db {:user-id user-id
@@ -44,9 +44,9 @@
 
 (deftest users-me-fallbacks-to-keycloak-and-caches
   (let [{:keys [db client]} (helpers/init-db)
-        handler (users/users-me {:db db
-                                 :token-client :dummy
-                                 :keycloak {:admin-url "http://keycloak"}})
+        handler (users/users-me {:webdeps {:db db
+                                           :token-client :dummy
+                                           :keycloak {:admin-url "http://keycloak"}}})
         user-id (java.util.UUID/randomUUID)]
     (try
       (with-redefs [token-client/client-credentials (fn [_ _] {:access-token "token"})

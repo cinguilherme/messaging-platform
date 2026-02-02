@@ -10,9 +10,9 @@
             [integrant.core :as ig]))
 
 (deftest users-lookup-missing-email
-  (let [handler (users/users-lookup {:db :dummy
-                                     :token-client :dummy
-                                     :keycloak {:admin-url "http://keycloak"}})
+  (let [handler (users/users-lookup {:webdeps {:db :dummy
+                                               :token-client :dummy
+                                               :keycloak {:admin-url "http://keycloak"}}})
         resp (handler {:request-method :get
                        :headers {"accept" "application/json"}
                        :query-params {}})
@@ -23,9 +23,9 @@
       (is (= "missing email or username" (:error body))))))
 
 (deftest users-lookup-missing-backend
-  (let [handler (users/users-lookup {:db nil
-                                     :token-client nil
-                                     :keycloak nil})
+  (let [handler (users/users-lookup {:webdeps {:db nil
+                                               :token-client nil
+                                               :keycloak nil}})
         resp (handler {:request-method :get
                        :headers {"accept" "application/json"}
                        :query-params {"email" "user@example.com"}})
@@ -46,9 +46,9 @@
                                             :firstName "User"
                                             :lastName "Example"
                                             :enabled true}])})]
-    (let [handler (users/users-lookup {:db :dummy
-                                       :token-client :dummy
-                                       :keycloak {:admin-url "http://keycloak"}})
+    (let [handler (users/users-lookup {:webdeps {:db :dummy
+                                                 :token-client :dummy
+                                                 :keycloak {:admin-url "http://keycloak"}}})
           resp (handler {:request-method :get
                          :headers {"accept" "application/json"}
                          :query-params {"email" "USER@EXAMPLE.COM"}})
@@ -66,9 +66,9 @@
 
 (deftest users-lookup-by-username-local
   (let [{:keys [db client]} (helpers/init-db)
-        handler (users/users-lookup {:db db
-                                     :token-client nil
-                                     :keycloak nil})
+        handler (users/users-lookup {:webdeps {:db db
+                                               :token-client nil
+                                               :keycloak nil}})
         user-id (java.util.UUID/randomUUID)]
     (try
       (users-db/upsert-user-profile! db {:user-id user-id

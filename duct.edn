@@ -1,189 +1,191 @@
 {:system
- {:duct.module/logging {}
+  {:duct.module/logging {}
 
-  ;; =============================================================================
-  ;; APP BITS (src/core_service/app/*)
-  ;;
-  ;; Add new "application" namespaces here:
-  ;; - config:    :core-service.app.config.*   (returns config maps / env overrides)
-  ;; - handlers:  :core-service.app.handlers.* (Integrant init-keys for business handlers)
-  ;; - server:    :core-service.app.server.*   (Ring routes/handlers)
-  ;; - workers:   :core-service.app.workers.*  (background jobs)
-  ;; =============================================================================
+   ;; =============================================================================
+   ;; APP BITS (src/core_service/app/*)
+   ;;
+   ;; Add new "application" namespaces here:
+   ;; - config:    :core-service.app.config.*   (returns config maps / env overrides)
+   ;; - handlers:  :core-service.app.handlers.* (Integrant init-keys for business handlers)
+   ;; - server:    :core-service.app.server.*   (Ring routes/handlers)
+   ;; - workers:   :core-service.app.workers.*  (background jobs)
+   ;; =============================================================================
 
-  ;; App config root (example)
-  :core-service.app.config.config/get-config {:logger #ig/ref :duct/logger}
+   ;; App config root (example)
+   :core-service.app.config.config/get-config {:logger #ig/ref :duct/logger}
 
-  ;; Client config providers (env-aware; safe defaults for local vs Docker)
-  ;;
-  ;; Override precedence:
-  ;; - explicit values in duct.edn (e.g. {:uri "..."}), then
-  ;; - environment variables, then
-  ;; - sane defaults (localhost for local dev, service DNS for Docker)
-  :core-service.app.config.clients/redis {}
-  :core-service.app.config.clients/valkey {}
-  :core-service.app.config.databases/postgres {}
-  :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
-  :core-service.app.config.messaging/default-routing {}
-  :core-service.app.config.messaging/storage-names {}
-  :core-service.app.config.messaging/segment-config {}
-  :core-service.app.config.messaging/retention-config {}
-  :core-service.app.config.messaging/receipt-config {}
-  :core-service.app.config.messaging/idempotency-config {}
-  :core-service.app.config.observability/logging {:level :debug
-                                                  :components #{:segment-flush}
-                                                  :ticker {:enable true :tick-log-interval-ms 1000}
-                                                  :segment-flush {:enabled true :stage-logs true}}
-  :core-service.app.config.auth/keycloak {}
-  :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.config.auth/api-keys {}
-  :core-service.app.config.databases/run-migrations {}
+   ;; Client config providers (env-aware; safe defaults for local vs Docker)
+   ;;
+   ;; Override precedence:
+   ;; - explicit values in duct.edn (e.g. {:uri "..."}), then
+   ;; - environment variables, then
+   ;; - sane defaults (localhost for local dev, service DNS for Docker)
+   :core-service.app.config.clients/redis {}
+   :core-service.app.config.clients/valkey {}
+   :core-service.app.config.databases/postgres {}
+   :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
+   :core-service.app.config.messaging/default-routing {}
+   :core-service.app.config.messaging/storage-names {}
+   :core-service.app.config.messaging/segment-config {}
+   :core-service.app.config.messaging/retention-config {}
+   :core-service.app.config.messaging/receipt-config {}
+   :core-service.app.config.messaging/idempotency-config {}
+   :core-service.app.config.observability/logging {:level :debug
+                                                   :components #{:segment-flush}
+                                                   :ticker {:enable true :tick-log-interval-ms 1000}
+                                                   :segment-flush {:enabled true :stage-logs true}}
+   :core-service.app.config.auth/keycloak {}
+   :core-service.app.config.auth/keycloak-admin {:keycloak #ig/ref :core-service.app.config.auth/keycloak}
+   :core-service.app.config.auth/api-keys {}
+   :core-service.app.config.databases/run-migrations {}
 
-  ;; Metrics (Prometheus)
-  :d-core.core.metrics.prometheus/registry {}
-  :d-core.core.metrics.prometheus/metrics {:registry #ig/ref :d-core.core.metrics.prometheus/registry}
-  :core-service.app.metrics/component {:metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
+   ;; Metrics (Prometheus)
+   :d-core.core.metrics.prometheus/registry {}
+   :d-core.core.metrics.prometheus/metrics {:registry #ig/ref :d-core.core.metrics.prometheus/registry}
+   :core-service.app.metrics/component {:metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
 
-  ;; Auth components (Keycloak + scope authz + API keys)
-  :d-core.core.authn.jwt/authenticator #ig/ref :core-service.app.config.auth/keycloak
-  :d-core.core.authz.scope/authorizer {}
-  :core-service.app.server.auth/require-fn {}
-  :d-core.core.auth.http/authentication-middleware {:authenticator #ig/ref :d-core.core.authn.jwt/authenticator
-                                                    :opts {:allow-anonymous? true}
+   ;; Auth components (Keycloak + scope authz + API keys)
+   :d-core.core.authn.jwt/authenticator #ig/ref :core-service.app.config.auth/keycloak
+   :d-core.core.authz.scope/authorizer {}
+   :core-service.app.server.auth/require-fn {}
+   :d-core.core.auth.http/authentication-middleware {:authenticator #ig/ref :d-core.core.authn.jwt/authenticator
+                                                     :opts {:allow-anonymous? true}
+                                                     :logger #ig/ref :duct/logger}
+   :d-core.core.auth.http/authorization-middleware {:authorizer #ig/ref :d-core.core.authz.scope/authorizer
+                                                    :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
                                                     :logger #ig/ref :duct/logger}
-  :d-core.core.auth.http/authorization-middleware {:authorizer #ig/ref :d-core.core.authz.scope/authorizer
-                                                   :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
-                                                   :logger #ig/ref :duct/logger}
-  :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                               :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
-                                               :logger #ig/ref :duct/logger}
-  :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
-
-  ;; Database components (Postgres + SQL protocol)
-  :d-core.core.clients.postgres/client #ig/ref :core-service.app.config.databases/postgres
-  :d-core.core.databases.postgres/db {:postgres-client #ig/ref :d-core.core.clients.postgres/client}
-  :d-core.core.databases.sql/common {:default-engine :postgres
-                                     :engines {:postgres #ig/ref :d-core.core.databases.postgres/db}}
-  :core-service.app.config.databases/ensure-messaging-tables {}
-  :core-service.app.db.messaging-tables/tables {:db #ig/ref :d-core.core.databases.sql/common
-                                                :ensure? #ig/ref :core-service.app.config.databases/ensure-messaging-tables
+   :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
+                                                :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
                                                 :logger #ig/ref :duct/logger}
-  :core-service.app.db/migrations {:db #ig/ref :d-core.core.databases.sql/common
-                                   :path "resources/db/migrations"
-                                   :run? #ig/ref :core-service.app.config.databases/run-migrations
-                                   :logger #ig/ref :duct/logger}
+   :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
+
+   ;; Database components (Postgres + SQL protocol)
+   :d-core.core.clients.postgres/client #ig/ref :core-service.app.config.databases/postgres
+   :d-core.core.databases.postgres/db {:postgres-client #ig/ref :d-core.core.clients.postgres/client}
+   :d-core.core.databases.sql/common {:default-engine :postgres
+                                      :engines {:postgres #ig/ref :d-core.core.databases.postgres/db}}
+   :core-service.app.config.databases/ensure-messaging-tables {}
+   :core-service.app.db.messaging-tables/tables {:db #ig/ref :d-core.core.databases.sql/common
+                                                 :ensure? #ig/ref :core-service.app.config.databases/ensure-messaging-tables
+                                                 :logger #ig/ref :duct/logger}
+   :core-service.app.db/migrations {:db #ig/ref :d-core.core.databases.sql/common
+                                    :path "resources/db/migrations"
+                                    :run? #ig/ref :core-service.app.config.databases/run-migrations
+                                    :logger #ig/ref :duct/logger}
 
 
-  ;; App handlers
-  :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger
-                                                    :metrics #ig/ref :core-service.app.metrics/component}
-  :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger
-                                                 :metrics #ig/ref :core-service.app.metrics/component}
+   ;; App handlers
+   :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger
+                                                     :metrics #ig/ref :core-service.app.metrics/component}
+   :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger
+                                                  :metrics #ig/ref :core-service.app.metrics/component}
 
-  ;; Web (Duct)
-  :duct.module/web
-  {:port 3000
-   :middleware [:d-core.core.tracing.http/middleware
-                :core-service.app.server.middleware/metrics
-                :core-service.app.server.middleware/api-key
-                :d-core.core.auth.http/authentication-middleware
-                :d-core.core.auth.http/authorization-middleware
-                :core-service.app.server.middleware/multipart]
-   :routes [["/" {:get :core-service.app.server.routes/index}]
-            ["/test" {:get :core-service.app.server.routes/test}]
-            ["/test/image-upload" {:post :core-service.app.server.routes/image-upload}]
-            ["/test/image-upload/list" {:get :core-service.app.server.routes/image-list}]
-            ["/metrics" {:get :core-service.app.server.metrics/handler}]
+   ;; Web (Duct)
+   :duct.module/web
+   {:port 3000
+    :middleware [:d-core.core.tracing.http/middleware
+                 :core-service.app.server.middleware/metrics
+                 :core-service.app.server.middleware/api-key
+                 :d-core.core.auth.http/authentication-middleware
+                 :d-core.core.auth.http/authorization-middleware
+                 :core-service.app.server.middleware/multipart]
+    :routes [["/" {:get :core-service.app.server.routes/index}]
+             ["/test" {:get :core-service.app.server.routes/test}]
+             ["/test/image-upload" {:post :core-service.app.server.routes/image-upload}]
+             ["/test/image-upload/list" {:get :core-service.app.server.routes/image-list}]
+             ["/metrics" {:get :core-service.app.server.metrics/handler}]
 
-            ;; v1 conversation routes
-            ["/v1/conversations" {:post :core-service.app.server.conversation.v1.authed/conversations-create
-                                  :get :core-service.app.server.conversation.v1.authed/conversations-list}]
-            ["/v1/conversations/:id" {:get :core-service.app.server.conversation.v1.authed/conversations-get}]
-            ["/v1/conversations/:id/messages" {:post :core-service.app.server.conversation.v1.authed/messages-create
-                                               :get :core-service.app.server.conversation.v1.authed/messages-list}]
-            ["/v1/conversations/:id/receipts" {:post :core-service.app.server.conversation.v1.authed/receipts-create}]
-            ["/v1/auth/register" {:post :core-service.app.server.conversation.v1.public/auth-register}]
-            ["/v1/auth/login" {:post :core-service.app.server.conversation.v1.public/auth-login}]
-            ["/v1/auth/refresh" {:post :core-service.app.server.conversation.v1.public/auth-refresh}]
-            ["/v1/users/lookup" {:get :core-service.app.server.users.v1.authed/users-lookup
-                                 :post :core-service.app.server.users.v1.authed/users-lookup-by-ids}]
-            ["/v1/users/me" {:get :core-service.app.server.users.v1.authed/users-me}]
+             ;; v1 conversation routes
+             ["/v1/conversations" {:post :core-service.app.server.conversation.v1.authed/conversations-create
+                                   :get :core-service.app.server.conversation.v1.authed/conversations-list}]
+             ["/v1/conversations/:id" {:get :core-service.app.server.conversation.v1.authed/conversations-get}]
+             ["/v1/conversations/:id/messages" {:post :core-service.app.server.conversation.v1.authed/messages-create
+                                                :get :core-service.app.server.conversation.v1.authed/messages-list}]
+             ["/v1/conversations/:id/receipts" {:post :core-service.app.server.conversation.v1.authed/receipts-create}]
+             ["/v1/auth/register" {:post :core-service.app.server.conversation.v1.public/auth-register}]
+             ["/v1/auth/login" {:post :core-service.app.server.conversation.v1.public/auth-login}]
+             ["/v1/auth/refresh" {:post :core-service.app.server.conversation.v1.public/auth-refresh}]
+             ["/v1/users/lookup" {:get :core-service.app.server.users.v1.authed/users-lookup
+                                  :post :core-service.app.server.users.v1.authed/users-lookup-by-ids}]
+             ["/v1/users/me" {:get :core-service.app.server.users.v1.authed/users-me}]
 
-            ;; deadletter admin routes
-            ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
-            ["/admin/dl/:dlq-id" {:get :core-service.app.server.routes/dl-get}]
-            ["/admin/dl/:dlq-id/replay" {:post :core-service.app.server.routes/dl-replay}]
-            ["/admin/dl/:dlq-id/mark" {:post :core-service.app.server.routes/dl-mark}]]}
-  :core-service.app.server.routes/index {}
-  :core-service.app.server.routes/test {:producer #ig/ref :d-core.core.producers.common/producer
-                                        :cache #ig/ref :d-core.core.cache.common/common
-                                        :storage #ig/ref :d-core.core.storage/common}
-  :core-service.app.server.routes/image-upload {:workers #ig/ref :core-service.app.workers.images/system
-                                                :logger #ig/ref :duct/logger
-                                                :max-bytes 200000
-                                                :max-dim 1024}
-  :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
-                                              :logger #ig/ref :duct/logger}
-  :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
-  :core-service.app.server.middleware/metrics {:metrics #ig/ref :core-service.app.metrics/component}
-  :core-service.app.server.conversation.v1.authed/conversations-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                        :logger #ig/ref :duct/logger}
-  :core-service.app.server.conversation.v1.authed/conversations-list {:db #ig/ref :d-core.core.databases.sql/common
+             ;; deadletter admin routes
+             ["/admin/dl" {:get :core-service.app.server.routes/dl-list}]
+             ["/admin/dl/:dlq-id" {:get :core-service.app.server.routes/dl-get}]
+             ["/admin/dl/:dlq-id/replay" {:post :core-service.app.server.routes/dl-replay}]
+             ["/admin/dl/:dlq-id/mark" {:post :core-service.app.server.routes/dl-mark}]]}
+   :core-service.app.server.routes/index {}
+   :core-service.app.server.routes/test {:producer #ig/ref :d-core.core.producers.common/producer
+                                         :cache #ig/ref :d-core.core.cache.common/common
+                                         :storage #ig/ref :d-core.core.storage/common}
+   :core-service.app.server.routes/image-upload {:workers #ig/ref :core-service.app.workers.images/system
+                                                 :logger #ig/ref :duct/logger
+                                                 :max-bytes 200000
+                                                 :max-dim 1024}
+   :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
+                                               :logger #ig/ref :duct/logger}
+   :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
+   :core-service.app.server.middleware/metrics {:metrics #ig/ref :core-service.app.metrics/component}
+   :core-service.app.server.conversation.v1.authed/conversations-create {:db #ig/ref :d-core.core.databases.sql/common
+                                                                         :logger #ig/ref :duct/logger}
+   :core-service.app.server.conversation.v1.authed/conversations-list {:db #ig/ref :d-core.core.databases.sql/common
+                                                                       :logger #ig/ref :duct/logger
+                                                                       :redis #ig/ref :d-core.core.clients.redis/client
+                                                                       :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                       :metrics #ig/ref :core-service.app.metrics/component
+                                                                       :minio #ig/ref :core-service.app.storage.minio/client
+                                                                       :segments #ig/ref :core-service.app.config.messaging/segment-config
+                                                                       :token-client #ig/ref :d-core.core.auth/token-client
+                                                                       :keycloak #ig/ref :core-service.app.config.auth/keycloak}
+   :core-service.app.server.conversation.v1.authed/conversations-get {:db #ig/ref :d-core.core.databases.sql/common
                                                                       :logger #ig/ref :duct/logger
-                                                                      :redis #ig/ref :d-core.core.clients.redis/client
-                                                                      :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                      :metrics #ig/ref :core-service.app.metrics/component
-                                                                      :minio #ig/ref :core-service.app.storage.minio/client
-                                                                      :segments #ig/ref :core-service.app.config.messaging/segment-config
                                                                       :token-client #ig/ref :d-core.core.auth/token-client
                                                                       :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.conversation.v1.authed/conversations-get {:db #ig/ref :d-core.core.databases.sql/common
-                                                                     :logger #ig/ref :duct/logger
-                                                                     :token-client #ig/ref :d-core.core.auth/token-client
-                                                                     :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                   :logger #ig/ref :duct/logger
-                                                                   :redis #ig/ref :d-core.core.clients.redis/client
-                                                                   :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                   :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
-                                                                   :metrics #ig/ref :core-service.app.metrics/component
-                                                                   :logging #ig/ref :core-service.app.config.observability/logging}
-  :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
-                                                                 :logger #ig/ref :duct/logger
-                                                                 :redis #ig/ref :d-core.core.clients.redis/client
-                                                                 :minio #ig/ref :core-service.app.storage.minio/client
-                                                                 :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                 :metrics #ig/ref :core-service.app.metrics/component
-                                                                 :segments #ig/ref :core-service.app.config.messaging/segment-config}
-  :core-service.app.server.conversation.v1.authed/receipts-create {:db #ig/ref :d-core.core.databases.sql/common
-                                                                   :logger #ig/ref :duct/logger
-                                                                   :redis #ig/ref :d-core.core.clients.redis/client
-                                                                   :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                                                   :metrics #ig/ref :core-service.app.metrics/component
-                                                                   :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
-  :core-service.app.server.conversation.v1.public/auth-register {:db #ig/ref :d-core.core.databases.sql/common
-                                                                 :token-client #ig/ref :d-core.core.auth/token-client
-                                                                 :logger #ig/ref :duct/logger
-                                                                 :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.conversation.v1.public/auth-login {:db #ig/ref :d-core.core.databases.sql/common
-                                                              :logger #ig/ref :duct/logger
-                                                              :token-client #ig/ref :d-core.core.auth/token-client
-                                                              :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.conversation.v1.public/auth-refresh {:logger #ig/ref :duct/logger
-                                                                :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.users.v1.authed/users-lookup {:db #ig/ref :d-core.core.databases.sql/common
-                                                         :logger #ig/ref :duct/logger
-                                                         :token-client #ig/ref :d-core.core.auth/token-client
-                                                         :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.users.v1.authed/users-lookup-by-ids {:db #ig/ref :d-core.core.databases.sql/common}
-  :core-service.app.server.users.v1.authed/users-me {:db #ig/ref :d-core.core.databases.sql/common
-                                                     :logger #ig/ref :duct/logger
-                                                     :token-client #ig/ref :d-core.core.auth/token-client
-                                                     :keycloak #ig/ref :core-service.app.config.auth/keycloak}
-  :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
-  :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
-  :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
-  :core-service.app.server.routes/dl-replay {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+   :core-service.app.server.conversation.v1.authed/messages-create {:db #ig/ref :d-core.core.databases.sql/common
+                                                                    :logger #ig/ref :duct/logger
+                                                                    :redis #ig/ref :d-core.core.clients.redis/client
+                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                    :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
+                                                                    :metrics #ig/ref :core-service.app.metrics/component
+                                                                    :logging #ig/ref :core-service.app.config.observability/logging}
+   :core-service.app.server.conversation.v1.authed/messages-list {:db #ig/ref :d-core.core.databases.sql/common
+                                                                  :logger #ig/ref :duct/logger
+                                                                  :redis #ig/ref :d-core.core.clients.redis/client
+                                                                  :minio #ig/ref :core-service.app.storage.minio/client
+                                                                  :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                  :metrics #ig/ref :core-service.app.metrics/component
+                                                                  :segments #ig/ref :core-service.app.config.messaging/segment-config}
+   :core-service.app.server.conversation.v1.authed/receipts-create {:db #ig/ref :d-core.core.databases.sql/common
+                                                                    :logger #ig/ref :duct/logger
+                                                                    :redis #ig/ref :d-core.core.clients.redis/client
+                                                                    :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                                                    :metrics #ig/ref :core-service.app.metrics/component
+                                                                    :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
+   :core-service.app.server.conversation.v1.public/auth-register {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.public/auth-login {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.conversation.v1.public/auth-refresh {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.users.v1.authed/users-lookup {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.users.v1.authed/users-lookup-by-ids {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.users.v1.authed/users-me {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+   :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+   :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+   :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+   :core-service.app.server.routes/dl-replay {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
+
+   ;; webdeps component is a bundle of general deps
+   :core-service.app.config.webdeps/webdeps {:logger #ig/ref :duct/logger
+                                             :db #ig/ref :d-core.core.databases.sql/common
+                                             :metrics #ig/ref :core-service.app.metrics/component
+                                             :producer #ig/ref :d-core.core.producers.common/producer
+                                             :consumer #ig/ref :d-core.core.consumers.consumer/consumer
+                                             :storage #ig/ref :d-core.core.storage/common
+                                             :text-search #ig/ref :d-core.core.text-search/common
+                                             :geo #ig/ref :d-core.core.geo/common
+                                             :rate-limit #ig/ref :d-core.core.rate-limit/common
+                                             :token-client #ig/ref :d-core.core.auth/token-client
+                                             :keycloak #ig/ref :core-service.app.config.auth/keycloak}
+   
+   :cron-task #ig/ref :d-core.core.cron.task/common}
 
   ;; WebSocket server (Aleph) - separate port
   ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
