@@ -3,6 +3,7 @@
             [clj-http.client :as http-client]
             [clojure.string :as str]
             [duct.logger :as logger]
+            [integrant.core :as ig]
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
             [core-service.app.db.users :as users-db]
@@ -259,3 +260,10 @@
                                      :status (:status resp)
                                      :details (:error resp)}
                                     format))))))))
+
+(defmethod ig/init-key :core-service.app.server.conversation.v1.public/routes
+  [_ {:keys [webdeps]}]
+  ["/v1/auth"
+   ["/register" {:post (auth-register {:webdeps webdeps})}]
+   ["/login" {:post (auth-login {:webdeps webdeps})}]
+   ["/refresh" {:post (auth-refresh {:webdeps webdeps})}]])

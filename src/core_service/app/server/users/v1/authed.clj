@@ -3,6 +3,7 @@
             [clj-http.client :as http-client]
             [clojure.string :as str]
             [duct.logger :as logger]
+            [integrant.core :as ig]
             [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
             [core-service.app.protocols :as protocols]
@@ -194,3 +195,10 @@
         (if-let [profile (protocols/resolve-user-profile webdeps user-id)]
           {:ok true :item (profile->item profile)}
           {:ok true :item {:user_id (str user-id)}})))))
+
+(defmethod ig/init-key :core-service.app.server.users.v1.authed/routes
+  [_ {:keys [webdeps]}]
+  ["/v1/users"
+   ["/lookup" {:get (users-lookup {:webdeps webdeps})
+               :post (users-lookup-by-ids {:webdeps webdeps})}]
+   ["/me" {:get (users-me {:webdeps webdeps})}]])

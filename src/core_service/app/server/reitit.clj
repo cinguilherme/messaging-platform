@@ -7,7 +7,7 @@
 (defmethod ig/init-key :core-service.app.server.reitit/router
   [_ {:keys [routes http-base-interceptors]}]
   (http/router
-   routes
+   (vec routes)
    {:data {:interceptors (or http-base-interceptors [])}
     :executor sieppari/executor}))
 

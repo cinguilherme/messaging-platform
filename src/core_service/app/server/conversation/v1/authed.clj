@@ -17,6 +17,7 @@
             [core-service.app.libs.util :as util]
             [d-core.core.auth.token-client :as token-client]
             [duct.logger :as logger]
+            [integrant.core :as ig]
             [malli.core :as m]
             [malli.error :as me]
             [taoensso.carmine :as car]))
@@ -660,7 +661,7 @@
           (not (m/validate msg-schema/ReceiptCreateSchema data))
           (http/invalid-response format msg-schema/ReceiptCreateSchema data)
           :else
-          (do
+            (do
             (receipts/record! {:redis redis
                                :naming naming
                                :receipt receipt
@@ -675,3 +676,13 @@
                                    :message_id (str (:message_id data))
                                    :receipt_type (name (:receipt_type data))}
                                   format)))))))
+
+(defmethod ig/init-key :core-service.app.server.conversation.v1.authed/routes
+  [_ {:keys [webdeps]}]
+  ["/v1/conversations"
+   ["" {:post (conversations-create {:webdeps webdeps})
+        :get (conversations-list {:webdeps webdeps})}]
+   ["/:id" {:get (conversations-get {:webdeps webdeps})}]
+   ["/:id/messages" {:post (messages-create {:webdeps webdeps})
+                     :get (messages-list {:webdeps webdeps})}]
+   ["/:id/receipts" {:post (receipts-create {:webdeps webdeps})}]])

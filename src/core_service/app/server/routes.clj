@@ -11,6 +11,7 @@
             [d-core.core.cache.protocol :as cache]
             [d-core.core.storage.protocol :as storage]
             [d-core.core.messaging.dead-letter.admin.protocol :as dl-admin]
+            [integrant.core :as ig]
             [duct.logger :as logger]))
 
 (defn index [_options]
@@ -235,3 +236,18 @@
       (when (and logger (not (:ok result)))
         (logger/log logger :error ::image-list-failed {:error (:error result)}))
       (http/format-response result format))))
+
+(defmethod ig/init-key :core-service.app.server.routes/main
+  [_ {:keys [index test image-upload image-list metrics]}]
+  [["/" {:get index}]
+   ["/test" {:get test}]
+   ["/test/image-upload" {:post image-upload}]
+   ["/test/image-upload/list" {:get image-list}]
+   ["/metrics" {:get metrics}]])
+
+(defmethod ig/init-key :core-service.app.server.routes/admin
+  [_ {:keys [dl-list dl-get dl-replay dl-mark]}]
+  [["/admin/dl" {:get dl-list}]
+   ["/admin/dl/:dlq-id" {:get dl-get}]
+   ["/admin/dl/:dlq-id/replay" {:post dl-replay}]
+   ["/admin/dl/:dlq-id/mark" {:post dl-mark}]])

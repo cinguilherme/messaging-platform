@@ -80,34 +80,30 @@
    :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger
                                                   :metrics #ig/ref :core-service.app.metrics/component}
 
-  :core-service.app.server.reitit/router
-  {:routes [["/" {:get #ig/ref :core-service.app.server.routes/index}]
-            ["/test" {:get #ig/ref :core-service.app.server.routes/test}]
-            ["/test/image-upload" {:post #ig/ref :core-service.app.server.routes/image-upload}]
-            ["/test/image-upload/list" {:get #ig/ref :core-service.app.server.routes/image-list}]
-            ["/metrics" {:get #ig/ref :core-service.app.server.metrics/handler}]
-
-            ;; v1 conversation routes
-            ["/v1/conversations" {:post #ig/ref :core-service.app.server.conversation.v1.authed/conversations-create
-                                  :get #ig/ref :core-service.app.server.conversation.v1.authed/conversations-list}]
-            ["/v1/conversations/:id" {:get #ig/ref :core-service.app.server.conversation.v1.authed/conversations-get}]
-            ["/v1/conversations/:id/messages" {:post #ig/ref :core-service.app.server.conversation.v1.authed/messages-create
-                                               :get #ig/ref :core-service.app.server.conversation.v1.authed/messages-list}]
-            ["/v1/conversations/:id/receipts" {:post #ig/ref :core-service.app.server.conversation.v1.authed/receipts-create}]
-            ["/v1/auth/register" {:post #ig/ref :core-service.app.server.conversation.v1.public/auth-register}]
-            ["/v1/auth/login" {:post #ig/ref :core-service.app.server.conversation.v1.public/auth-login}]
-            ["/v1/auth/refresh" {:post #ig/ref :core-service.app.server.conversation.v1.public/auth-refresh}]
-            ["/v1/users/lookup" {:get #ig/ref :core-service.app.server.users.v1.authed/users-lookup
-                                 :post #ig/ref :core-service.app.server.users.v1.authed/users-lookup-by-ids}]
-            ["/v1/users/me" {:get #ig/ref :core-service.app.server.users.v1.authed/users-me}]
-
-            ;; deadletter admin routes
-            ["/admin/dl" {:get #ig/ref :core-service.app.server.routes/dl-list}]
-            ["/admin/dl/:dlq-id" {:get #ig/ref :core-service.app.server.routes/dl-get}]
-            ["/admin/dl/:dlq-id/replay" {:post #ig/ref :core-service.app.server.routes/dl-replay}]
-            ["/admin/dl/:dlq-id/mark" {:post #ig/ref :core-service.app.server.routes/dl-mark}]]
+   :core-service.app.server.reitit/router
+  {:routes [#ig/ref :core-service.app.server.routes/main
+            #ig/ref :core-service.app.server.conversation.v1.public/routes
+            #ig/ref :core-service.app.server.conversation.v1.authed/routes
+            #ig/ref :core-service.app.server.users.v1.authed/routes
+            #ig/ref :core-service.app.server.routes/admin]
   
   :http-base-interceptors #ig/ref :core-service.app.server.interceptors/http-base-interceptors}
+
+  :core-service.app.server.routes/main 
+  {:index #ig/ref :core-service.app.server.routes/index
+   :test #ig/ref :core-service.app.server.routes/test
+   :image-upload #ig/ref :core-service.app.server.routes/image-upload
+   :image-list #ig/ref :core-service.app.server.routes/image-list
+   :metrics #ig/ref :core-service.app.server.metrics/handler}
+
+  :core-service.app.server.routes/admin 
+  {:dl-list #ig/ref :core-service.app.server.routes/dl-list
+   :dl-get #ig/ref :core-service.app.server.routes/dl-get
+   :dl-replay #ig/ref :core-service.app.server.routes/dl-replay
+   :dl-mark #ig/ref :core-service.app.server.routes/dl-mark}
+  :core-service.app.server.users.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+  :core-service.app.server.conversation.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+  :core-service.app.server.conversation.v1.public/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
 
   :core-service.app.server.interceptors/http-base-interceptors
   {:metrics #ig/ref :core-service.app.server.interceptors.metrics/metrics
@@ -136,19 +132,7 @@
                                                          :logger #ig/ref :duct/logger}
   :core-service.app.server.interceptors.auth/auth {:middleware #ig/ref :d-core.core.auth.http/authentication-middleware}
   :core-service.app.server.interceptors.authz/authz {:middleware #ig/ref :d-core.core.auth.http/authorization-middleware}
-   :core-service.app.server.conversation.v1.authed/conversations-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.authed/conversations-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.authed/conversations-get {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.authed/messages-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.authed/messages-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.authed/receipts-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.public/auth-register {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.public/auth-login {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.conversation.v1.public/auth-refresh {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.users.v1.authed/users-lookup {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.users.v1.authed/users-lookup-by-ids {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.users.v1.authed/users-me {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-   :core-service.app.server.routes/index {}
+  :core-service.app.server.routes/index {}
    :core-service.app.server.routes/test {:producer #ig/ref :d-core.core.producers.common/producer
                                          :cache #ig/ref :d-core.core.cache.common/common
                                          :storage #ig/ref :d-core.core.storage/common}
