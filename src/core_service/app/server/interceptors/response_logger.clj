@@ -3,27 +3,27 @@
             [duct.logger :as logger]))
 
 (defn response-logger
-  "A Reitit-style interceptor for logging the request data on 'enter' and response data on 'leave'."
+  "A Reitit-style interceptor for logging request and response data in a single 'leave' event."
   [logger]
   {:name  ::response-logger
    :enter (fn [ctx]
             (let [req (:request ctx)]
-              (when logger
-                (logger/log logger :info ::api-entry
-                            {:uri (:uri req)
-                             :method (:request-method req)
-                             :params (:params req)
-                             :headers (:headers req)}))
-              ctx))
+              (assoc ctx ::request-info {:uri (:uri req)
+                                         :method (:request-method req)
+                                         :params (:params req)
+                                         :headers (:headers req)
+                                         :cid (:cid ctx)
+                                         :start-time (System/nanoTime)})))
    :leave (fn [ctx]
-            (let [req  (:request ctx)
-                  resp (:response ctx)]
+            (let [req-info (::request-info ctx)
+                  resp (:response ctx)
+                  duration-ms (quot (- (System/nanoTime) (:start-time req-info)) 1000000)]
               (when logger
-                (logger/log logger :info ::api-exit
-                            {:uri (:uri req)
-                             :method (:request-method req)
-                             :status (:status resp)
-                             :data (:body resp)}))
+                (logger/log logger :info ::api-request
+                            (assoc req-info
+                                   :status (:status resp)
+                                   :data (:body resp)
+                                   :duration-ms duration-ms)))
               ctx))})
 
 (defmethod ig/init-key :core-service.app.server.interceptors.response-logger/response-logger
