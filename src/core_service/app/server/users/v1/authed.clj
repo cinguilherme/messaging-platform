@@ -5,7 +5,10 @@
             [duct.logger :as logger]
             [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
-            [d-core.core.auth.token-client :as token-client]))
+            [core-service.app.protocols :as protocols]
+            [core-service.app.config.webdeps]
+            [d-core.core.auth.token-client :as token-client])
+  (:import [core_service.app.config.webdeps WebDeps]))
 
 (defn- normalize-email
   [value]
@@ -164,30 +167,30 @@
                             rows)]
             (http/format-response {:ok true :items items} format)))))))
 
+(extend-type WebDeps
+  protocols/ProfileService
+  (resolve-user-profile [this user-id]
+    (let [{:keys [db token-client keycloak]} this
+          local-profile (users-db/fetch-user-profile db {:user-id user-id})
+          fetched-profile (when-not local-profile
+                            (fetch-user-by-id {:token-client token-client
+                                               :keycloak keycloak}
+                                              (str user-id)))]
+      (when (and fetched-profile (map? fetched-profile))
+        (users-db/upsert-user-profile! db (profile->db fetched-profile)))
+      (or local-profile fetched-profile))))
+
 (defn users-me
   "Resolve the current user from the access token and return a profile.
   Uses local user_profiles cache with a Keycloak admin fallback."
   [{:keys [webdeps]}]
-  (let [{:keys [db token-client keycloak logger]} webdeps]
-    (fn [req]
-      (let [format (http/get-accept-format req)
-            _ (logger/log logger ::users-me-req format)
-            user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
-                        (http/parse-uuid (get-in req [:auth/principal :user_id])))]
-        (logger/log logger ::users-me user-id)
-        (cond
-          (nil? user-id)
-          (http/format-response {:ok false :error "invalid user id"} format)
-
-          :else
-          (let [local-profile (users-db/fetch-user-profile db {:user-id user-id})
-                fetched-profile (when-not local-profile
-                                  (fetch-user-by-id {:token-client token-client
-                                                     :keycloak keycloak}
-                                                    (str user-id)))
-                profile (or local-profile fetched-profile)]
-            (when (and fetched-profile (map? fetched-profile))
-              (users-db/upsert-user-profile! db (profile->db fetched-profile)))
-            (if profile
-              (http/format-response {:ok true :item (profile->item profile)} format)
-              (http/format-response {:ok true :item {:user_id (str user-id)}} format))))))))
+  (let [{:keys [logger]} webdeps]
+    (fn [{:keys [user-id response-format]}]
+      (when logger
+        (logger/log logger ::users-me-req response-format)
+        (logger/log logger ::users-me user-id))
+      (if (nil? user-id)
+        {:status 401 :body {:ok false :error "invalid user id"}}
+        (if-let [profile (protocols/resolve-user-profile webdeps user-id)]
+          {:ok true :item (profile->item profile)}
+          {:ok true :item {:user_id (str user-id)}})))))

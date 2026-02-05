@@ -83,10 +83,12 @@
    ;; Web (Duct)
    :duct.module/web
    {:port 3000
-    :middleware [:d-core.core.tracing.http/middleware
+    :middleware [:core-service.app.server.middleware/format
+                 :d-core.core.tracing.http/middleware
                  :core-service.app.server.middleware/metrics
                  :core-service.app.server.middleware/api-key
                  :d-core.core.auth.http/authentication-middleware
+                 :core-service.app.server.middleware/user-context
                  :d-core.core.auth.http/authorization-middleware
                  :core-service.app.server.middleware/multipart]
     :routes [["/" {:get :core-service.app.server.routes/index}]
@@ -126,6 +128,8 @@
                                                :logger #ig/ref :duct/logger}
    :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
    :core-service.app.server.middleware/metrics {:metrics #ig/ref :core-service.app.metrics/component}
+  :core-service.app.server.middleware/format {}
+  :core-service.app.server.middleware/user-context {}
    :core-service.app.server.conversation.v1.authed/conversations-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.authed/conversations-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.authed/conversations-get {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}

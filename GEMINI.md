@@ -2,12 +2,10 @@
 
 ## Model Details
 
-- **Model Name:** Gemini 1.5 Flash
-- **Model Version:** gemini-1.5-flash-001
-- **Model Description:** A lightweight, fast and cost-efficient model for high-frequency, multi-modal tasks.
-- **Model Date:** 2024-05-14
+- **Model Name:** Gemini 3.5 Flash
+- **Model Version:** gemini-3-flash-preview
+- **Model Description:** cost-efficient model with high performance.
 - **Model Owner:** Google
-- **Contact:** [Contact Information]
 
 ## Intended Use
 

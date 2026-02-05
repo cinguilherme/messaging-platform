@@ -2,7 +2,36 @@
   (:require [clojure.string :as str]
             [duct.logger :as logger]
             [integrant.core :as ig]
-            [ring.middleware.multipart-params :as multipart]))
+            [ring.middleware.multipart-params :as multipart]
+            [core-service.app.server.http :as http]))
+
+(defn wrap-format
+  "Attaches :response-format to the request and automatically 
+   formats the response if the handler returns a plain map."
+  [handler]
+  (fn [req]
+    (let [format (http/get-accept-format req)
+          req'   (assoc req :response-format format)
+          resp   (handler req')]
+      (if (and (map? resp) (not (contains? resp :status)))
+        (http/format-response resp format)
+        resp))))
+
+(defmethod ig/init-key :core-service.app.server.middleware/format
+  [_ _]
+  wrap-format)
+
+(defn wrap-user-context
+  "Extracts the user-id from the principal and attaches it to the request."
+  [handler]
+  (fn [req]
+    (let [user-id (or (http/parse-uuid (get-in req [:auth/principal :subject]))
+                      (http/parse-uuid (get-in req [:auth/principal :user_id])))]
+      (handler (assoc req :user-id user-id)))))
+
+(defmethod ig/init-key :core-service.app.server.middleware/user-context
+  [_ _]
+  wrap-user-context)
 
 (defn- normalize-header
   [value]
