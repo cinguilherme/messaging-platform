@@ -106,13 +106,17 @@
             ["/admin/dl/:dlq-id" {:get #ig/ref :core-service.app.server.routes/dl-get}]
             ["/admin/dl/:dlq-id/replay" {:post #ig/ref :core-service.app.server.routes/dl-replay}]
             ["/admin/dl/:dlq-id/mark" {:post #ig/ref :core-service.app.server.routes/dl-mark}]]
-   :base-interceptors [#ig/ref :core-service.app.server.interceptors/metrics
-                       #ig/ref :core-service.app.server.interceptors/format
-                       #ig/ref :core-service.app.server.interceptors/api-key
-                       #ig/ref :core-service.app.server.interceptors/auth
-                       #ig/ref :core-service.app.server.interceptors/user-context
-                       #ig/ref :core-service.app.server.interceptors/authz
-                       #ig/ref :core-service.app.server.interceptors/response-logger]}
+  
+  :http-base-interceptors #ig/ref :core-service.app.server.interceptors/http-base-interceptors}
+
+  :core-service.app.server.interceptors/http-base-interceptors
+  {:metrics #ig/ref :core-service.app.server.interceptors.metrics/metrics
+   :format #ig/ref :core-service.app.server.interceptors.format/format
+   :api-key #ig/ref :core-service.app.server.interceptors.api-key/api-key
+   :auth #ig/ref :core-service.app.server.interceptors.auth/auth
+   :user-context #ig/ref :core-service.app.server.interceptors.user-context/user-context
+   :authz #ig/ref :core-service.app.server.interceptors.authz/authz
+   :response-logger #ig/ref :core-service.app.server.interceptors.response-logger/response-logger}
 
   :core-service.app.server.reitit/handler
   {:router #ig/ref :core-service.app.server.reitit/router}
@@ -121,15 +125,15 @@
   {:port 3000
    :handler #ig/ref :core-service.app.server.reitit/handler}
 
-  :core-service.app.server.interceptors/metrics {:metrics #ig/ref :core-service.app.metrics/component}
-  :core-service.app.server.interceptors/format {}
-  :core-service.app.server.interceptors/user-context {}
-  :core-service.app.server.interceptors/response-logger {:logger #ig/ref :duct/logger}
-  :core-service.app.server.interceptors/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                                 :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
-                                                 :logger #ig/ref :duct/logger}
-  :core-service.app.server.interceptors/auth {:middleware #ig/ref :d-core.core.auth.http/authentication-middleware}
-  :core-service.app.server.interceptors/authz {:middleware #ig/ref :d-core.core.auth.http/authorization-middleware}
+  :core-service.app.server.interceptors.metrics/metrics {:metrics #ig/ref :core-service.app.metrics/component}
+  :core-service.app.server.interceptors.format/format {}
+  :core-service.app.server.interceptors.user-context/user-context {}
+  :core-service.app.server.interceptors.response-logger/response-logger {:logger #ig/ref :duct/logger}
+  :core-service.app.server.interceptors.api-key/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
+                                                         :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
+                                                         :logger #ig/ref :duct/logger}
+  :core-service.app.server.interceptors.auth/auth {:middleware #ig/ref :d-core.core.auth.http/authentication-middleware}
+  :core-service.app.server.interceptors.authz/authz {:middleware #ig/ref :d-core.core.auth.http/authorization-middleware}
    :core-service.app.server.conversation.v1.authed/conversations-create {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.authed/conversations-list {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
    :core-service.app.server.conversation.v1.authed/conversations-get {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}

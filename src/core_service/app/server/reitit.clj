@@ -5,10 +5,10 @@
             [reitit.interceptor.sieppari :as sieppari]))
 
 (defmethod ig/init-key :core-service.app.server.reitit/router
-  [_ {:keys [routes base-interceptors]}]
+  [_ {:keys [routes http-base-interceptors]}]
   (http/router
    routes
-   {:data {:interceptors (or base-interceptors [])}
+   {:data {:interceptors (or http-base-interceptors [])}
     :executor sieppari/executor}))
 
 (defmethod ig/init-key :core-service.app.server.reitit/handler
