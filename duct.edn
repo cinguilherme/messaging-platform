@@ -74,12 +74,13 @@
                                     :logger #ig/ref :duct/logger}
 
 
-   ;; App handlers
+   ;; App async messages handlers
    :core-service.app.handlers.handlers/log-consumed {:logger #ig/ref :duct/logger
                                                      :metrics #ig/ref :core-service.app.metrics/component}
    :core-service.app.handlers.handlers/fail-once {:logger #ig/ref :duct/logger
                                                   :metrics #ig/ref :core-service.app.metrics/component}
 
+   ;; App routes
    :core-service.app.server.reitit/router
   {:routes [#ig/ref :core-service.app.server.routes/main
             #ig/ref :core-service.app.server.conversation.v1.public/routes
