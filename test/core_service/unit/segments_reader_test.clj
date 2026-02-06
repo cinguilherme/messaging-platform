@@ -28,3 +28,28 @@
           (is (= [] (:messages result)))
           (is (false? (:has-more? result)))
           (is (= {:conversation-id conv-id :seq-start 1} @deleted)))))))
+
+(deftest fetch-messages-does-not-prune-on-non-missing-error
+  (let [conv-id (java.util.UUID/randomUUID)
+        delete-called (atom nil)
+        calls (atom 0)
+        row {:conversation_id conv-id
+             :seq_start 1
+             :seq_end 2
+             :object_key "segments/some-key"}]
+    (with-redefs [segments-db/list-segments (fn [_ _]
+                                             (let [n (swap! calls inc)]
+                                               (if (= n 1) [row] [])))
+                  segments-db/delete-segment! (fn [_ args] (reset! delete-called args))
+                  minio/get-bytes! (fn [_ _] {:ok false :error "InternalError"})]
+      (let [result (reader/fetch-messages {:db :db
+                                           :minio :minio
+                                           :segments {:segment-batch 1
+                                                      :compression :none
+                                                      :codec :raw}}
+                                          conv-id
+                                          {:limit 1 :direction :backward})]
+        (testing "non-missing error returns empty messages and does not prune"
+          (is (= [] (:messages result)))
+          (is (false? (:has-more? result)))
+          (is (nil? @delete-called)))))))

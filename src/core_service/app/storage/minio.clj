@@ -3,6 +3,7 @@
             [integrant.core :as ig]
             [duct.logger :as logger])
   (:import (com.amazonaws.auth AWSStaticCredentialsProvider BasicAWSCredentials)
+           (com.amazonaws ClientConfiguration)
            (com.amazonaws.client.builder AwsClientBuilder$EndpointConfiguration)
            (com.amazonaws.services.s3 AmazonS3 AmazonS3ClientBuilder)
            (com.amazonaws.services.s3.model AmazonS3Exception
@@ -21,11 +22,17 @@
       (throw e))))
 
 (defn- build-s3-client
-  [{:keys [endpoint access-key secret-key]}]
-  (let [creds (AWSStaticCredentialsProvider.
+  [{:keys [endpoint access-key secret-key connection-timeout-ms socket-timeout-ms]}]
+  (let [conn-ms (long (or connection-timeout-ms 10000))
+        sock-ms (long (or socket-timeout-ms 10000))
+        client-config (doto (ClientConfiguration.)
+                        (.setConnectionTimeout conn-ms)
+                        (.setSocketTimeout sock-ms))
+        creds (AWSStaticCredentialsProvider.
                (BasicAWSCredentials. access-key secret-key))
         builder (doto (AmazonS3ClientBuilder/standard)
                   (.withCredentials creds)
+                  (.withClientConfiguration client-config)
                   (.withPathStyleAccessEnabled true)
                   (.withEndpointConfiguration
                    (AwsClientBuilder$EndpointConfiguration. endpoint "us-east-1")))]
@@ -153,11 +160,13 @@
 
 (defmethod ig/init-key :core-service.app.storage.minio/client
   [_ {:keys [config metrics] :as opts}]
-  (let [{:keys [endpoint access-key secret-key bucket logger]}
-        (if (contains? opts :config) config opts)]
+  (let [cfg (if (contains? opts :config) config opts)
+        {:keys [endpoint access-key secret-key bucket logger connection-timeout-ms socket-timeout-ms]} cfg]
     (logger/log logger :info ::initializing-minio-client {:endpoint endpoint :bucket bucket})
     (let [client (build-s3-client {:endpoint endpoint
                                    :access-key access-key
-                                   :secret-key secret-key})]
+                                   :secret-key secret-key
+                                   :connection-timeout-ms connection-timeout-ms
+                                   :socket-timeout-ms socket-timeout-ms})]
       (ensure-bucket! client bucket logger)
       {:client client :bucket bucket :logger logger :metrics metrics})))

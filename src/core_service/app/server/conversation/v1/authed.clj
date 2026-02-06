@@ -454,27 +454,54 @@
                     readable? (recur (rest entries) (inc unread))
                     :else (recur (rest entries) unread)))))))))))
 
-(defn- conversation-item
-  [{:keys [redis naming metrics] :as components} row user-id member-ids profiles]
-  (let [conv-id (:id row)
-        stream (when (and naming conv-id)
-                 (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
-        last-message (or (redis-last-message redis metrics stream)
-                         (minio-last-message components conv-id))
-        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)
-        base (conversation-row->item row)
+(defn- conversation-item-fallback
+  "Returns a conversation item with last_message nil and unread_count 0 (e.g. on timeout)."
+  [row user-id member-ids profiles]
+  (let [base (conversation-row->item row)
         members (build-member-items member-ids profiles)
         counterpart (when (direct-conversation? (:type base))
                       (build-counterpart member-ids profiles user-id))]
     (cond-> (assoc base
                    :members members
-                   :last_message last-message
-                   :unread_count unread-count)
+                   :last_message nil
+                   :unread_count 0)
       counterpart (assoc :counterpart counterpart))))
+
+(defn- conversation-item
+  [{:keys [redis naming metrics logger] :as components} row user-id member-ids profiles]
+  (let [conv-id (:id row)
+        _ (when logger (logger/log logger ::conversation-item-start {:conv-id conv-id}))
+        t0 (System/nanoTime)
+        stream (when (and naming conv-id)
+                 (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
+        redis-msg (redis-last-message redis metrics stream)
+        _ (when logger (logger/log logger ::conversation-item-after-redis {:conv-id conv-id
+                                                                            :duration-ms (quot (- (System/nanoTime) t0) 1000000)}))
+        minio-msg (minio-last-message components conv-id)
+        _ (when logger (logger/log logger ::conversation-item-after-minio {:conv-id conv-id}))
+        t1 (System/nanoTime)
+        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)
+        _ (when logger (logger/log logger ::conversation-item-after-unread {:conv-id conv-id
+                                                                              :duration-ms (quot (- (System/nanoTime) t1) 1000000)}))
+        last-message (or redis-msg minio-msg)
+        base (conversation-row->item row)
+        members (build-member-items member-ids profiles)
+        counterpart (when (direct-conversation? (:type base))
+                      (build-counterpart member-ids profiles user-id))
+        item (cond-> (assoc base
+                            :members members
+                            :last_message last-message
+                            :unread_count unread-count)
+               counterpart (assoc :counterpart counterpart))]
+    (when logger (logger/log logger ::conversation-item-done {:conv-id conv-id}))
+    item))
+
+(def ^:private default-conversation-item-timeout-ms 10000)
 
 (defn conversations-list
   [{:keys [webdeps]}]
-  (let [{:keys [db token-client keycloak logger] :as components} webdeps]
+  (let [{:keys [db token-client keycloak logger] :as components} webdeps
+        item-timeout-ms (or (get webdeps :conversations-list-item-timeout-ms) default-conversation-item-timeout-ms)]
     (fn [req]
       (let [ttap (partial util/ltap logger ::conversations-list-req)
             format (ttap (http/get-accept-format req))
@@ -497,8 +524,13 @@
                 member-ids (util/ltap logger ::conversations-list-member-ids (->> members-by-conv vals (mapcat identity) distinct ttap))
                 profiles (util/ltap logger ::conversations-list-profiles (resolve-member-profiles db token-client keycloak member-ids))
                 items (util/ltap logger ::conversations-list-items (mapv (fn [row]
-                                    (let [member-ids (get members-by-conv (:id row))]
-                                      (conversation-item components row sender-id member-ids profiles)))
+                                    (let [member-ids (get members-by-conv (:id row))
+                                          f (future (conversation-item components row sender-id member-ids profiles))
+                                          result (deref f item-timeout-ms ::timeout)]
+                                      (if (= result ::timeout)
+                                        (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
+                                            (conversation-item-fallback row sender-id member-ids profiles))
+                                        result)))
                                   rows))
                 next-cursor (util/ltap logger ::conversations-list-next-cursor (when (= (count rows) limit)
                                     (some-> (last rows) :created_at (.getTime) str)))

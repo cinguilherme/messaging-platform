@@ -5,6 +5,7 @@
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.segments.reader :as segment-reader]
             [core-service.app.storage.minio :as minio]
             [core-service.app.workers.segments :as segments]
             [core-service.integration.helpers :as helpers]
@@ -263,3 +264,31 @@
             (helpers/cleanup-segment-object-and-index! db minio-client conv-id)
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest conversations-list-timeout-returns-fallback-item
+  (let [{:keys [db client]} (helpers/init-db)
+        sender-id (java.util.UUID/randomUUID)
+        conv-id (java.util.UUID/randomUUID)
+        blocking-promise (promise)
+        webdeps {:db db
+                 :conversations-list-item-timeout-ms 50}
+        list-handler (authed/conversations-list {:webdeps webdeps})]
+    (try
+      (helpers/setup-conversation! db {:conversation-id conv-id
+                                       :user-id sender-id})
+      (with-redefs [segment-reader/fetch-messages (fn [_ _ _] @blocking-promise)]
+        (let [resp (list-handler {:request-method :get
+                                  :headers {"accept" "application/json"}
+                                  :auth/principal {:subject (str sender-id)}})
+              body (json/parse-string (:body resp) true)
+              item (first (:items body))]
+          (testing "list returns 200 when one conversation item would hang"
+            (is (= 200 (:status resp)))
+            (is (:ok body))
+            (is (= (str conv-id) (:conversation_id item)))
+            (is (nil? (:last_message item)))
+            (is (= 0 (:unread_count item))))))
+      (finally
+        (deliver blocking-promise {:messages [] :has-more? false})
+        (helpers/cleanup-conversation! db conv-id)
+        (ig/halt-key! :d-core.core.clients.postgres/client client)))))

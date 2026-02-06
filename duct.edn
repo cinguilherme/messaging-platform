@@ -162,7 +162,8 @@
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config
                                              :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
                                              :logging #ig/ref :core-service.app.config.observability/logging
-                                             :receipt #ig/ref :core-service.app.config.messaging/receipt-config}
+                                             :receipt #ig/ref :core-service.app.config.messaging/receipt-config
+                                             :conversations-list-item-timeout-ms 10000}
 
   ;; WebSocket server (Aleph) - separate port
   ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
