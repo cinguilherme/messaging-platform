@@ -1,15 +1,51 @@
 (ns core-service.app.segments.reader
-  (:require [core-service.app.db.segments :as segments-db]
+  (:require [clojure.string :as str]
+            [core-service.app.db.segments :as segments-db]
             [core-service.app.segments.format :as segment-format]
             [core-service.app.storage.minio :as minio]))
 
-(defn- decode-segment
-  [minio-client object-key {:keys [compression codec]}]
-  (let [obj (minio/get-bytes! minio-client object-key)]
-    (when (:ok obj)
-      (segment-format/decode-segment (:bytes obj)
-                                     {:compression compression
-                                      :codec codec}))))
+(defn- missing-object?
+  [result]
+  (let [error-type (:error-type result)
+        error-code (:error-code result)
+        status (:status result)
+        error-msg (some-> (:error result) str str/lower-case)]
+    (or (= error-type :not-found)
+        (= error-code "NoSuchKey")
+        (= error-code "NotFound")
+        (= 404 status)
+        (and error-msg
+             (or (str/includes? error-msg "no such key")
+                 (str/includes? error-msg "not found"))))))
+
+(defn- segment-messages
+  [{:keys [db minio]} {:keys [conversation_id seq_start object_key]}
+   {:keys [compression codec cursor direction]}]
+  (let [obj (minio/get-bytes! minio object_key)]
+    (cond
+      (:ok obj)
+      (let [decoded (segment-format/decode-segment (:bytes obj)
+                                                   {:compression compression
+                                                    :codec codec})
+            msgs (:messages decoded)
+            filtered (cond
+                       (= direction :forward)
+                       (if cursor
+                         (filter #(> (:seq %) cursor) msgs)
+                         msgs)
+                       :else
+                       (if cursor
+                         (filter #(< (:seq %) cursor) msgs)
+                         msgs))]
+        (->> filtered
+             (sort-by :seq (if (= direction :forward) < >))
+             vec))
+      (missing-object? obj)
+      (do
+        (segments-db/delete-segment! db {:conversation-id conversation_id
+                                         :seq-start seq_start})
+        [])
+      :else [])))
 
 (defn fetch-messages
   "Fetch messages from Minio segments.
@@ -39,23 +75,13 @@
              :next-seq (when (seq acc) (:seq (last acc)))
              :has-more? false}
             (let [messages (->> rows
-                                (mapcat (fn [{:keys [object_key]}]
-                                          (when-let [decoded (decode-segment minio object_key
-                                                                             {:compression compression
-                                                                              :codec codec})]
-                                            (let [msgs (:messages decoded)
-                                                  filtered (cond
-                                                             (= direction :forward)
-                                                             (if cursor
-                                                               (filter #(> (:seq %) cursor) msgs)
-                                                               msgs)
-                                                             :else
-                                                             (if cursor
-                                                               (filter #(< (:seq %) cursor) msgs)
-                                                               msgs))]
-                                              (->> filtered
-                                                   (sort-by :seq (if (= direction :forward) < >))
-                                                   vec)))))
+                                (mapcat (fn [row]
+                                          (segment-messages {:db db :minio minio}
+                                                            row
+                                                            {:compression compression
+                                                             :codec codec
+                                                             :cursor cursor
+                                                             :direction direction})))
                                 vec)
                   used (vec (take remaining messages))
                   remaining' (- remaining (count used))

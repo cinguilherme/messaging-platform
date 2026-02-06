@@ -5,7 +5,10 @@
   (:import (com.amazonaws.auth AWSStaticCredentialsProvider BasicAWSCredentials)
            (com.amazonaws.client.builder AwsClientBuilder$EndpointConfiguration)
            (com.amazonaws.services.s3 AmazonS3 AmazonS3ClientBuilder)
-           (com.amazonaws.services.s3.model ListObjectsV2Request ObjectMetadata PutObjectRequest)))
+           (com.amazonaws.services.s3.model AmazonS3Exception
+                                            ListObjectsV2Request
+                                            ObjectMetadata
+                                            PutObjectRequest)))
 
 (defn- ensure-bucket!
   [^AmazonS3 client bucket logger]
@@ -121,6 +124,26 @@
            :key key
            :bucket bucket
            :bytes bytes}))
+      (catch AmazonS3Exception e
+        (let [error-code (.getErrorCode e)
+              status (.getStatusCode e)
+              not-found? (or (= "NoSuchKey" error-code)
+                             (= "NotFound" error-code)
+                             (= 404 status))]
+          (app-metrics/record-minio! metrics :get
+                                     (app-metrics/duration-seconds start)
+                                     :error nil)
+          (logger/log logger :error ::get-object-failed {:key key
+                                                         :error (.getMessage e)
+                                                         :error-code error-code
+                                                         :status status})
+          {:ok false
+           :key key
+           :bucket bucket
+           :error (.getMessage e)
+           :error-code error-code
+           :status status
+           :error-type (if not-found? :not-found :s3-error)}))
       (catch Exception e
         (app-metrics/record-minio! metrics :get
                                    (app-metrics/duration-seconds start)

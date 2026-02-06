@@ -7,6 +7,8 @@
             [core-service.app.server.users.v1.authed :as users]
             [core-service.app.config.webdeps :as webdeps]
             [core-service.app.server.interceptors :as interceptors]
+            [core-service.app.server.interceptors.user-context :as user-context-interceptor]
+            [core-service.app.server.interceptors.format :as format-interceptor]
             [core-service.integration.helpers :as helpers]
             [duct.logger :as logger]
             [d-core.core.auth.token-client :as token-client]
@@ -28,8 +30,8 @@
                                        :token-client :dummy
                                        :keycloak {:admin-url "http://keycloak"}})
         handler (users/users-me {:webdeps webdeps})
-        interceptors [(interceptors/user-context-interceptor)
-                      (interceptors/format-interceptor)]
+        interceptors [(user-context-interceptor/user-context-interceptor)
+                      (format-interceptor/format-interceptor)]
         user-id (java.util.UUID/randomUUID)]
     (try
       (users-db/upsert-user-profile! db {:user-id user-id
@@ -73,8 +75,8 @@
                                        :token-client :dummy
                                        :keycloak {:admin-url "http://keycloak"}})
         handler (users/users-me {:webdeps webdeps})
-        interceptors [(interceptors/user-context-interceptor)
-                      (interceptors/format-interceptor)]
+        interceptors [(user-context-interceptor/user-context-interceptor)
+                      (format-interceptor/format-interceptor)]
         user-id (java.util.UUID/randomUUID)]
     (try
       (with-redefs [token-client/client-credentials (fn [_ _] {:access-token "token"})

@@ -3,7 +3,10 @@
             [clojure.test :refer [deftest is testing]]
             [core-service.app.config.clients]
             [core-service.app.config.messaging]
+            [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.storage.minio :as minio]
+            [core-service.app.workers.segments :as segments]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
             [d-core.core.databases.protocols.simple-sql :as sql]
@@ -186,5 +189,77 @@
                 (is (= 0 (:unread_count item2))))))
           (finally
             (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest conversations-list-missing-minio-segment
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
+        minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+    (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
+      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            idempotency (ig/init-key :core-service.app.config.messaging/idempotency-config {})
+            segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
+            create-handler (authed/messages-create {:webdeps {:db db
+                                                              :redis redis-client
+                                                              :naming naming
+                                                              :idempotency idempotency}})
+            list-handler (authed/conversations-list {:webdeps {:db db
+                                                               :redis redis-client
+                                                               :minio minio-client
+                                                               :segments segment-config
+                                                               :naming naming}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            payload (json/generate-string {:type "text"
+                                           :body {:text "hello"}})]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis-client naming conv-id)
+          (create-handler {:request-method :post
+                           :headers {"accept" "application/json"
+                                     "idempotency-key" (str (java.util.UUID/randomUUID))}
+                           :params {:id (str conv-id)}
+                           :body payload
+                           :auth/principal {:subject (str sender-id)
+                                            :tenant-id "tenant-1"}})
+          (segments/flush-conversation! {:db db
+                                         :redis redis-client
+                                         :minio minio-client
+                                         :naming naming
+                                         :segments segment-config
+                                         :logger nil}
+                                        conv-id)
+          (let [row (first (sql/select db {:table :segment_index
+                                           :where {:conversation_id conv-id}}))
+                object-key (:object_key row)]
+            (testing "segment created"
+              (is (string? object-key)))
+            (minio/delete-object! minio-client object-key)
+            (testing "segment index remains after object removal"
+              (is (seq (sql/select db {:table :segment_index
+                                       :where {:conversation_id conv-id}}))))
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (let [resp (list-handler {:request-method :get
+                                      :headers {"accept" "application/json"}
+                                      :auth/principal {:subject (str sender-id)}})
+                  body (json/parse-string (:body resp) true)
+                  item (first (:items body))]
+              (testing "list returns even when minio segment is missing"
+                (is (= 200 (:status resp)))
+                (is (:ok body))
+                (is (= (str conv-id) (:conversation_id item)))
+                (is (nil? (:last_message item)))
+                (is (= 0 (:unread_count item)))))
+            (testing "stale segment index is removed"
+              (is (empty? (sql/select db {:table :segment_index
+                                          :where {:conversation_id conv-id}})))))
+          (finally
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-segment-object-and-index! db minio-client conv-id)
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
