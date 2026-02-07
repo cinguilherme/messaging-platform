@@ -231,59 +231,55 @@
                   (is (= 0 (:unread_count item2))))))))))))
 
 (deftest conversations-list-missing-minio-segment
-  (let [{:keys [redis minio naming idempotency segments]} (make-components)]
+  (let [{:keys [redis minio naming idempotency segments]} (make-components)
+        {:keys [sender-id conv-id payload]} test-ids]
     (if-not (and (helpers/redis-up? redis) (helpers/minio-up? minio))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
-      (let [{:keys [sender-id conv-id payload]} test-ids]
-        (with-db-cleanup [db client]
-          (do
-            (helpers/clear-redis-conversation! redis naming conv-id)
-            (helpers/cleanup-segment-object-and-index! db minio conv-id)
-            (helpers/cleanup-conversation! db conv-id))
-          (let [webdeps (make-webdeps {:db db
-                                       :redis redis
-                                       :naming naming
-                                       :idempotency idempotency
-                                       :minio minio
-                                       :segments segments})
-                {:keys [create list]} (make-handlers webdeps)]
-            (helpers/setup-conversation! db {:conversation-id conv-id
-                                             :user-id sender-id})
-            (helpers/clear-redis-conversation! redis naming conv-id)
-            (authed-post create sender-id
-                         :headers {"idempotency-key" (str (java.util.UUID/randomUUID))}
-                         :params {:id (str conv-id)}
-                         :body payload
-                         :tenant-id "tenant-1")
-            (segments/flush-conversation! {:db db
-                                           :redis redis
-                                           :minio minio
-                                           :naming naming
-                                           :segments segments
-                                           :logger nil}
-                                          conv-id)
-            (let [row (first (sql/select db {:table :segment_index
-                                             :where {:conversation_id conv-id}}))
-                  object-key (:object_key row)]
-              (testing "segment created"
-                (is (string? object-key)))
-              (minio/delete-object! minio object-key)
-              (testing "segment index remains after object removal"
-                (is (seq (sql/select db {:table :segment_index
-                                         :where {:conversation_id conv-id}}))))
-              (helpers/clear-redis-conversation! redis naming conv-id)
-              (let [resp (authed-get list sender-id)
-                    body (parse-body resp)
-                    item (first (:items body))]
-                (testing "list returns even when minio segment is missing"
-                  (is (= 200 (:status resp)))
-                  (is (:ok body))
-                  (is (= (str conv-id) (:conversation_id item)))
-                  (is (nil? (:last_message item)))
-                  (is (= 0 (:unread_count item)))))
-              (testing "stale segment index is removed"
-                (is (empty? (sql/select db {:table :segment_index
-                                            :where {:conversation_id conv-id}})))))))))))
+      (with-db-cleanup [db client]
+        (do
+          (helpers/clear-redis-conversation! redis naming conv-id)
+          (helpers/cleanup-segment-object-and-index! db minio conv-id)
+          (helpers/cleanup-conversation! db conv-id))
+        (let [webdeps (make-webdeps {:db db
+                                     :redis redis
+                                     :naming naming
+                                     :idempotency idempotency
+                                     :minio minio
+                                     :segments segments})
+              {:keys [create list]} (make-handlers webdeps)
+              row (do
+                    (helpers/setup-conversation! db {:conversation-id conv-id
+                                                     :user-id sender-id})
+                    (helpers/clear-redis-conversation! redis naming conv-id)
+                    (authed-post create sender-id
+                                 :headers {"idempotency-key" (str (java.util.UUID/randomUUID))}
+                                 :params {:id (str conv-id)}
+                                 :body payload
+                                 :tenant-id "tenant-1")
+                    (segments/flush-conversation! webdeps conv-id)
+                    (first (sql/select db {:table :segment_index
+                                           :where {:conversation_id conv-id}})))
+              object-key (:object_key row)
+              resp (do
+                     (testing "segment created"
+                       (is (string? object-key)))
+                     (minio/delete-object! minio object-key)
+                     (testing "segment index remains after object removal"
+                       (is (seq (sql/select db {:table :segment_index
+                                                :where {:conversation_id conv-id}}))))
+                     (helpers/clear-redis-conversation! redis naming conv-id)
+                     (authed-get list sender-id))
+              body (parse-body resp)
+              item (first (:items body))]
+          (testing "list returns even when minio segment is missing"
+            (is (= 200 (:status resp)))
+            (is (:ok body))
+            (is (= (str conv-id) (:conversation_id item)))
+            (is (nil? (:last_message item)))
+            (is (= 0 (:unread_count item))))
+          (testing "stale segment index is removed"
+            (is (empty? (sql/select db {:table :segment_index
+                                        :where {:conversation_id conv-id}})))))))))
 
 (deftest conversations-list-timeout-returns-fallback-item
   (let [{:keys [sender-id conv-id]} test-ids
