@@ -139,8 +139,9 @@
                                          :storage #ig/ref :d-core.core.storage/common}
    :core-service.app.server.routes/image-upload {:workers #ig/ref :core-service.app.workers.images/system
                                                  :logger #ig/ref :duct/logger}
-   :core-service.app.server.routes/image-list {:minio #ig/ref :core-service.app.storage.minio/client
-                                               :logger #ig/ref :duct/logger}
+   :core-service.app.server.routes/image-list {:minio #ig/ref :d-core.core.storage/common
+                                               :logger #ig/ref :duct/logger
+                                               :metrics #ig/ref :core-service.app.metrics/component}
    :core-service.app.server.metrics/handler {:metrics #ig/ref :core-service.app.metrics/component}
    :core-service.app.server.routes/dl-list {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
    :core-service.app.server.routes/dl-get {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
@@ -158,7 +159,7 @@
                                              :keycloak #ig/ref :core-service.app.config.auth/keycloak
                                              :redis #ig/ref :d-core.core.clients.redis/client
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
-                                             :minio #ig/ref :core-service.app.storage.minio/client
+                                             :minio #ig/ref :d-core.core.storage/common
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config
                                              :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
                                              :logging #ig/ref :core-service.app.config.observability/logging
@@ -181,11 +182,8 @@
   :core-service.app.server.graphql/schema {}
 
   ;; Image processing workers (resize + store)
-  :core-service.app.storage.minio/client
-  {:config #ig/ref :core-service.app.config.storage/minio
-   :metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.workers.images/system {:logger #ig/ref :duct/logger
-                                           :minio #ig/ref :core-service.app.storage.minio/client
+                                           :minio #ig/ref :d-core.core.storage/common
                                            :metrics #ig/ref :core-service.app.metrics/component
                                            :cleanup {:interval-ms 60000
                                                      :max-age-ms 600000
@@ -194,14 +192,14 @@
   :core-service.app.workers.segments/system {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
                                              :redis #ig/ref :d-core.core.clients.redis/client
-                                             :minio #ig/ref :core-service.app.storage.minio/client
+                                             :minio #ig/ref :d-core.core.storage/common
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
                                              :metrics #ig/ref :core-service.app.metrics/component
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config
                                              :logging #ig/ref :core-service.app.config.observability/logging}
   :core-service.app.workers.segment-retention/system {:logger #ig/ref :duct/logger
                                                       :db #ig/ref :d-core.core.databases.sql/common
-                                                      :minio #ig/ref :core-service.app.storage.minio/client
+                                                      :minio #ig/ref :d-core.core.storage/common
                                                       :metrics #ig/ref :core-service.app.metrics/component
                                                       :retention #ig/ref :core-service.app.config.messaging/retention-config
                                                       :logging #ig/ref :core-service.app.config.observability/logging}

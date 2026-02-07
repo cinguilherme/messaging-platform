@@ -224,15 +224,16 @@
 
 (defn image-list
   "List images stored by the upload endpoint."
-  [{:keys [minio logger]}]
+  [{:keys [minio logger metrics]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           prefix (or (http/param req "prefix") "images/")
           limit (http/parse-long (http/param req "limit") 50)
           token (http/param req "token")
-          result (minio/list-objects minio {:prefix prefix
-                                            :limit limit
-                                            :token token})]
+          result (minio/list-objects {:storage minio :metrics metrics}
+                                     {:prefix prefix
+                                      :limit limit
+                                      :token token})]
       (when (and logger (not (:ok result)))
         (logger/log logger :error ::image-list-failed {:error (:error result)}))
       (http/format-response result format))))

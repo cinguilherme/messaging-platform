@@ -14,9 +14,9 @@
         (= 404 status))))
 
 (defn- segment-messages
-  [{:keys [db minio]} {:keys [conversation_id seq_start object_key]}
+  [{:keys [db minio metrics]} {:keys [conversation_id seq_start object_key]}
    {:keys [compression codec cursor direction]}]
-  (let [obj (minio/get-bytes! minio object_key)]
+  (let [obj (minio/get-bytes! {:storage minio :metrics metrics} object_key)]
     (cond
       (:ok obj)
       (let [decoded (segment-format/decode-segment (:bytes obj)
@@ -45,7 +45,7 @@
 (defn fetch-messages
   "Fetch messages from Minio segments.
   Options: {:limit n :cursor seq :direction :backward|:forward}."
-  [{:keys [db minio segments] :as components} conversation-id {:keys [limit cursor direction]}]
+  [{:keys [db minio segments metrics] :as components} conversation-id {:keys [limit cursor direction]}]
   (let [limit (long (or limit 50))
         segment-batch (long (or (:segment-batch segments) 10))
         compression (or (:compression segments) :gzip)
@@ -71,7 +71,7 @@
              :has-more? false}
             (let [messages (->> rows
                                 (mapcat (fn [row]
-                                          (segment-messages {:db db :minio minio}
+                                          (segment-messages {:db db :minio minio :metrics metrics}
                                                             row
                                                             {:compression compression
                                                              :codec codec

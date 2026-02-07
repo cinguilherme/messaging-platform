@@ -13,7 +13,7 @@
   (System/currentTimeMillis))
 
 (defn cleanup!
-  [{:keys [db minio retention logger] :as components}]
+  [{:keys [db minio retention logger metrics] :as components}]
   (let [{:keys [max-age-ms batch-size]} retention
         max-age-ms (long (or max-age-ms 0))
         batch-size (long (or batch-size 200))]
@@ -24,7 +24,7 @@
                                                         :limit batch-size})
             result (reduce
                     (fn [acc {:keys [conversation_id seq_start object_key]}]
-                      (let [deleted (minio/delete-object! minio object_key)]
+                      (let [deleted (minio/delete-object! {:storage minio :metrics metrics} object_key)]
                         (if (:ok deleted)
                           (do
                             (segments-db/delete-segment! db {:conversation-id conversation_id

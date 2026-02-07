@@ -10,6 +10,7 @@
             [core-service.app.workers.segments :as segments]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
+            [d-core.core.storage.minio]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [integrant.core :as ig]))
 
@@ -17,7 +18,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio (ig/init-key :core-service.app.storage.minio/client minio-cfg)
+        minio (ig/init-key :d-core.core.storage/minio minio-cfg)
         naming (ig/init-key :core-service.app.config.messaging/storage-names {})
         idempotency (ig/init-key :core-service.app.config.messaging/idempotency-config {})
         receipt (ig/init-key :core-service.app.config.messaging/receipt-config {})

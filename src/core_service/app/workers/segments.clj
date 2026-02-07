@@ -190,7 +190,7 @@
    :created_at created-at})
 
 (defn- store-segment!
-  [{:keys [db minio naming logger logging log-ctx]}
+  [{:keys [db minio metrics naming logger logging log-ctx]}
    {:keys [conversation-id header payloads compression created-at]}]
   (let [encode-start (System/nanoTime)
         segment-bytes (segment-format/encode-segment {:header header
@@ -213,13 +213,16 @@
                 {:duration-ms encode-duration
                  :payload-bytes byte-size})
     (let [put-start (System/nanoTime)
-          store (minio/put-bytes! minio object-key segment-bytes "application/octet-stream")
+          store (minio/put-bytes! {:storage minio :metrics metrics}
+                                  object-key
+                                  segment-bytes
+                                  "application/octet-stream")
           put-duration (duration-ms put-start)]
       (if-not (:ok store)
         (do
           (log-stage! logger logging log-ctx :error :minio-put
                       {:duration-ms put-duration
-                       :storage.bucket (:bucket minio)
+                       :storage.bucket (:bucket store)
                        :storage.key object-key
                        :payload-bytes byte-size
                        :error (:error store)})
@@ -232,7 +235,7 @@
         (do
           (log-stage! logger logging log-ctx :info :minio-put
                       {:duration-ms put-duration
-                       :storage.bucket (:bucket minio)
+                       :storage.bucket (:bucket store)
                        :storage.key object-key
                        :payload-bytes byte-size})
           (let [index-start (System/nanoTime)]
@@ -294,6 +297,7 @@
             payloads (mapv :payload selected)
             result (store-segment! {:db db
                                     :minio minio
+                                    :metrics metrics
                                     :naming naming
                                     :logger logger
                                     :logging logging

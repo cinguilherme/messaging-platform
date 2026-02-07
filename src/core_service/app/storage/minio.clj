@@ -1,174 +1,75 @@
 (ns core-service.app.storage.minio
   (:require [core-service.app.metrics :as app-metrics]
-            [integrant.core :as ig]
-            [duct.logger :as logger])
-  (:import (com.amazonaws.auth AWSStaticCredentialsProvider BasicAWSCredentials)
-           (com.amazonaws ClientConfiguration)
-           (com.amazonaws.client.builder AwsClientBuilder$EndpointConfiguration)
-           (com.amazonaws.services.s3 AmazonS3 AmazonS3ClientBuilder)
-           (com.amazonaws.services.s3.model AmazonS3Exception
-                                            ListObjectsV2Request
-                                            ObjectMetadata
-                                            PutObjectRequest)))
+            [d-core.core.storage.protocol :as storage]))
 
-(defn- ensure-bucket!
-  [^AmazonS3 client bucket logger]
-  (try
-    (when-not (.doesBucketExistV2 client bucket)
-      (logger/log logger :info ::creating-bucket {:bucket bucket})
-      (.createBucket client bucket))
-    (catch Exception e
-      (logger/log logger :error ::ensure-bucket-failed {:bucket bucket :error (.getMessage e)})
-      (throw e))))
+(defn- normalize-ctx
+  [storage-or-ctx]
+  (cond
+    (and (map? storage-or-ctx) (contains? storage-or-ctx :storage)) storage-or-ctx
+    :else {:storage storage-or-ctx}))
 
-(defn- build-s3-client
-  [{:keys [endpoint access-key secret-key connection-timeout-ms socket-timeout-ms]}]
-  (let [conn-ms (long (or connection-timeout-ms 10000))
-        sock-ms (long (or socket-timeout-ms 10000))
-        client-config (doto (ClientConfiguration.)
-                        (.setConnectionTimeout conn-ms)
-                        (.setSocketTimeout sock-ms))
-        creds (AWSStaticCredentialsProvider.
-               (BasicAWSCredentials. access-key secret-key))
-        builder (doto (AmazonS3ClientBuilder/standard)
-                  (.withCredentials creds)
-                  (.withClientConfiguration client-config)
-                  (.withPathStyleAccessEnabled true)
-                  (.withEndpointConfiguration
-                   (AwsClientBuilder$EndpointConfiguration. endpoint "us-east-1")))]
-    (.build builder)))
+(defn- result-status
+  [result]
+  (cond
+    (:ok result) :ok
+    (= :not-found (:error-type result)) :not-found
+    :else :error))
 
 (defn put-bytes!
-  [{:keys [^AmazonS3 client bucket logger metrics]} key bytes content-type]
-  (let [start (System/nanoTime)]
-    (try
-      (let [content-type (or content-type "application/octet-stream")
-            meta (doto (ObjectMetadata.)
-                   (.setContentLength (alength ^bytes bytes))
-                   (.setContentType content-type))
-            req (PutObjectRequest.
-                 bucket
-                 key
-                 (java.io.ByteArrayInputStream. bytes)
-                 meta)]
-        (.putObject client req)
-        (app-metrics/record-minio! metrics :put
-                                   (app-metrics/duration-seconds start)
-                                   :ok (alength ^bytes bytes))
-        {:ok true :key key :bucket bucket :content-type content-type})
-      (catch Exception e
-        (app-metrics/record-minio! metrics :put
-                                   (app-metrics/duration-seconds start)
-                                   :error nil)
-        (logger/log logger :error ::storage-put-failed {:key key :error (.getMessage e)})
-        {:ok false :error (.getMessage e) :key key :bucket bucket}))))
+  [storage-or-ctx key bytes content-type]
+  (let [{:keys [storage metrics]} (normalize-ctx storage-or-ctx)
+        start (System/nanoTime)
+        result (try
+                 (storage/storage-put-bytes storage key bytes {:content-type content-type})
+                 (catch Exception e
+                   {:ok false :key key :error (.getMessage e)}))]
+    (app-metrics/record-minio! metrics :put
+                               (app-metrics/duration-seconds start)
+                               (result-status result)
+                               (when (:ok result) (alength ^bytes bytes)))
+    result))
 
 (defn list-objects
-  [{:keys [^AmazonS3 client bucket logger metrics]} {:keys [prefix limit token]}]
-  (let [start (System/nanoTime)]
-    (try
-      (let [req (doto (ListObjectsV2Request.)
-                  (.setBucketName bucket)
-                  (.setPrefix (or prefix "images/"))
-                  (.setMaxKeys (int (or limit 50))))
-            _ (when (seq token)
-                (.setContinuationToken req token))
-            resp (.listObjectsV2 client req)
-            summaries (.getObjectSummaries resp)
-            items (mapv (fn [summary]
-                          {:key (.getKey summary)
-                           :size (.getSize summary)
-                           :last-modified (.getLastModified summary)})
-                        summaries)]
-        (app-metrics/record-minio! metrics :list
-                                   (app-metrics/duration-seconds start)
-                                   :ok nil)
-        {:ok true
-         :items items
-         :prefix (.getPrefix resp)
-         :truncated? (.isTruncated resp)
-         :next-token (.getNextContinuationToken resp)})
-      (catch Exception e
-        (app-metrics/record-minio! metrics :list
-                                   (app-metrics/duration-seconds start)
-                                   :error nil)
-        (logger/log logger :error ::list-objects-failed {:error (.getMessage e)})
-        {:ok false :error (.getMessage e)}))))
+  [storage-or-ctx {:keys [prefix limit token] :as opts}]
+  (let [{:keys [storage metrics]} (normalize-ctx storage-or-ctx)
+        start (System/nanoTime)
+        result (try
+                 (storage/storage-list storage (merge opts {:prefix prefix
+                                                           :limit limit
+                                                           :token token}))
+                 (catch Exception e
+                   {:ok false :error (.getMessage e)}))]
+    (app-metrics/record-minio! metrics :list
+                               (app-metrics/duration-seconds start)
+                               (result-status result)
+                               nil)
+    result))
 
 (defn delete-object!
-  [{:keys [^AmazonS3 client bucket logger metrics]} key]
-  (let [start (System/nanoTime)]
-    (try
-      (.deleteObject client bucket key)
-      (app-metrics/record-minio! metrics :delete
-                                 (app-metrics/duration-seconds start)
-                                 :ok nil)
-      {:ok true :key key :bucket bucket}
-      (catch Exception e
-        (app-metrics/record-minio! metrics :delete
-                                   (app-metrics/duration-seconds start)
-                                   :error nil)
-        (logger/log logger :error ::delete-object-failed {:key key :error (.getMessage e)})
-        {:ok false :key key :bucket bucket :error (.getMessage e)}))))
+  [storage-or-ctx key]
+  (let [{:keys [storage metrics]} (normalize-ctx storage-or-ctx)
+        start (System/nanoTime)
+        result (try
+                 (storage/storage-delete storage key {})
+                 (catch Exception e
+                   {:ok false :key key :error (.getMessage e)}))]
+    (app-metrics/record-minio! metrics :delete
+                               (app-metrics/duration-seconds start)
+                               (result-status result)
+                               nil)
+    result))
 
 (defn get-bytes!
-  [{:keys [^AmazonS3 client bucket logger metrics]} key]
-  (let [start (System/nanoTime)]
-    (try
-      (with-open [obj (.getObject client bucket key)
-                  stream (.getObjectContent obj)
-                  out (java.io.ByteArrayOutputStream.)]
-        (let [buf (byte-array 4096)]
-          (loop [n (.read stream buf)]
-            (when (pos? n)
-              (.write out buf 0 n)
-              (recur (.read stream buf)))))
-        (let [bytes (.toByteArray out)]
-          (app-metrics/record-minio! metrics :get
-                                     (app-metrics/duration-seconds start)
-                                     :ok (alength ^bytes bytes))
-          {:ok true
-           :key key
-           :bucket bucket
-           :bytes bytes}))
-      (catch AmazonS3Exception e
-        (let [error-code (.getErrorCode e)
-              status (.getStatusCode e)
-              not-found? (or (= "NoSuchKey" error-code)
-                             (= "NotFound" error-code)
-                             (= 404 status))
-              log-level (if not-found? :info :error)
-              metric-status (if not-found? :not-found :error)]
-          (app-metrics/record-minio! metrics :get
-                                     (app-metrics/duration-seconds start)
-                                     metric-status nil)
-          (logger/log logger log-level ::get-object-failed {:key key
-                                                            :error (.getMessage e)
-                                                            :error-code error-code
-                                                            :status status})
-          {:ok false
-           :key key
-           :bucket bucket
-           :error (.getMessage e)
-           :error-code error-code
-           :status status
-           :error-type (if not-found? :not-found :s3-error)}))
-      (catch Exception e
-        (app-metrics/record-minio! metrics :get
-                                   (app-metrics/duration-seconds start)
-                                   :error nil)
-        (logger/log logger :error ::get-object-failed {:key key :error (.getMessage e)})
-        {:ok false :key key :bucket bucket :error (.getMessage e)}))))
-
-(defmethod ig/init-key :core-service.app.storage.minio/client
-  [_ {:keys [config metrics] :as opts}]
-  (let [cfg (if (contains? opts :config) config opts)
-        {:keys [endpoint access-key secret-key bucket logger connection-timeout-ms socket-timeout-ms]} cfg]
-    (logger/log logger :info ::initializing-minio-client {:endpoint endpoint :bucket bucket})
-    (let [client (build-s3-client {:endpoint endpoint
-                                   :access-key access-key
-                                   :secret-key secret-key
-                                   :connection-timeout-ms connection-timeout-ms
-                                   :socket-timeout-ms socket-timeout-ms})]
-      (ensure-bucket! client bucket logger)
-      {:client client :bucket bucket :logger logger :metrics metrics})))
+  [storage-or-ctx key]
+  (let [{:keys [storage metrics]} (normalize-ctx storage-or-ctx)
+        start (System/nanoTime)
+        result (try
+                 (storage/storage-get-bytes storage key {})
+                 (catch Exception e
+                   {:ok false :key key :error (.getMessage e)}))]
+    (app-metrics/record-minio! metrics :get
+                               (app-metrics/duration-seconds start)
+                               (result-status result)
+                               (when (:ok result)
+                                 (alength ^bytes (:bytes result))))
+    result))

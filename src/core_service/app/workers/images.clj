@@ -85,11 +85,15 @@
    {:keys [bytes reply-chan content-type filename source size original-size original-bytes resized-bytes ext request-id meta]}]
   (try
     (let [minio-client (:minio components)
+          metrics (:metrics components)
           content-type* (or content-type "application/octet-stream")
           ext (or ext (content-type->ext content-type*))
           key (build-object-key {:prefix (if (= source :resized) "images/resized" "images/original")
                                  :ext ext})
-          store-result (minio/put-bytes! minio-client key bytes content-type*)
+          store-result (minio/put-bytes! {:storage minio-client :metrics metrics}
+                                         key
+                                         bytes
+                                         content-type*)
           result (merge
                   {:status (if (:ok store-result) :stored :error)
                    :key key
@@ -118,7 +122,7 @@
       {:status :error :stage :store :error (.getMessage e)})))
 
 (defn- cleanup-resized-images!
-  [{:keys [minio cleanup logger]}]
+  [{:keys [minio cleanup logger metrics]}]
   (let [{:keys [prefix max-age-ms batch-size]} cleanup
         prefix (or prefix "images/resized/")
         max-age-ms (long (or max-age-ms 600000))
@@ -130,9 +134,10 @@
              checked 0
              deleted 0
              failed 0]
-        (let [resp (minio/list-objects minio {:prefix prefix
-                                              :limit batch-size
-                                              :token token})]
+        (let [resp (minio/list-objects {:storage minio :metrics metrics}
+                                       {:prefix prefix
+                                        :limit batch-size
+                                        :token token})]
           (if-not (:ok resp)
             {:status :error
              :error (:error resp)
@@ -144,7 +149,7 @@
                           (fn [acc {:keys [key last-modified]}]
                             (let [last-modified-ms (when last-modified (.getTime last-modified))]
                               (if (and last-modified-ms (< last-modified-ms cutoff))
-                                (let [del (minio/delete-object! minio key)]
+                                (let [del (minio/delete-object! {:storage minio :metrics metrics} key)]
                                   (if (:ok del)
                                     (update acc :deleted inc)
                                     (update acc :failed inc)))

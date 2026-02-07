@@ -11,6 +11,7 @@
             [core-service.app.workers.segment-retention :as retention]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
+            [d-core.core.storage.minio]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [integrant.core :as ig]))
 
@@ -18,7 +19,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
@@ -86,7 +87,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
@@ -143,7 +144,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)

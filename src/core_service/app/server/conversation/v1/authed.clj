@@ -140,10 +140,11 @@
      :conversation-id conv-id}))
 
 (defn- fetch-minio-page
-  [{:keys [db minio segments]} conversation-id cursor limit direction]
+  [{:keys [db minio segments metrics]} conversation-id cursor limit direction]
   (let [result (segment-reader/fetch-messages {:db db
                                                :minio minio
-                                               :segments segments}
+                                               :segments segments
+                                               :metrics metrics}
                                               conversation-id
                                               {:limit limit
                                                :cursor cursor
@@ -181,7 +182,8 @@
                                 minio)
                        (fetch-minio-page {:db db
                                           :minio minio
-                                          :segments segments}
+                                          :segments segments
+                                          :metrics metrics}
                                          conversation-id
                                          before-seq
                                          remaining
