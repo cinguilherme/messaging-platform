@@ -7,11 +7,13 @@
   [logger]
   {:name  ::response-logger
    :enter (fn [ctx]
-            (let [req (:request ctx)]
+            (let [req (:request ctx)
+                  headers (:headers req)
+                  safe-headers (dissoc headers "authorization" "cookie")]
               (assoc ctx ::request-info {:uri (:uri req)
                                          :method (:request-method req)
                                          :params (:params req)
-                                         :headers (:headers req)
+                                         :headers safe-headers
                                          :cid (:cid ctx)
                                          :start-time (System/nanoTime)})))
    :leave (fn [ctx]
@@ -22,7 +24,6 @@
                 (logger/log logger :info ::api-request
                             (assoc req-info
                                    :status (:status resp)
-                                   :data (:body resp)
                                    :duration-ms duration-ms)))
               ctx))})
 
