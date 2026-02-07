@@ -136,14 +136,16 @@
               status (.getStatusCode e)
               not-found? (or (= "NoSuchKey" error-code)
                              (= "NotFound" error-code)
-                             (= 404 status))]
+                             (= 404 status))
+              log-level (if not-found? :info :error)
+              metric-status (if not-found? :not-found :error)]
           (app-metrics/record-minio! metrics :get
                                      (app-metrics/duration-seconds start)
-                                     :error nil)
-          (logger/log logger :error ::get-object-failed {:key key
-                                                         :error (.getMessage e)
-                                                         :error-code error-code
-                                                         :status status})
+                                     metric-status nil)
+          (logger/log logger log-level ::get-object-failed {:key key
+                                                            :error (.getMessage e)
+                                                            :error-code error-code
+                                                            :status status})
           {:ok false
            :key key
            :bucket bucket
