@@ -286,7 +286,6 @@
         blocking-promise (promise)]
     (with-db-cleanup [db client]
       (do
-        (deliver blocking-promise {:messages [] :has-more? false})
         (helpers/cleanup-conversation! db conv-id))
       (let [webdeps (make-webdeps {:db db
                                    :minio :fake-minio
@@ -306,4 +305,5 @@
               (is (:ok body))
               (is (= (str conv-id) (:conversation_id item)))
               (is (nil? (:last_message item)))
-              (is (= 0 (:unread_count item))))))))))
+              (is (= 0 (:unread_count item)))))
+          (deliver blocking-promise {:messages [] :has-more? false}))))))
