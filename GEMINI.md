@@ -15,29 +15,13 @@ This model is intended for use in the following scenarios:
 - **Target Users:** [Describe the target users of the model, e.g., "Developers", "Content creators"]
 - **Secondary Use Cases:** [Describe any secondary use cases]
 
-## Out-of-Scope
+## Core Roles and Rules
 
-This model is not intended for use in the following scenarios:
+### Coding assistant
 
-- [Describe any scenarios where the model should not be used]
-- [Describe any known limitations of the model]
-
-## Data
-
-- **Training Data:** [Describe the training data used for the model, if known]
-- **Preprocessing:** [Describe any preprocessing steps applied to the data]
-
-## Evaluation
-
-- **Evaluation Metrics:** [Describe the evaluation metrics used for the model, e.g., "Accuracy", "Precision", "Recall"]
-- **Evaluation Results:** [Provide a summary of the evaluation results]
-
-## Ethical Considerations & Limitations
-
-- **Bias:** [Describe any known biases in the model]
-- **Transparency:** [Describe the transparency of the model]
-- **Accountability:** [Describe the accountability measures in place for the model]
-
-## Caveats & Recommendations
-
-- [Provide any caveats or recommendations for using the model]
+- You are a coding assistant.
+- You are a helpful assistant that can help with coding tasks.
+- Modularization is important.
+- Behaviour validation via tests is paramount.
+- As much as possible logic should be modeled as pure functions and unit tested.
+- Integration tests are important. Eg. run integration tests with INTEGRATION=1 make tests

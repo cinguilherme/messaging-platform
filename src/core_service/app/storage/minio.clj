@@ -3,9 +3,13 @@
             [integrant.core :as ig]
             [duct.logger :as logger])
   (:import (com.amazonaws.auth AWSStaticCredentialsProvider BasicAWSCredentials)
+           (com.amazonaws ClientConfiguration)
            (com.amazonaws.client.builder AwsClientBuilder$EndpointConfiguration)
            (com.amazonaws.services.s3 AmazonS3 AmazonS3ClientBuilder)
-           (com.amazonaws.services.s3.model ListObjectsV2Request ObjectMetadata PutObjectRequest)))
+           (com.amazonaws.services.s3.model AmazonS3Exception
+                                            ListObjectsV2Request
+                                            ObjectMetadata
+                                            PutObjectRequest)))
 
 (defn- ensure-bucket!
   [^AmazonS3 client bucket logger]
@@ -18,11 +22,17 @@
       (throw e))))
 
 (defn- build-s3-client
-  [{:keys [endpoint access-key secret-key]}]
-  (let [creds (AWSStaticCredentialsProvider.
+  [{:keys [endpoint access-key secret-key connection-timeout-ms socket-timeout-ms]}]
+  (let [conn-ms (long (or connection-timeout-ms 10000))
+        sock-ms (long (or socket-timeout-ms 10000))
+        client-config (doto (ClientConfiguration.)
+                        (.setConnectionTimeout conn-ms)
+                        (.setSocketTimeout sock-ms))
+        creds (AWSStaticCredentialsProvider.
                (BasicAWSCredentials. access-key secret-key))
         builder (doto (AmazonS3ClientBuilder/standard)
                   (.withCredentials creds)
+                  (.withClientConfiguration client-config)
                   (.withPathStyleAccessEnabled true)
                   (.withEndpointConfiguration
                    (AwsClientBuilder$EndpointConfiguration. endpoint "us-east-1")))]
@@ -121,6 +131,28 @@
            :key key
            :bucket bucket
            :bytes bytes}))
+      (catch AmazonS3Exception e
+        (let [error-code (.getErrorCode e)
+              status (.getStatusCode e)
+              not-found? (or (= "NoSuchKey" error-code)
+                             (= "NotFound" error-code)
+                             (= 404 status))
+              log-level (if not-found? :info :error)
+              metric-status (if not-found? :not-found :error)]
+          (app-metrics/record-minio! metrics :get
+                                     (app-metrics/duration-seconds start)
+                                     metric-status nil)
+          (logger/log logger log-level ::get-object-failed {:key key
+                                                            :error (.getMessage e)
+                                                            :error-code error-code
+                                                            :status status})
+          {:ok false
+           :key key
+           :bucket bucket
+           :error (.getMessage e)
+           :error-code error-code
+           :status status
+           :error-type (if not-found? :not-found :s3-error)}))
       (catch Exception e
         (app-metrics/record-minio! metrics :get
                                    (app-metrics/duration-seconds start)
@@ -130,11 +162,13 @@
 
 (defmethod ig/init-key :core-service.app.storage.minio/client
   [_ {:keys [config metrics] :as opts}]
-  (let [{:keys [endpoint access-key secret-key bucket logger]}
-        (if (contains? opts :config) config opts)]
+  (let [cfg (if (contains? opts :config) config opts)
+        {:keys [endpoint access-key secret-key bucket logger connection-timeout-ms socket-timeout-ms]} cfg]
     (logger/log logger :info ::initializing-minio-client {:endpoint endpoint :bucket bucket})
     (let [client (build-s3-client {:endpoint endpoint
                                    :access-key access-key
-                                   :secret-key secret-key})]
+                                   :secret-key secret-key
+                                   :connection-timeout-ms connection-timeout-ms
+                                   :socket-timeout-ms socket-timeout-ms})]
       (ensure-bucket! client bucket logger)
       {:client client :bucket bucket :logger logger :metrics metrics})))
