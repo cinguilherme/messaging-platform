@@ -1,6 +1,5 @@
 (ns core-service.app.segments.reader
-  (:require [clojure.string :as str]
-            [core-service.app.db.segments :as segments-db]
+  (:require [core-service.app.db.segments :as segments-db]
             [core-service.app.segments.format :as segment-format]
             [core-service.app.storage.minio :as minio]))
 
@@ -8,15 +7,11 @@
   [result]
   (let [error-type (:error-type result)
         error-code (:error-code result)
-        status (:status result)
-        error-msg (some-> (:error result) str str/lower-case)]
+        status (:status result)]
     (or (= error-type :not-found)
         (= error-code "NoSuchKey")
         (= error-code "NotFound")
-        (= 404 status)
-        (and error-msg
-             (or (str/includes? error-msg "no such key")
-                 (str/includes? error-msg "not found"))))))
+        (= 404 status))))
 
 (defn- segment-messages
   [{:keys [db minio]} {:keys [conversation_id seq_start object_key]}
