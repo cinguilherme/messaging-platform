@@ -16,7 +16,7 @@ Refer to /docs/dcore-docs/supported.md for a list of supported and unsupported f
 
 Always validate the changes using the "make tests" and "INTEGRATION=1 make tests" commands.
 
-Modularization is key, try to keep the codebase modular, specially avoiing logic code in the surface handler functions like HTTP handlers, GraphQL resolvers, Async messages consumer, etc.
+Modularization is key, try to keep the codebase modular, specially avoiding logic code in the surface handler functions like HTTP handlers, GraphQL resolvers, Async messages consumer, etc.
 
 ## General Coding Rules
 
