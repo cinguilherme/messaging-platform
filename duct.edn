@@ -168,11 +168,21 @@
 
   ;; WebSocket server (Aleph) - separate port
   ;; WS routes are managed via Reitit to keep a Duct-like routing experience.
+  ;; Ring middleware for WS (reusing wrap-* fns from middleware.clj / d-core auth)
+  :core-service.app.server.middleware/user-context {}
+  :core-service.app.server.ws/base-middleware {:api-key #ig/ref :core-service.app.server.middleware/api-key
+                                               :auth #ig/ref :d-core.core.auth.http/authentication-middleware
+                                               :user-context #ig/ref :core-service.app.server.middleware/user-context}
   :d-core.module/ws
   {:port 3001
-   :routes [["/ws" {:get #ig/ref :core-service.app.server.ws/handler}]]
+   :middleware #ig/ref :core-service.app.server.ws/base-middleware
+   :routes [["/ws" {:get #ig/ref :core-service.app.server.ws/handler
+                    :middleware []}]
+            ["/ws/conversations/:id/stream"
+             {:get #ig/ref :core-service.app.server.ws/conversation-stream}]]
    :logger #ig/ref :duct/logger}
   :core-service.app.server.ws/handler {:logger #ig/ref :duct/logger}
+  :core-service.app.server.ws/conversation-stream {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
 
   ;; GraphQL server (Lacinia)
   :d-core.module/graphql

@@ -355,11 +355,52 @@ returns the profile (local cache with Keycloak fallback).
 
 ## WebSocket (Realtime)
 
-Current WS handler is an **echo** endpoint at `ws://localhost:3001/ws` (dev only).
-The planned conversation stream endpoint is described in
-`docs/plans/01-low-cost-realtime-messaging-phase-0.md` but is not wired yet.
+### Conversation stream
 
-For realtime UX today, poll `GET /v1/conversations/:id/messages` with cursors.
+Connect to receive new messages in real time for an open conversation:
+
+```
+ws://localhost:3001/ws/conversations/<conversation-id>/stream
+```
+
+**Authentication (same as HTTP endpoints):**
+
+- `X-Api-Key` header (required).
+- `Authorization: Bearer <jwt>` header (required).
+
+Browser clients that cannot set WebSocket headers may pass `api_key` and `token`
+as query parameters instead.
+
+Auth is enforced on the HTTP upgrade request. If the API key or JWT is invalid
+the server responds with `401`. If the user is not a member of the conversation
+the server responds with `403`. On success the connection is upgraded to a
+WebSocket.
+
+**Server frames:**
+
+Each frame is an EDN-encoded message object matching the message schema returned
+by `GET /v1/conversations/:id/messages`. Example:
+
+```edn
+{:message_id #uuid "..." :conversation_id #uuid "..." :seq 42
+ :sender_id #uuid "..." :sent_at 1706000000000
+ :type :text :body {:text "hello"} :attachments [] :client_ref nil :meta nil}
+```
+
+**Client frames:**
+
+None required for v1. The stream is server-push only.
+
+**Reconnect / catch-up:**
+
+On reconnect, call `GET /v1/conversations/:id/messages?cursor=<last-seen-cursor>`
+once to retrieve any messages missed while disconnected, then resume listening
+on the WebSocket.
+
+### Echo endpoint (dev only)
+
+A basic echo handler remains available at `ws://localhost:3001/ws` for
+smoke-testing the WS server. It does not require authentication.
 
 ## GraphQL (Optional)
 
@@ -368,7 +409,6 @@ subscriptions when enabled. See `docs/dcore-docs/graphql.md` for config details.
 
 ## Not Supported in V1 (Explicit)
 
-- Realtime conversation stream (`/v1/conversations/:id/stream`); polling only.
 - Public attachment upload/download flow (attachments are schema-only).
 
 ## Web App Example (Fetch)

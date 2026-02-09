@@ -646,7 +646,10 @@
             (log-message-create! logger logging ::message-create
                                  (merge log-ctx {:message message}))
             (try
-              (let [entry-id (streams/append! redis metrics stream payload-bytes)]
+              (let [entry-id (streams/append! redis metrics stream payload-bytes)
+                    pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
+                (car/wcar (redis-lib/conn redis)
+                  (car/publish pubsub-ch payload-bytes))
                 (log-message-create! logger logging ::redis-append
                                      (merge log-ctx {:entry-id entry-id}))
                 (http/format-response {:ok true

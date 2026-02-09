@@ -79,17 +79,14 @@ returns the resolved user profile (local cache with Keycloak fallback).
 Options:
 - Implemented: JWT `sub` mapping + `GET /v1/users/me`.
 
-## Gap 7: Realtime not available in v1
+## Gap 7: Realtime ~~not available in v1~~ (Resolved)
 
-Status: Open.
+Status: Resolved.
 
-Current: WebSocket endpoint is echo-only in dev; no production realtime stream.
-
-Options:
-- A) Poll `GET /v1/conversations/:id/messages` with `direction=forward` for new
-     messages; document recommended poll interval and backoff.
-- B) Add a lightweight SSE endpoint as an interim alternative to WS.
-- C) Wait for the planned WS stream endpoint; accept polling-only UX in v1.
+The conversation stream WebSocket endpoint is now available at
+`ws://localhost:3001/ws/conversations/:id/stream`. Clients can subscribe to
+receive new messages in real time instead of polling. See
+`docs/dcore-docs/client_integration.md` for the full contract.
 
 ## Gap 8: Attachments scope for v1 is ambiguous
 
