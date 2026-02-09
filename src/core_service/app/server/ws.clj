@@ -41,11 +41,31 @@
    every published message to the WebSocket connection. Returns the Carmine
    listener (closeable) so the caller can tear it down on disconnect."
   [conn-spec channel ws-conn logger]
-  (car/with-new-pubsub-listener conn-spec
-    {"message" (fn [[_type _ch payload]]
+  (letfn [(as-text [value]
+            (cond
+              (string? value) value
+              (bytes? value) (String. ^bytes value "UTF-8")
+              (instance? java.nio.ByteBuffer value)
+              (let [^java.nio.ByteBuffer buf value
+                    copy (.duplicate buf)
+                    bytes (byte-array (.remaining copy))]
+                (.get copy bytes)
+                (String. bytes "UTF-8"))
+              :else (str value)))
+          (extract-payload [msg]
+            (cond
+              (and (vector? msg)
+                   (<= 3 (count msg))
+                   (= "message" (as-text (first msg))))
+              (last msg)
+              (vector? msg) nil
+              :else msg))]
+    (car/with-new-pubsub-listener conn-spec
+      {channel (fn [msg]
                  (when-not (s/closed? ws-conn)
-                   (s/put! ws-conn payload)))}
-    (car/subscribe channel)))
+                   (when-let [payload (extract-payload msg)]
+                     (s/put! ws-conn (as-text payload)))))}
+      (car/subscribe channel))))
 
 (defmethod ig/init-key :core-service.app.server.ws/conversation-stream
   [_ {:keys [webdeps]}]
