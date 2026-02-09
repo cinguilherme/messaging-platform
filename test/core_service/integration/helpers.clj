@@ -1,7 +1,7 @@
 (ns core-service.integration.helpers
   (:require [core-service.app.config.databases]
-            [core-service.app.storage.minio :as minio]
             [d-core.core.clients.postgres]
+            [d-core.core.storage.protocol :as p-storage]
             [d-core.core.clients.redis]
             [d-core.core.databases.postgres]
             [d-core.core.databases.protocols.simple-sql :as sql]
@@ -30,7 +30,7 @@
 (defn minio-up?
   [minio-client]
   (try
-    (:ok (minio/list-objects minio-client {:prefix "" :limit 1}))
+    (:ok (p-storage/storage-list minio-client {:prefix "" :limit 1}))
     (catch Exception _ false)))
 
 (defn redis-keys
@@ -88,7 +88,7 @@
   [db minio-client conversation-id]
   (when-let [row (first (sql/select db {:table :segment_index
                                         :where {:conversation_id conversation-id}}))]
-    (minio/delete-object! minio-client (:object_key row))
+    (p-storage/storage-delete minio-client (:object_key row) {})
     (sql/delete! db {:table :segment_index
                      :where {:conversation_id conversation-id
                              :seq_start (:seq_start row)}})))

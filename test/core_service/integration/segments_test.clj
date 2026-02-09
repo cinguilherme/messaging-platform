@@ -5,8 +5,8 @@
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.server.conversation.v1.authed :as authed]
+            [d-core.core.storage.protocol :as p-storage]
             [core-service.app.workers.segments :as segments]
             [core-service.app.workers.segment-retention :as retention]
             [core-service.integration.helpers :as helpers]
@@ -68,7 +68,7 @@
               (is (= 2 (:seq_end row)))
               (is (string? (:object_key row))))
             (when-let [object-key (:object_key row)]
-              (let [obj (minio/get-bytes! minio-client object-key)
+              (let [obj (p-storage/storage-get-bytes minio-client object-key {})
                     decoded (segment-format/decode-segment (:bytes obj)
                                                            {:compression (:compression segment-config)
                                                             :codec (:codec segment-config)})
@@ -132,7 +132,7 @@
               (is (empty? (sql/select db {:table :segment_index
                                           :where {:conversation_id conv-id}}))))
             (testing "segment object deleted"
-              (let [obj (minio/get-bytes! minio-client object-key)]
+              (let [obj (p-storage/storage-get-bytes minio-client object-key {})]
                 (is (false? (:ok obj))))))
           (finally
             (helpers/cleanup-segment-object-and-index! db minio-client conv-id)

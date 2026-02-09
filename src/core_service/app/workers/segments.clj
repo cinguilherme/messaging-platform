@@ -7,8 +7,8 @@
             [core-service.app.libs.redis :as redis-lib]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.streams.redis :as streams]
+            [d-core.core.storage.protocol :as p-storage]
             [d-core.core.metrics.protocol :as metrics]
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
@@ -190,7 +190,7 @@
    :created_at created-at})
 
 (defn- store-segment!
-  [{:keys [db minio metrics naming logger logging log-ctx]}
+  [{:keys [db minio naming logger logging log-ctx]}
    {:keys [conversation-id header payloads compression created-at]}]
   (let [encode-start (System/nanoTime)
         segment-bytes (segment-format/encode-segment {:header header
@@ -213,10 +213,8 @@
                 {:duration-ms encode-duration
                  :payload-bytes byte-size})
     (let [put-start (System/nanoTime)
-          store (minio/put-bytes! {:storage minio :metrics metrics}
-                                  object-key
-                                  segment-bytes
-                                  "application/octet-stream")
+          store (p-storage/storage-put-bytes minio object-key segment-bytes
+                                            {:content-type "application/octet-stream"})
           put-duration (duration-ms put-start)]
       (if-not (:ok store)
         (do
@@ -297,7 +295,6 @@
             payloads (mapv :payload selected)
             result (store-segment! {:db db
                                     :minio minio
-                                    :metrics metrics
                                     :naming naming
                                     :logger logger
                                     :logging logging

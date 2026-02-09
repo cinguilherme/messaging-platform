@@ -6,8 +6,8 @@
             [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed :as authed]
             [core-service.app.segments.reader :as segment-reader]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.workers.segments :as segments]
+            [d-core.core.storage.protocol :as p-storage]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
             [d-core.core.storage.minio]
@@ -264,7 +264,7 @@
               resp (do
                      (testing "segment created"
                        (is (string? object-key)))
-                     (minio/delete-object! minio object-key)
+                     (p-storage/storage-delete minio object-key {})
                      (testing "segment index remains after object removal"
                        (is (seq (sql/select db {:table :segment_index
                                                 :where {:conversation_id conv-id}}))))

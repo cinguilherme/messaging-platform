@@ -2,7 +2,13 @@
   (:require [clojure.test :refer [deftest is testing]]
             [core-service.app.db.segments :as segments-db]
             [core-service.app.segments.reader :as reader]
-            [core-service.app.storage.minio :as minio]))
+            [d-core.core.storage.protocol :as p-storage]))
+
+(defn- mock-storage
+  "Create a mock StorageProtocol that returns `result` for storage-get-bytes."
+  [result]
+  (reify p-storage/StorageProtocol
+    (storage-get-bytes [_ _ _] result)))
 
 (deftest fetch-messages-prunes-missing-segment
   (let [conv-id (java.util.UUID/randomUUID)
@@ -15,10 +21,9 @@
     (with-redefs [segments-db/list-segments (fn [_ _]
                                               (let [n (swap! calls inc)]
                                                 (if (= n 1) [row] [])))
-                  segments-db/delete-segment! (fn [_ args] (reset! deleted args))
-                  minio/get-bytes! (fn [_ _] {:ok false :error-type :not-found})]
+                  segments-db/delete-segment! (fn [_ args] (reset! deleted args))]
       (let [result (reader/fetch-messages {:db :db
-                                           :minio :minio
+                                           :minio (mock-storage {:ok false :error-type :not-found})
                                            :segments {:segment-batch 1
                                                       :compression :none
                                                       :codec :raw}}
@@ -40,10 +45,9 @@
     (with-redefs [segments-db/list-segments (fn [_ _]
                                              (let [n (swap! calls inc)]
                                                (if (= n 1) [row] [])))
-                  segments-db/delete-segment! (fn [_ args] (reset! delete-called args))
-                  minio/get-bytes! (fn [_ _] {:ok false :error "InternalError"})]
+                  segments-db/delete-segment! (fn [_ args] (reset! delete-called args))]
       (let [result (reader/fetch-messages {:db :db
-                                           :minio :minio
+                                           :minio (mock-storage {:ok false :error "InternalError"})
                                            :segments {:segment-batch 1
                                                       :compression :none
                                                       :codec :raw}}
@@ -66,10 +70,9 @@
               (with-redefs [segments-db/list-segments (fn [_ _]
                                                         (let [n (swap! calls inc)]
                                                           (if (= n 1) [row] [])))
-                            segments-db/delete-segment! (fn [_ args] (reset! deleted args))
-                            minio/get-bytes! (fn [_ _] minio-result)]
+                            segments-db/delete-segment! (fn [_ args] (reset! deleted args))]
                 (let [result (reader/fetch-messages {:db :db
-                                                     :minio :minio
+                                                     :minio (mock-storage minio-result)
                                                      :segments {:segment-batch 1
                                                                 :compression :none
                                                                 :codec :raw}}
@@ -99,10 +102,9 @@
     (with-redefs [segments-db/list-segments (fn [_ _]
                                               (let [n (swap! calls inc)]
                                                 (if (= n 1) [row] [])))
-                  segments-db/delete-segment! (fn [_ args] (reset! delete-called args))
-                  minio/get-bytes! (fn [_ _] {:ok false :status 500 :error "InternalError"})]
+                  segments-db/delete-segment! (fn [_ args] (reset! delete-called args))]
       (let [result (reader/fetch-messages {:db :db
-                                           :minio :minio
+                                           :minio (mock-storage {:ok false :status 500 :error "InternalError"})
                                            :segments {:segment-batch 1
                                                       :compression :none
                                                       :codec :raw}}

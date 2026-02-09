@@ -1,7 +1,7 @@
 (ns core-service.app.segments.reader
   (:require [core-service.app.db.segments :as segments-db]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.storage.minio :as minio]))
+            [d-core.core.storage.protocol :as p-storage]))
 
 (defn- missing-object?
   [result]
@@ -14,9 +14,9 @@
         (= 404 status))))
 
 (defn- segment-messages
-  [{:keys [db minio metrics]} {:keys [conversation_id seq_start object_key]}
+  [{:keys [db minio]} {:keys [conversation_id seq_start object_key]}
    {:keys [compression codec cursor direction]}]
-  (let [obj (minio/get-bytes! {:storage minio :metrics metrics} object_key)]
+  (let [obj (p-storage/storage-get-bytes minio object_key {})]
     (cond
       (:ok obj)
       (let [decoded (segment-format/decode-segment (:bytes obj)
@@ -71,7 +71,7 @@
              :has-more? false}
             (let [messages (->> rows
                                 (mapcat (fn [row]
-                                          (segment-messages {:db db :minio minio :metrics metrics}
+                                          (segment-messages {:db db :minio minio}
                                                             row
                                                             {:compression compression
                                                              :codec codec

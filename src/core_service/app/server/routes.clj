@@ -5,7 +5,6 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [d-core.libs.workers :as workers]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.server.http :as http]
             [d-core.core.producers.protocol :as producer]
             [d-core.core.cache.protocol :as cache]
@@ -224,16 +223,15 @@
 
 (defn image-list
   "List images stored by the upload endpoint."
-  [{:keys [minio logger metrics]}]
+  [{:keys [minio logger]}]
   (fn [req]
     (let [format (http/get-accept-format req)
           prefix (or (http/param req "prefix") "images/")
           limit (http/parse-long (http/param req "limit") 50)
           token (http/param req "token")
-          result (minio/list-objects {:storage minio :metrics metrics}
-                                     {:prefix prefix
-                                      :limit limit
-                                      :token token})]
+          result (storage/storage-list minio {:prefix prefix
+                                              :limit limit
+                                              :token token})]
       (when (and logger (not (:ok result)))
         (logger/log logger :error ::image-list-failed {:error (:error result)}))
       (http/format-response result format))))
