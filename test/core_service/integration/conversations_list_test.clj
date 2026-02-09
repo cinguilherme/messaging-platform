@@ -6,10 +6,11 @@
             [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed :as authed]
             [core-service.app.segments.reader :as segment-reader]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.workers.segments :as segments]
+            [d-core.core.storage.protocol :as p-storage]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
+            [d-core.core.storage.minio]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [integrant.core :as ig]))
 
@@ -17,7 +18,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio (ig/init-key :core-service.app.storage.minio/client minio-cfg)
+        minio (ig/init-key :d-core.core.storage/minio minio-cfg)
         naming (ig/init-key :core-service.app.config.messaging/storage-names {})
         idempotency (ig/init-key :core-service.app.config.messaging/idempotency-config {})
         receipt (ig/init-key :core-service.app.config.messaging/receipt-config {})
@@ -263,7 +264,7 @@
               resp (do
                      (testing "segment created"
                        (is (string? object-key)))
-                     (minio/delete-object! minio object-key)
+                     (p-storage/storage-delete minio object-key {})
                      (testing "segment index remains after object removal"
                        (is (seq (sql/select db {:table :segment_index
                                                 :where {:conversation_id conv-id}}))))

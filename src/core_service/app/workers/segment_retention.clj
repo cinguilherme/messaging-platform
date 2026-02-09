@@ -1,7 +1,7 @@
 (ns core-service.app.workers.segment-retention
   (:require [core-service.app.db.segments :as segments-db]
             [core-service.app.observability.logging :as obs-log]
-            [core-service.app.storage.minio :as minio]
+            [d-core.core.storage.protocol :as p-storage]
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
             [integrant.core :as ig]))
@@ -24,7 +24,7 @@
                                                         :limit batch-size})
             result (reduce
                     (fn [acc {:keys [conversation_id seq_start object_key]}]
-                      (let [deleted (minio/delete-object! minio object_key)]
+                      (let [deleted (p-storage/storage-delete minio object_key {})]
                         (if (:ok deleted)
                           (do
                             (segments-db/delete-segment! db {:conversation-id conversation_id

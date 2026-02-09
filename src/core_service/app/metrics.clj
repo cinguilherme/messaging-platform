@@ -61,22 +61,6 @@
                                                  :buckets [0.001 0.005 0.01 0.025 0.05
                                                            0.1 0.25 0.5 1 2 5]})})
 
-(defn- minio-metrics
-  [metrics]
-  {:requests-total (metrics/counter metrics {:name :minio_requests_total
-                                             :help "Minio requests"
-                                             :labels [:op :status]})
-   :request-duration (metrics/histogram metrics {:name :minio_request_duration_seconds
-                                                 :help "Minio request duration in seconds"
-                                                 :labels [:op]
-                                                 :buckets [0.001 0.005 0.01 0.025 0.05
-                                                           0.1 0.25 0.5 1 2 5]})
-   :bytes (metrics/histogram metrics {:name :minio_bytes
-                                      :help "Minio bytes transferred"
-                                      :labels [:op]
-                                      :buckets [1024 4096 16384 65536 262144
-                                                1048576 5242880 10485760]})})
-
 (defn- consumer-metrics
   [metrics]
   {:calls-total (metrics/counter metrics {:name :consumer_handler_total
@@ -104,24 +88,6 @@
         (metrics/observe! metrics-api
                           (.labels request-duration (labels->array op))
                           duration-seconds)))))
-
-(defn record-minio!
-  [metrics-component op duration-seconds status byte-count]
-  (when (and metrics-component (:metrics metrics-component))
-    (let [metrics-api (:metrics metrics-component)
-          {:keys [requests-total request-duration bytes]} (:minio metrics-component)
-          bytes-hist bytes]
-      (when requests-total
-        (metrics/inc! metrics-api
-                      (.labels requests-total (labels->array op status))))
-      (when request-duration
-        (metrics/observe! metrics-api
-                          (.labels request-duration (labels->array op))
-                          duration-seconds))
-      (when (and bytes-hist (number? byte-count))
-        (metrics/observe! metrics-api
-                          (.labels bytes-hist (labels->array op))
-                          byte-count)))))
 
 (defn record-consumer!
   [metrics-component handler-id duration-seconds status]
@@ -188,7 +154,6 @@
         workers (worker-metrics metrics)
         segments (segment-metrics metrics)
         redis (redis-metrics metrics)
-        minio (minio-metrics metrics)
         consumers (consumer-metrics metrics)]
     {:metrics metrics
      :registry (metrics/registry metrics)
@@ -196,6 +161,5 @@
      :workers workers
      :segments segments
      :redis redis
-     :minio minio
      :consumers consumers
      :emit (fn [event] (emit-worker-event! metrics workers event))}))

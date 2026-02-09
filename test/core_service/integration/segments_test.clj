@@ -5,12 +5,13 @@
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.server.conversation.v1.authed :as authed]
+            [d-core.core.storage.protocol :as p-storage]
             [core-service.app.workers.segments :as segments]
             [core-service.app.workers.segment-retention :as retention]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
+            [d-core.core.storage.minio]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [integrant.core :as ig]))
 
@@ -18,7 +19,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
@@ -67,7 +68,7 @@
               (is (= 2 (:seq_end row)))
               (is (string? (:object_key row))))
             (when-let [object-key (:object_key row)]
-              (let [obj (minio/get-bytes! minio-client object-key)
+              (let [obj (p-storage/storage-get-bytes minio-client object-key {})
                     decoded (segment-format/decode-segment (:bytes obj)
                                                            {:compression (:compression segment-config)
                                                             :codec (:codec segment-config)})
@@ -86,7 +87,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
@@ -131,7 +132,7 @@
               (is (empty? (sql/select db {:table :segment_index
                                           :where {:conversation_id conv-id}}))))
             (testing "segment object deleted"
-              (let [obj (minio/get-bytes! minio-client object-key)]
+              (let [obj (p-storage/storage-get-bytes minio-client object-key {})]
                 (is (false? (:ok obj))))))
           (finally
             (helpers/cleanup-segment-object-and-index! db minio-client conv-id)
@@ -143,7 +144,7 @@
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
-        minio-client (ig/init-key :core-service.app.storage.minio/client minio-cfg)]
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
     (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)

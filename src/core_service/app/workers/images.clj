@@ -3,7 +3,7 @@
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
             [integrant.core :as ig]
-            [core-service.app.storage.minio :as minio])
+            [d-core.core.storage.protocol :as p-storage])
   (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
            (java.util UUID)
            (javax.imageio ImageIO)))
@@ -89,7 +89,7 @@
           ext (or ext (content-type->ext content-type*))
           key (build-object-key {:prefix (if (= source :resized) "images/resized" "images/original")
                                  :ext ext})
-          store-result (minio/put-bytes! minio-client key bytes content-type*)
+          store-result (p-storage/storage-put-bytes minio-client key bytes {:content-type content-type*})
           result (merge
                   {:status (if (:ok store-result) :stored :error)
                    :key key
@@ -130,9 +130,9 @@
              checked 0
              deleted 0
              failed 0]
-        (let [resp (minio/list-objects minio {:prefix prefix
-                                              :limit batch-size
-                                              :token token})]
+        (let [resp (p-storage/storage-list minio {:prefix prefix
+                                                :limit batch-size
+                                                :token token})]
           (if-not (:ok resp)
             {:status :error
              :error (:error resp)
@@ -144,7 +144,7 @@
                           (fn [acc {:keys [key last-modified]}]
                             (let [last-modified-ms (when last-modified (.getTime last-modified))]
                               (if (and last-modified-ms (< last-modified-ms cutoff))
-                                (let [del (minio/delete-object! minio key)]
+                                (let [del (p-storage/storage-delete minio key {})]
                                   (if (:ok del)
                                     (update acc :deleted inc)
                                     (update acc :failed inc)))

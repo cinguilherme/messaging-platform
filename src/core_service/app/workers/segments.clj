@@ -7,8 +7,8 @@
             [core-service.app.libs.redis :as redis-lib]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.storage.minio :as minio]
             [core-service.app.streams.redis :as streams]
+            [d-core.core.storage.protocol :as p-storage]
             [d-core.core.metrics.protocol :as metrics]
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
@@ -213,13 +213,14 @@
                 {:duration-ms encode-duration
                  :payload-bytes byte-size})
     (let [put-start (System/nanoTime)
-          store (minio/put-bytes! minio object-key segment-bytes "application/octet-stream")
+          store (p-storage/storage-put-bytes minio object-key segment-bytes
+                                            {:content-type "application/octet-stream"})
           put-duration (duration-ms put-start)]
       (if-not (:ok store)
         (do
           (log-stage! logger logging log-ctx :error :minio-put
                       {:duration-ms put-duration
-                       :storage.bucket (:bucket minio)
+                       :storage.bucket (:bucket store)
                        :storage.key object-key
                        :payload-bytes byte-size
                        :error (:error store)})
@@ -232,7 +233,7 @@
         (do
           (log-stage! logger logging log-ctx :info :minio-put
                       {:duration-ms put-duration
-                       :storage.bucket (:bucket minio)
+                       :storage.bucket (:bucket store)
                        :storage.key object-key
                        :payload-bytes byte-size})
           (let [index-start (System/nanoTime)]

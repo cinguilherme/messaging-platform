@@ -25,3 +25,11 @@ This model is intended for use in the following scenarios:
 - Behaviour validation via tests is paramount.
 - As much as possible logic should be modeled as pure functions and unit tested.
 - Integration tests are important. Eg. run integration tests with INTEGRATION=1 make tests
+
+
+### General Coding Rules
+
+- Modularization is extremely important.
+- Avoid too much nesting, extract functions to avoid too much nesting. If more than just one let binding is needed, extract to a function.
+- Use pure functions whenever possible. They should be easy to unit test. 
+- Always test in between changes to avoid regressions. "make tests" or clojure -M:test -n "target test name" to run a specific test.

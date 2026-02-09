@@ -140,10 +140,11 @@
      :conversation-id conv-id}))
 
 (defn- fetch-minio-page
-  [{:keys [db minio segments]} conversation-id cursor limit direction]
+  [{:keys [db minio segments metrics]} conversation-id cursor limit direction]
   (let [result (segment-reader/fetch-messages {:db db
                                                :minio minio
-                                               :segments segments}
+                                               :segments segments
+                                               :metrics metrics}
                                               conversation-id
                                               {:limit limit
                                                :cursor cursor
@@ -181,7 +182,8 @@
                                 minio)
                        (fetch-minio-page {:db db
                                           :minio minio
-                                          :segments segments}
+                                          :segments segments
+                                          :metrics metrics}
                                          conversation-id
                                          before-seq
                                          remaining
@@ -423,6 +425,42 @@
       #(car/wcar (redis-lib/conn redis)
          (car/hget key field)))))
 
+(defn- batch-receipt-read?
+  "Check read receipts for multiple messages in a single Redis pipeline.
+  Returns a map of message-id -> receipt-value (nil when not read)."
+  [redis metrics naming conversation-id message-ids user-id]
+  (if (empty? message-ids)
+    {}
+    (let [keys-and-fields (mapv (fn [mid]
+                                  [(receipts/receipt-key naming conversation-id mid)
+                                   (str "read:" user-id)])
+                                message-ids)
+          results (app-metrics/with-redis metrics :hget_batch
+                    #(car/wcar (redis-lib/conn redis)
+                       (mapv (fn [[k f]] (car/hget k f)) keys-and-fields)))]
+      (zipmap message-ids results))))
+
+(defn- entries->decoded [entries user-id]
+  (mapv (fn [entry]
+          (let [payload (:payload entry)
+                message (when payload (decode-message payload))
+                sender-id (:sender_id message)
+                message-id (:message_id message)
+                readable? (and message-id sender-id
+                               (not= sender-id user-id))]
+            {:message-id message-id :readable? readable?})) entries))
+
+(defn- decoded->result [decoded receipts unread]
+  (reduce
+   (fn [{:keys [unread]} {:keys [message-id readable?]}]
+     (if-not readable?
+       {:unread unread :done? false}
+       (if (get receipts message-id)
+         (reduced {:unread unread :done? true})
+         {:unread (inc unread) :done? false})))
+   {:unread unread :done? false}
+   decoded))
+
 (defn- unread-count-from-redis
   [redis metrics naming conversation-id user-id]
   (when (and redis naming conversation-id user-id)
@@ -430,29 +468,20 @@
           batch-size 100]
       (loop [cursor nil
              unread 0]
-        (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream {:direction :backward
-                                                                                :limit batch-size
-                                                                                :cursor cursor})
-              remaining (seq entries)]
-          (if-not remaining
-            unread
-            (loop [entries remaining
-                   unread unread]
-              (if-not (seq entries)
-                (if next-cursor
-                  (recur next-cursor unread)
-                  unread)
-                (let [payload (:payload (first entries))
-                      message (when payload (decode-message payload))
-                      sender-id (:sender_id message)
-                      message-id (:message_id message)
-                      readable? (and message-id sender-id (not= sender-id user-id))
-                      read? (and readable?
-                                 (receipt-read? redis metrics naming conversation-id message-id user-id))]
-                  (cond
-                    (and readable? read?) unread
-                    readable? (recur (rest entries) (inc unread))
-                    :else (recur (rest entries) unread)))))))))))
+        (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream
+                                                           {:direction :backward
+                                                            :limit batch-size
+                                                            :cursor cursor})
+              decoded (entries->decoded entries user-id)
+              readable-ids (->> decoded (filter :readable?) (mapv :message-id))
+              receipts (batch-receipt-read? redis metrics naming
+                                           conversation-id readable-ids user-id)
+              result (decoded->result decoded receipts unread)]
+          (cond
+            (:done? result) (:unread result)
+            (empty? entries) (:unread result)
+            (nil? next-cursor) (:unread result)
+            :else (recur next-cursor (:unread result))))))))
 
 (defn- conversation-item-fallback
   "Returns a conversation item with last_message nil and unread_count 0 (e.g. on timeout)."
@@ -523,15 +552,21 @@
                 members-by-conv (util/ltap logger ::conversations-list-members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids}))
                 member-ids (util/ltap logger ::conversations-list-member-ids (->> members-by-conv vals (mapcat identity) distinct ttap))
                 profiles (util/ltap logger ::conversations-list-profiles (resolve-member-profiles db token-client keycloak member-ids))
-                items (util/ltap logger ::conversations-list-items (mapv (fn [row]
-                                    (let [member-ids (get members-by-conv (:id row))
-                                          f (future (conversation-item components row sender-id member-ids profiles))
-                                          result (deref f item-timeout-ms ::timeout)]
-                                      (if (= result ::timeout)
-                                        (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
-                                            (conversation-item-fallback row sender-id member-ids profiles))
-                                        result)))
-                                  rows))
+                futures (mapv (fn [row]
+                               (let [mids (get members-by-conv (:id row))]
+                                 {:row row
+                                  :member-ids mids
+                                  :future (future (conversation-item components row sender-id mids profiles))}))
+                             rows)
+                items (util/ltap logger ::conversations-list-items
+                        (mapv (fn [{:keys [row member-ids] f :future}]
+                                (let [result (deref f item-timeout-ms ::timeout)]
+                                  (if (= result ::timeout)
+                                    (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
+                                        (future-cancel f)
+                                        (conversation-item-fallback row sender-id member-ids profiles))
+                                    result)))
+                              futures))
                 next-cursor (util/ltap logger ::conversations-list-next-cursor (when (= (count rows) limit)
                                     (some-> (last rows) :created_at (.getTime) str)))
                 _ (logger/log logger ::conversations-list-end-let items next-cursor)]
