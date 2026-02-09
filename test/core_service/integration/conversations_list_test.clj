@@ -105,7 +105,7 @@
 
 (deftest conversations-list-requires-sender
   (with-db [db client]
-    (let [{:keys [list]} (make-handlers (make-webdeps {:db db}))
+    (let [{:keys [list]} (make-handlers (make-webdeps {:db db :client client}))
           resp (list {:request-method :get
                       :headers accept-json})
           body (parse-body resp)]

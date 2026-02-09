@@ -30,6 +30,6 @@ This model is intended for use in the following scenarios:
 ### General Coding Rules
 
 - Modularization is extremely important.
-- Avoid too much nesting, extract functions to avoid too much nesting. If more than just one let binding is needed, extract to a function.
+- Avoid too much nesting, extract functions to avoid too much nesting. If more than just one let binding is needed, extract pieces into dedicated internal functions.
 - Use pure functions whenever possible. They should be easy to unit test. 
 - Always test in between changes to avoid regressions. "make tests" or clojure -M:test -n "target test name" to run a specific test.
