@@ -7,66 +7,10 @@
             [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
             [core-service.app.protocols :as protocols]
+            [core-service.app.server.users.v1.adapers :as a.users]
             [core-service.app.config.webdeps]
             [d-core.core.auth.token-client :as token-client])
   (:import [core_service.app.config.webdeps WebDeps]))
-
-(defn- normalize-email
-  [value]
-  (some-> value str/trim str/lower-case))
-
-(defn- normalize-username
-  [value]
-  (let [value (some-> value str/trim)]
-    (when (and value (not (str/blank? value)))
-      (if (str/starts-with? value "@")
-        (subs value 1)
-        value))))
-
-(defn- user->item
-  [user]
-  {:user_id (:id user)
-   :email (:email user)
-   :username (:username user)
-   :first_name (:firstName user)
-   :last_name (:lastName user)
-   :enabled (:enabled user)})
-
-(defn- attribute-value
-  [attrs k]
-  (let [v (or (get attrs k) (get attrs (keyword (name k))))]
-    (cond
-      (vector? v) (first v)
-      (sequential? v) (first v)
-      :else v)))
-
-(defn- keycloak-user->profile
-  [user]
-  (let [attrs (:attributes user)]
-    {:user_id (:id user)
-     :username (:username user)
-     :first_name (:firstName user)
-     :last_name (:lastName user)
-     :avatar_url (or (attribute-value attrs :avatar_url)
-                     (attribute-value attrs :avatarUrl))
-     :email (:email user)
-     :enabled (:enabled user)}))
-
-(defn- profile->item
-  [profile]
-  (-> profile
-      (update :user_id (fn [v] (when v (str v))))
-      (select-keys [:user_id :username :first_name :last_name :avatar_url :email :enabled])))
-
-(defn- profile->db
-  [profile]
-  {:user-id (:user_id profile)
-   :username (:username profile)
-   :first-name (:first_name profile)
-   :last-name (:last_name profile)
-   :avatar-url (:avatar_url profile)
-   :email (:email profile)
-   :enabled (:enabled profile)})
 
 (defn- fetch-user-by-id
   [{:keys [token-client keycloak]} user-id]
@@ -82,7 +26,7 @@
           status (:status resp)
           parsed (some-> (:body resp) (json/parse-string true))]
       (when (<= 200 status 299)
-        (keycloak-user->profile parsed)))))
+        (a.users/keycloak-user->profile parsed)))))
 
 (defn- coerce-user-ids
   [ids]
@@ -98,8 +42,8 @@
   (let [{:keys [db token-client keycloak]} webdeps]
     (fn [req]
       (let [format (http/get-accept-format req)
-            email (normalize-email (http/param req "email"))
-            username (normalize-username (http/param req "username"))]
+            email (a.users/normalize-email (http/param req "email"))
+            username (a.users/normalize-username (http/param req "username"))]
         (cond
           (and (str/blank? email) (str/blank? username))
           (http/format-response {:ok false :error "missing email or username"} format)
@@ -109,7 +53,7 @@
 
           (seq username)
           (let [profile (users-db/fetch-user-profile-by-username db {:username username})
-                item (when profile (profile->item profile))]
+                item (when profile (a.users/profile->item profile))]
             (http/format-response {:ok true
                                    :items (vec (remove nil? [item]))}
                                   format))
@@ -133,7 +77,7 @@
                   parsed (some-> (:body resp) (json/parse-string true))]
               (if (<= 200 status 299)
                 (http/format-response {:ok true
-                                       :items (vec (map user->item parsed))}
+                                       :items (vec (map a.users/user->item parsed))}
                                       format)
                 (http/format-response {:ok false
                                        :error "lookup failed"
@@ -178,7 +122,7 @@
                                                :keycloak keycloak}
                                               (str user-id)))]
       (when (and fetched-profile (map? fetched-profile))
-        (users-db/upsert-user-profile! db (profile->db fetched-profile)))
+        (users-db/upsert-user-profile! db (a.users/profile->db fetched-profile)))
       (or local-profile fetched-profile))))
 
 (defn users-me
@@ -193,7 +137,7 @@
       (if (nil? user-id)
         {:status 401 :body {:ok false :error "invalid user id"}}
         (if-let [profile (protocols/resolve-user-profile webdeps user-id)]
-          {:ok true :item (profile->item profile)}
+          {:ok true :item (a.users/profile->item profile)}
           {:ok true :item {:user_id (str user-id)}})))))
 
 (defmethod ig/init-key :core-service.app.server.users.v1.authed/routes
