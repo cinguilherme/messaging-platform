@@ -3,7 +3,7 @@
             [clj-http.client :as http-client]
             [clojure.test :refer [deftest is testing]]
             [core-service.app.db.users :as users-db]
-            [core-service.app.server.conversation.v1.public.public :as public]
+            [core-service.app.server.auth.v1.public.public :as public]
             [core-service.app.server.users.v1.authed :as users]
             [core-service.integration.helpers :as helpers]
             [d-core.core.auth.token-client :as token-client]

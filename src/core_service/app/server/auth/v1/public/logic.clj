@@ -1,4 +1,4 @@
-(ns core-service.app.server.conversation.v1.public.logic
+(ns core-service.app.server.auth.v1.public.logic
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [clojure.string :as str]

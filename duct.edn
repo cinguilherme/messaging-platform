@@ -81,9 +81,9 @@
                                                   :metrics #ig/ref :core-service.app.metrics/component}
 
    ;; App routes
-   :core-service.app.server.reitit/router
+  :core-service.app.server.reitit/router
   {:routes [#ig/ref :core-service.app.server.routes/main
-            #ig/ref :core-service.app.server.conversation.v1.public/routes
+            #ig/ref :core-service.app.server.auth.v1.public/routes
             #ig/ref :core-service.app.server.conversation.v1.authed/routes
             #ig/ref :core-service.app.server.users.v1.authed/routes
             #ig/ref :core-service.app.server.routes/admin]
@@ -104,7 +104,7 @@
    :dl-mark #ig/ref :core-service.app.server.routes/dl-mark}
   :core-service.app.server.users.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
   :core-service.app.server.conversation.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-  :core-service.app.server.conversation.v1.public/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+  :core-service.app.server.auth.v1.public/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
 
   :core-service.app.server.interceptors/http-base-interceptors
   {:metrics #ig/ref :core-service.app.server.interceptors.metrics/metrics

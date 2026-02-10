@@ -1,4 +1,4 @@
-(ns core-service.app.server.conversation.v1.public.public
+(ns core-service.app.server.auth.v1.public.public
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
             [duct.logger :as logger]
@@ -6,7 +6,7 @@
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
             [core-service.app.db.users :as users-db]
-            [core-service.app.server.conversation.v1.public.logic :as logic]
+            [core-service.app.server.auth.v1.public.logic :as logic]
             [d-core.core.auth.token-client :as token-client]
             [malli.core :as m]))
 
@@ -157,7 +157,7 @@
                                      :details (:error resp)}
                                     format))))))))
 
-(defmethod ig/init-key :core-service.app.server.conversation.v1.public/routes
+(defmethod ig/init-key :core-service.app.server.auth.v1.public/routes
   [_ {:keys [webdeps]}]
   ["/v1/auth"
    ["/register" {:post (auth-register {:webdeps webdeps})}]
