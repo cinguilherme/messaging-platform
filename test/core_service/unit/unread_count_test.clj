@@ -1,6 +1,7 @@
 (ns core-service.unit.unread-count-test
   (:require [clojure.test :refer [deftest is testing]]
             [core-service.app.server.conversation.v1.authed.logic :as logic]
+            [core-service.app.server.receipt.logic :as receipt-logic]
             [core-service.app.streams.redis :as streams]))
 
 ;; Access the private function via its var
@@ -25,7 +26,7 @@
   "Rebind streams/read! and batch-receipt-read? for unit testing."
   [read-fn receipt-fn & body]
   `(with-redefs [streams/read! ~read-fn
-                 core-service.app.server.conversation.v1.authed.logic/batch-receipt-read? ~receipt-fn]
+                 receipt-logic/batch-receipt-read? ~receipt-fn]
      ~@body))
 
 (def ^:private no-receipts
