@@ -5,7 +5,7 @@
         ;; Local library dependency (extracted core layer)
         d-core/d-core {:local/root "../d-core"}
         ;; For Docker image to build, it needs to use the CLojars dependency version of D-core, keep the local version only for dev involving the d-core evolution.
-       ;;  org.clojars.cinguilherme/d-core {:mvn/version "0.5.0"}
+       ;;  org.clojars.cinguilherme/d-core {:mvn/version "0.6.0"}
         
         ;; Database dependencies
         org.clojure/java.jdbc {:mvn/version "0.7.12"}

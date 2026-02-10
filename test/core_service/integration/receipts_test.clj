@@ -3,7 +3,7 @@
             [clojure.test :refer [deftest is testing]]
             [core-service.app.config.clients]
             [core-service.app.config.messaging]
-            [core-service.app.server.conversation.v1.authed]
+            [core-service.app.server.conversation.v1.authed.authed :as authed]
             [core-service.app.redis.receipts :as receipts]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
@@ -46,7 +46,7 @@
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             receipt-config (ig/init-key :core-service.app.config.messaging/receipt-config {})
-            handler (core-service.app.server.conversation.v1.authed/receipts-create
+            handler (authed/receipts-create
                       {:webdeps {:db db
                                  :redis redis-client
                                  :naming naming

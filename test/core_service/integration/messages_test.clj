@@ -5,7 +5,7 @@
             [core-service.app.config.clients]
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
-            [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.server.conversation.v1.authed.authed :as authed]
             [core-service.app.pagination :as pagination]
             [core-service.app.workers.segments :as segments]
             [core-service.integration.helpers :as helpers]

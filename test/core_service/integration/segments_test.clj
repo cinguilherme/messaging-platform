@@ -5,7 +5,7 @@
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.server.conversation.v1.authed.authed :as authed]
             [d-core.core.storage.protocol :as p-storage]
             [core-service.app.workers.segments :as segments]
             [core-service.app.workers.segment-retention :as retention]

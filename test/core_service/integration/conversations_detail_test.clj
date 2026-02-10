@@ -2,7 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.test :refer [deftest is testing]]
             [core-service.app.db.users :as users-db]
-            [core-service.app.server.conversation.v1.authed :as authed]
+            [core-service.app.server.conversation.v1.authed.authed :as authed]
             [core-service.integration.helpers :as helpers]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [integrant.core :as ig]))

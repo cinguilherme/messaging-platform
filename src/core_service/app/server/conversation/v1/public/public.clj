@@ -1,118 +1,14 @@
-(ns core-service.app.server.conversation.v1.public
+(ns core-service.app.server.conversation.v1.public.public
   (:require [cheshire.core :as json]
             [clj-http.client :as http-client]
-            [clojure.string :as str]
             [duct.logger :as logger]
             [integrant.core :as ig]
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
             [core-service.app.db.users :as users-db]
+            [core-service.app.server.conversation.v1.public.logic :as logic]
             [d-core.core.auth.token-client :as token-client]
             [malli.core :as m]))
-
-(defn- token-request
-  [{:keys [token-url client-id client-secret http-opts]} params]
-  (let [params (cond-> params
-                 client-id (assoc :client_id client-id)
-                 client-secret (assoc :client_secret client-secret))
-        resp (http-client/post token-url (merge {:form-params params
-                                                 :as :text
-                                                 :throw-exceptions false}
-                                                http-opts))
-        status (:status resp)
-        parsed (some-> (:body resp) (json/parse-string true))]
-    (if (<= 200 status 299)
-      {:ok true :data parsed}
-      {:ok false :status status :error parsed})))
-
-(defn- decode-base64-url
-  [value]
-  (try
-    (let [pad (mod (count value) 4)
-          padded (cond
-                   (= pad 2) (str value "==")
-                   (= pad 3) (str value "=")
-                   (= pad 1) (str value "===")
-                   :else value)]
-      (.decode (java.util.Base64/getUrlDecoder) padded))
-    (catch Exception _
-      nil)))
-
-(defn- decode-jwt-claims
-  [token]
-  (try
-    (let [parts (str/split (or token "") #"\.")
-          payload (nth parts 1 nil)
-          bytes (when payload (decode-base64-url payload))]
-      (when bytes
-        (json/parse-string (String. ^bytes bytes "UTF-8") true)))
-    (catch Exception _
-      nil)))
-
-(defn- admin-token-details
-  [token]
-  (let [claims (decode-jwt-claims token)]
-    {:claims claims
-     :realm_roles (get-in claims [:realm_access :roles])
-     :realm_management_roles (get-in claims [:resource_access "realm-management" :roles])}))
-
-(defn- build-user-repr
-  [{:keys [username password email first_name last_name enabled]}]
-  (cond-> {:username username
-           :enabled (if (some? enabled) enabled true)}
-    email (assoc :email email)
-    first_name (assoc :firstName first_name)
-    last_name (assoc :lastName last_name)
-    password (assoc :credentials [{:type "password"
-                                   :value password
-                                   :temporary false}])))
-
-(defn- attribute-value
-  [attrs k]
-  (let [v (or (get attrs k) (get attrs (keyword (name k))))]
-    (cond
-      (vector? v) (first v)
-      (sequential? v) (first v)
-      :else v)))
-
-(defn- keycloak-user->profile
-  [user]
-  (let [attrs (:attributes user)]
-    {:user-id (:id user)
-     :username (:username user)
-     :first-name (:firstName user)
-     :last-name (:lastName user)
-     :avatar-url (or (attribute-value attrs :avatar_url)
-                     (attribute-value attrs :avatarUrl))
-     :email (:email user)
-     :enabled (:enabled user)}))
-
-(defn- parse-user-id-from-location
-  [location]
-  (when (string? location)
-    (try
-      (java.util.UUID/fromString (last (str/split location #"/")))
-      (catch Exception _
-        nil))))
-
-(defn- fetch-user-by-username
-  [{:keys [token-client keycloak]} username]
-  (when (and token-client (:admin-url keycloak) (seq username))
-    (let [admin-token (token-client/client-credentials token-client {})
-          access-token (:access-token admin-token)
-          admin-url (:admin-url keycloak)
-          resp (http-client/get (str admin-url "/users")
-                                (merge {:headers {"authorization" (str "Bearer " access-token)}
-                                        :query-params {:username username
-                                                       :exact "true"}
-                                        :as :text
-                                        :throw-exceptions false}
-                                       (:http-opts keycloak)))
-          status (:status resp)
-          parsed (some-> (:body resp) (json/parse-string true))
-          user (first parsed)]
-      (when (and (<= 200 status 299) user)
-        (keycloak-user->profile user)))))
 
 (defn auth-register
   "Proxy endpoint for user registration (backed by Keycloak)."
@@ -137,7 +33,7 @@
             (logger/log logger ::auth-register-token-client token-client)
             (let [admin-token (token-client/client-credentials token-client {})
                   access-token (:access-token admin-token)
-                  token-details (admin-token-details access-token)
+                  token-details (logic/admin-token-details access-token)
                   admin-client-id (or (:admin-client-id keycloak) (:client-id keycloak))
                   log-details {:realm (:realm keycloak)
                                :admin-client-id admin-client-id
@@ -145,7 +41,7 @@
                                :realm-roles (:realm_roles token-details)
                                :realm-management-roles (:realm_management_roles token-details)}
                   admin-url (:admin-url keycloak)
-                  user-repr (build-user-repr data)
+                  user-repr (logic/build-user-repr data)
                   resp (http-client/post (str admin-url "/users")
                                          (merge {:headers {"authorization" (str "Bearer " access-token)}
                                                  :content-type :json
@@ -159,7 +55,7 @@
               (logger/log logger ::auth-register-resp resp)
               (if (<= 200 status 299)
                 (do
-                  (when-let [user-id (parse-user-id-from-location location)]
+                  (when-let [user-id (logic/parse-user-id-from-location location)]
                     (when db
                       (users-db/upsert-user-profile! db {:user-id user-id
                                                          :username (:username data)
@@ -201,7 +97,7 @@
                                 :username (:username data)
                                 :password (:password data)}
                          (:scope data) (assoc :scope (:scope data)))
-                resp (token-request {:token-url token-url
+                resp (logic/token-request {:token-url token-url
                                      :client-id client-id
                                      :client-secret client-secret
                                      :http-opts http-opts}
@@ -209,9 +105,9 @@
             (logger/log logger ::auth-login-resp resp)
             (if (:ok resp)
               (do
-                (when-let [profile (fetch-user-by-username {:token-client token-client
-                                                            :keycloak keycloak}
-                                                           (:username data))]
+                (when-let [profile (logic/fetch-user-by-username {:token-client token-client
+                                                                  :keycloak keycloak}
+                                                                 (:username data))]
                   (when db
                     (users-db/upsert-user-profile! db profile)))
                 (http/format-response {:ok true
@@ -244,7 +140,7 @@
                 params (cond-> {:grant_type "refresh_token"
                                 :refresh_token (:refresh_token data)}
                          (:scope data) (assoc :scope (:scope data)))
-                resp (token-request {:token-url token-url
+                resp (logic/token-request {:token-url token-url
                                      :client-id client-id
                                      :client-secret client-secret
                                      :http-opts http-opts}
