@@ -238,3 +238,66 @@
               (.delete temp-file))
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest attachments-retention-uses-expires-at-directly
+  (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (helpers/minio-up? minio-client)
+      (is false "Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming
+                                                                            :attachment-retention {:max-age-ms 20}}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            attachment-id* (atom nil)
+            png-bytes (tiny-png-bytes)
+            temp-file (write-temp-file! png-bytes ".png")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "image"}
+                                             :multipart-params {"file" {:tempfile temp-file
+                                                                         :filename "tiny.png"
+                                                                         :content-type "image/png"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (testing "upload succeeds"
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body)))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    attachment-id (java.util.UUID/fromString (:attachment_id attachment))
+                    object-key (:object_key attachment)
+                    _ (reset! attachment-id* attachment-id)
+                    _ (reset! object-key* object-key)]
+                ;; Wait for the attachment row TTL to pass.
+                (Thread/sleep 80)
+                (let [result (attachment-retention/cleanup! {:db db
+                                                             :minio minio-client
+                                                             ;; Large max-age to prove selection uses expires_at directly.
+                                                             :retention {:max-age-ms 60000
+                                                                         :batch-size 10}})
+                      obj (p-storage/storage-get-bytes minio-client object-key {})
+                      row (first (sql/select db {:table :attachments
+                                                 :where {:attachment_id attachment-id}}))]
+                  (testing "cleanup removes row/object once expires_at passes"
+                    (is (= :ok (:status result)))
+                    (is (= 1 (:deleted result)))
+                    (is (false? (:ok obj)))
+                    (is (nil? row)))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists temp-file)
+              (.delete temp-file))
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))

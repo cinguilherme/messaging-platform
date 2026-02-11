@@ -32,7 +32,7 @@
         batch-size (long (or batch-size 200))]
     (if (<= max-age-ms 0)
       {:status :skipped :reason :disabled}
-      (let [cutoff (java.time.Instant/ofEpochMilli (- (System/currentTimeMillis) max-age-ms))
+      (let [cutoff (java.time.Instant/now)
             rows (attachments-db/list-expired-attachments db {:cutoff cutoff
                                                               :limit batch-size})
             result (reduce (fn [acc {:keys [attachment_id object_key]}]
