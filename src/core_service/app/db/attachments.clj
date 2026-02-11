@@ -3,36 +3,6 @@
             [d-core.core.databases.protocols.simple-sql :as sql]
             [next.jdbc.result-set :as rs]))
 
-(def ^:private attachments-ddl
-  (str "CREATE TABLE IF NOT EXISTS attachments ("
-       "attachment_id UUID PRIMARY KEY, "
-       "conversation_id UUID NOT NULL, "
-       "uploader_id UUID NOT NULL, "
-       "object_key TEXT NOT NULL UNIQUE, "
-       "mime_type TEXT NOT NULL, "
-       "size_bytes BIGINT NOT NULL, "
-       "checksum TEXT NOT NULL, "
-       "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
-       "expires_at TIMESTAMPTZ NOT NULL, "
-       "referenced_at TIMESTAMPTZ NULL"
-       ")"))
-
-(def ^:private attachments-indexes
-  ["CREATE INDEX IF NOT EXISTS attachments_conversation_idx ON attachments (conversation_id)"
-   "CREATE INDEX IF NOT EXISTS attachments_expires_idx ON attachments (expires_at)"])
-
-(defonce ^:private attachments-table-ready? (atom false))
-
-(defn- ensure-attachments-table!
-  [db]
-  (when-not @attachments-table-ready?
-    (locking attachments-table-ready?
-      (when-not @attachments-table-ready?
-        (sql/execute! db [attachments-ddl] {})
-        (doseq [ddl attachments-indexes]
-          (sql/execute! db [ddl] {}))
-        (reset! attachments-table-ready? true)))))
-
 (defn- ->timestamp
   [value]
   (cond
@@ -45,7 +15,6 @@
 (defn insert-attachment!
   [db {:keys [attachment-id conversation-id uploader-id object-key mime-type
               size-bytes checksum expires-at]}]
-  (ensure-attachments-table! db)
   (sql/insert! db {:attachment_id attachment-id
                    :conversation_id conversation-id
                    :uploader_id uploader-id
@@ -60,7 +29,6 @@
 
 (defn fetch-attachments-by-ids
   [db attachment-ids]
-  (ensure-attachments-table! db)
   (let [attachment-ids (->> attachment-ids (remove nil?) distinct vec)]
     (if-not (seq attachment-ids)
       []
@@ -74,7 +42,6 @@
 
 (defn mark-referenced!
   [db attachment-ids]
-  (ensure-attachments-table! db)
   (let [attachment-ids (->> attachment-ids (remove nil?) distinct vec)]
     (when (seq attachment-ids)
       (let [placeholders (str/join "," (repeat (count attachment-ids) "?"))
@@ -85,7 +52,6 @@
 
 (defn list-expired-attachments
   [db {:keys [cutoff limit]}]
-  (ensure-attachments-table! db)
   (let [limit (long (or limit 200))
         cutoff-ts (or (->timestamp cutoff)
                       (java.sql.Timestamp. (System/currentTimeMillis)))]
@@ -100,6 +66,5 @@
 
 (defn delete-attachment!
   [db {:keys [attachment-id]}]
-  (ensure-attachments-table! db)
   (sql/delete! db {:table :attachments
                    :where {:attachment_id attachment-id}}))
