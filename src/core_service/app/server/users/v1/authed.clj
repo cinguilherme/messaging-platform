@@ -39,11 +39,13 @@
 (defn users-lookup
   "Lookup users by email via Keycloak admin API or by username via local cache."
   [{:keys [webdeps]}]
-  (let [{:keys [db token-client keycloak]} webdeps]
+  (let [{:keys [db token-client keycloak logger]} webdeps]
     (fn [req]
       (let [format (http/get-accept-format req)
             email (a.users/normalize-email (http/param req "email"))
             username (a.users/normalize-username (http/param req "username"))]
+        (when logger
+          (logger/log logger ::users-lookup-req email username))
         (cond
           (and (str/blank? email) (str/blank? username))
           (http/format-response {:ok false :error "missing email or username"} format)

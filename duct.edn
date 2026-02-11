@@ -110,6 +110,7 @@
   :core-service.app.server.interceptors/http-base-interceptors
   {:metrics #ig/ref :core-service.app.server.interceptors.metrics/metrics
    :cid #ig/ref :core-service.app.server.interceptors.cid/cid
+   :params #ig/ref :core-service.app.server.interceptors.params/params
    :format #ig/ref :core-service.app.server.interceptors.format/format
    :api-key #ig/ref :core-service.app.server.interceptors.api-key/api-key
    :auth #ig/ref :core-service.app.server.interceptors.auth/auth
@@ -126,6 +127,7 @@
 
   :core-service.app.server.interceptors.metrics/metrics {:metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.server.interceptors.cid/cid {}
+  :core-service.app.server.interceptors.params/params {}
   :core-service.app.server.interceptors.format/format {}
   :core-service.app.server.interceptors.user-context/user-context {}
   :core-service.app.server.interceptors.response-logger/response-logger {:logger #ig/ref :duct/logger}
