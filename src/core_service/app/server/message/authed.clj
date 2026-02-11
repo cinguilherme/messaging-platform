@@ -17,6 +17,13 @@
     (and expires-at
          (<= (.getTime ^java.util.Date expires-at) now-ms))))
 
+(def ^:private trusted-attachment-fields
+  [:attachment_id :object_key :mime_type :size_bytes :checksum])
+
+(defn- canonical-attachment
+  [row]
+  (select-keys row trusted-attachment-fields))
+
 (defn- same-attachment?
   [payload-att row]
   (and (= (:attachment_id payload-att) (:attachment_id row))
@@ -29,7 +36,7 @@
   [db conv-id attachments]
   (let [attachments (vec (or attachments []))]
     (if-not (seq attachments)
-      {:ok true :attachment-ids []}
+      {:ok true :attachment-ids [] :canonical-attachments []}
       (let [ids (mapv :attachment_id attachments)]
         (if-not (every? uuid? ids)
           {:ok false :error "invalid attachment reference"}
@@ -44,7 +51,11 @@
                                         (same-attachment? payload-att row))))
                                attachments)]
             (if valid?
-              {:ok true :attachment-ids (vec (distinct ids))}
+              {:ok true
+               :attachment-ids (vec (distinct ids))
+               :canonical-attachments (mapv (fn [payload-att]
+                                              (canonical-attachment (get rows-by-id (:attachment_id payload-att))))
+                                            attachments)}
               {:ok false :error "invalid attachment reference"})))))))
 
 (defn messages-create
@@ -103,6 +114,7 @@
           :else
           (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
                 seq (logic/next-seq! streams seq-key)
+                canonical-attachments (:canonical-attachments @attachment-validation)
                 message {:message_id (java.util.UUID/randomUUID)
                          :conversation_id conv-id
                          :seq seq
@@ -110,7 +122,7 @@
                          :sent_at (System/currentTimeMillis)
                          :type (:type data)
                          :body (:body data)
-                         :attachments (or (:attachments data) [])
+                         :attachments canonical-attachments
                          :client_ref (:client_ref data)
                          :meta (:meta data)}
                 stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
