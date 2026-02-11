@@ -1,0 +1,110 @@
+(ns core-service.app.server.attachment.logic
+  (:require [clojure.string :as str])
+  (:import (java.io ByteArrayInputStream)
+           (java.security MessageDigest)
+           (java.util UUID)
+           (javax.imageio ImageIO)
+           (javax.sound.sampled AudioSystem)))
+
+(defn- coerce-kind
+  [kind]
+  (when kind
+    (let [k (-> (name kind) str/lower-case keyword)]
+      (when (contains? #{:image :voice :file} k)
+        k))))
+
+(defn- infer-kind
+  [content-type]
+  (cond
+    (and content-type (str/starts-with? content-type "image/")) :image
+    (and content-type (str/starts-with? content-type "audio/")) :voice
+    :else :file))
+
+(defn resolve-kind
+  [kind content-type]
+  (or (coerce-kind kind) (infer-kind content-type)))
+
+(defn- content-type->ext
+  [content-type]
+  (case content-type
+    "image/jpeg" "jpg"
+    "image/jpg" "jpg"
+    "image/png" "png"
+    "image/gif" "gif"
+    "image/webp" "webp"
+    "audio/mpeg" "mp3"
+    "audio/mp3" "mp3"
+    "audio/ogg" "ogg"
+    "audio/webm" "webm"
+    "audio/wav" "wav"
+    "audio/x-wav" "wav"
+    "audio/aac" "aac"
+    "audio/mp4" "m4a"
+    "bin"))
+
+(defn- build-object-key
+  [{:keys [prefix kind ext]}]
+  (let [prefix (or prefix "attachments/")
+        kind (or kind :file)
+        ext (or ext "bin")]
+    (str prefix (name kind) "/" (UUID/randomUUID) "." ext)))
+
+(defn- sha256-hex
+  [^bytes bytes]
+  (let [digest (MessageDigest/getInstance "SHA-256")
+        hash-bytes (.digest digest bytes)]
+    (apply str (map (fn [b] (format "%02x" (bit-and b 0xff))) hash-bytes))))
+
+(defn- image-dimensions
+  [^bytes bytes]
+  (try
+    (let [image (ImageIO/read (ByteArrayInputStream. bytes))]
+      (when image
+        {:width (.getWidth image)
+         :height (.getHeight image)}))
+    (catch Exception _
+      nil)))
+
+(defn- voice-duration-ms
+  [^bytes bytes]
+  (try
+    (with-open [stream (AudioSystem/getAudioInputStream (ByteArrayInputStream. bytes))]
+      (let [format (.getFormat stream)
+            frames (.getFrameLength stream)
+            frame-rate (.getFrameRate format)]
+        (when (and (pos? frames) (pos? frame-rate))
+          (long (* 1000.0 (/ frames frame-rate))))))
+    (catch Exception _
+      nil)))
+
+(defn prepare-attachment
+  [{:keys [bytes content-type filename kind attachments-prefix source]}]
+  (let [content-type (or content-type "application/octet-stream")
+        kind (resolve-kind kind content-type)
+        ext (content-type->ext content-type)
+        object-key (build-object-key {:prefix attachments-prefix
+                                       :kind kind
+                                       :ext ext})
+        size-bytes (alength ^bytes bytes)
+        checksum (sha256-hex bytes)
+        image (when (= kind :image) (image-dimensions bytes))
+        voice-duration (when (= kind :voice) (voice-duration-ms bytes))]
+    (cond
+      (and (= kind :image) (nil? image))
+      {:ok false :error "invalid image payload"}
+
+      :else
+            (let [base {:attachment_id (UUID/randomUUID)
+              :object_key object-key
+              :mime_type content-type
+              :size_bytes size-bytes
+              :checksum checksum
+              :meta {:filename filename
+                :kind kind
+                :upload_source source}}
+             attachment (cond-> base
+                image (assoc :image image)
+                voice-duration (assoc :voice {:duration_ms voice-duration}))]
+         {:ok true
+          :object-key object-key
+          :attachment attachment}))))

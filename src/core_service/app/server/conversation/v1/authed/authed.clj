@@ -8,6 +8,7 @@
             [core-service.app.server.message.routes :as message-routes]
             [core-service.app.server.receipt.authed :as receipt-authed]
             [core-service.app.server.receipt.routes :as receipt-routes]
+            [core-service.app.server.attachment.routes :as attachment-routes]
             [duct.logger :as logger]
             [integrant.core :as ig]
             [malli.core :as m]))
@@ -137,4 +138,5 @@
         :get (conversations-list {:webdeps webdeps})}]
    ["/:id" {:get (conversations-get {:webdeps webdeps})}]
    (message-routes/routes {:webdeps webdeps})
+  (attachment-routes/routes {:webdeps webdeps})
    (receipt-routes/routes {:webdeps webdeps})])
