@@ -19,17 +19,18 @@
 
 (defn coerce-message-create
   [data]
-  (-> data
-      (update :type (fn [v] (if (string? v) (keyword v) v)))
-      (update :attachments (fn [atts]
-                             (when (seq atts)
-                               (mapv (fn [att]
-                                       (update att :attachment_id
-                                               (fn [v]
-                                                 (if (string? v)
-                                                   (http/parse-uuid v)
-                                                   v))))
-                                     atts))))))
+  (cond-> (update data :type (fn [v] (if (string? v) (keyword v) v)))
+    (contains? data :attachments)
+    (update :attachments
+            (fn [atts]
+              (when (sequential? atts)
+                (mapv (fn [att]
+                        (update att :attachment_id
+                                (fn [v]
+                                  (if (string? v)
+                                    (http/parse-uuid v)
+                                    v))))
+                      atts))))))
 
 (defn normalize-idempotency-key
   [value]
