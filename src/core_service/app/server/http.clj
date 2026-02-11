@@ -1,5 +1,7 @@
 (ns core-service.app.server.http
+  (:refer-clojure :exclude [parse-long parse-uuid])
   (:require [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [malli.core :as m]
             [malli.error :as me]))
@@ -46,6 +48,42 @@
 (defn normalize-content-type
   [content-type]
   (some-> content-type (str/split #";" 2) first str/trim))
+
+(defn- slurp-bytes
+  [input]
+  (with-open [in (io/input-stream input)
+              out (java.io.ByteArrayOutputStream.)]
+    (io/copy in out)
+    (.toByteArray out)))
+
+(defn read-upload
+  "Extracts uploaded bytes from multipart or raw body requests. Returns
+  {:bytes .. :filename .. :content-type .. :source ..} or nil."
+  [req]
+  (let [params (or (:multipart-params req) (:params req) {})
+        file-param (or (get params "image")
+                       (get params :image)
+                       (get params "file")
+                       (get params :file))
+        header-content-type (normalize-content-type (get-in req [:headers "content-type"]))
+        multipart? (and header-content-type
+                        (str/starts-with? header-content-type "multipart/"))]
+    (cond
+      (and (map? file-param) (:tempfile file-param))
+      (let [bytes (slurp-bytes (:tempfile file-param))]
+        {:bytes bytes
+         :filename (:filename file-param)
+         :content-type (normalize-content-type (:content-type file-param))
+         :source :multipart})
+
+      (and (:body req) (not multipart?))
+      (let [bytes (slurp-bytes (:body req))]
+        {:bytes bytes
+         :filename (or (param req "filename") "upload")
+         :content-type header-content-type
+         :source :raw-body})
+
+      :else nil)))
 
 (defn read-json-body
   "Read JSON request body into a Clojure map. Returns {:ok true :data ...}

@@ -8,6 +8,7 @@
             [d-core.core.databases.postgres]
             [d-core.core.databases.protocols.simple-sql :as sql]
             [d-core.core.databases.sql.common]
+            [duct.logger :as logger]
             [integrant.core :as ig]
             [taoensso.carmine :as car]))
 
@@ -92,12 +93,41 @@
                           :user-id user-id
                           :role role}))
 
+(defn- missing-attachments-table?
+  [e]
+  (loop [t e]
+    (if-not t
+      false
+      (let [sql-state (or (some-> (ex-data t) :next.jdbc/sql-state)
+                          (when (instance? org.postgresql.util.PSQLException t)
+                            (.getSQLState ^org.postgresql.util.PSQLException t)))
+            message (some-> (.getMessage ^Throwable t) str)]
+        (if (and (= "42P01" sql-state)
+                 (or (nil? message)
+                     (.contains message "attachments")))
+          true
+          (recur (.getCause ^Throwable t)))))))
+
 (defn cleanup-conversation!
-  [db conversation-id]
-  (sql/delete! db {:table :memberships
-                   :where {:conversation_id conversation-id}})
-  (sql/delete! db {:table :conversations
-                   :where {:id conversation-id}}))
+  ([db conversation-id]
+   (cleanup-conversation! db conversation-id nil))
+  ([db conversation-id log]
+   (try
+     (sql/delete! db {:table :attachments
+                      :where {:conversation_id conversation-id}})
+     (catch Exception e
+       (if (missing-attachments-table? e)
+         nil
+         (do
+           (when log
+             (logger/log log :error ::cleanup-attachments-failed
+                         {:conversation-id conversation-id
+                          :error (.getMessage e)}))
+           (throw e)))))
+   (sql/delete! db {:table :memberships
+                    :where {:conversation_id conversation-id}})
+   (sql/delete! db {:table :conversations
+                    :where {:id conversation-id}})))
 
 (defn cleanup-segment-object-and-index!
   [db minio-client conversation-id]

@@ -2,8 +2,6 @@
   (:refer-clojure :exclude [test])
   (:require [cheshire.core :as json]
             [clojure.core.async :as async]
-            [clojure.java.io :as io]
-            [clojure.string :as str]
             [d-core.libs.workers :as workers]
             [core-service.app.server.http :as http]
             [d-core.core.producers.protocol :as producer]
@@ -61,39 +59,6 @@
       (catch Exception e
         (http/format-response {:ok false :error (.getMessage e)} (http/get-accept-format _req))))))
 
-(defn- slurp-bytes
-  [input]
-  (with-open [in (io/input-stream input)
-              out (java.io.ByteArrayOutputStream.)]
-    (io/copy in out)
-    (.toByteArray out)))
-
-(defn- read-upload
-  [req]
-  (let [params (or (:multipart-params req) (:params req) {})
-        file-param (or (get params "image")
-                       (get params :image)
-                       (get params "file")
-                       (get params :file))
-        header-content-type (http/normalize-content-type (get-in req [:headers "content-type"]))
-        multipart? (and header-content-type
-                        (str/starts-with? header-content-type "multipart/"))]
-    (cond
-      (and (map? file-param) (:tempfile file-param))
-      (let [bytes (slurp-bytes (:tempfile file-param))]
-        {:bytes bytes
-         :filename (:filename file-param)
-         :content-type (http/normalize-content-type (:content-type file-param))
-         :source :multipart})
-
-      (and (:body req) (not multipart?))
-      (let [bytes (slurp-bytes (:body req))]
-        {:bytes bytes
-         :filename (or (http/param req "filename") "upload")
-         :content-type header-content-type
-         :source :raw-body})
-
-      :else nil)))
 
 ;; Instead of suppling infra specific information about deadletters, we can supply very generic identifiable information such as a deadletter ID (if we are using any storage that can support it) and we can supply a deadletter payload hash, something that is agnotistic of any storage requirement or not, 
 ;; a payload hash can be recovered from a log or even the raw payload if we are using a storage that can support it.
@@ -165,7 +130,7 @@
   [{:keys [workers logger max-bytes max-dim timeout-ms]}]
   (fn [req]
     (let [format (http/get-accept-format req)
-          upload (read-upload req)
+          upload (http/read-upload req)
           max-bytes (http/parse-long (http/param req "max-bytes") (or max-bytes 200000))
           max-dim (http/parse-long (http/param req "max-dim") (or max-dim 1024))
           timeout-ms (http/parse-long (http/param req "timeout-ms") timeout-ms)]

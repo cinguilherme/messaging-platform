@@ -3,13 +3,25 @@
 
 ;; Phase 0 contracts for the messaging PaaS (schema-only; validation wiring later).
 
+(def ImageMetadataSchema
+  [:map
+   [:width [:int {:min 1}]]
+   [:height [:int {:min 1}]]])
+
+(def VoiceMetadataSchema
+  [:map
+   [:duration_ms [:int {:min 0}]]])
+
 (def AttachmentSchema
   [:map
    [:attachment_id :uuid]
    [:object_key :string]
    [:mime_type :string]
    [:size_bytes [:int {:min 0}]]
-   [:checksum :string]])
+   [:checksum :string]
+   [:image {:optional true} ImageMetadataSchema]
+   [:voice {:optional true} VoiceMetadataSchema]
+   [:meta {:optional true} :map]])
 
 (def ReceiptSchema
   [:map
@@ -31,7 +43,7 @@
    [:seq [:int {:min 0}]]
    [:sender_id :uuid]
    [:sent_at [:int {:min 0}]]
-   [:type [:enum :text :image :file :system]]
+  [:type [:enum :text :image :voice :file :system]]
    [:body [:map
            [:text {:optional true} [:string {:max 256}]]]]
    [:attachments {:optional true} [:vector AttachmentSchema]]
@@ -40,7 +52,7 @@
 
 (def MessageCreateSchema
   [:map
-   [:type [:enum :text :image :file :system]]
+  [:type [:enum :text :image :voice :file :system]]
    [:body [:map
            [:text {:optional true} [:string {:max 256}]]]]
    [:attachments {:optional true} [:vector AttachmentSchema]]

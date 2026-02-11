@@ -1,0 +1,303 @@
+(ns core-service.integration.attachments-test
+  (:require [cheshire.core :as json]
+            [clojure.test :refer [deftest is testing]]
+            [core-service.app.config.clients]
+            [core-service.app.config.messaging]
+            [core-service.app.config.storage]
+            [core-service.app.server.attachment.authed :as attachment-authed]
+            [core-service.app.server.conversation.v1.authed.authed :as message-authed]
+            [core-service.app.workers.attachment-retention :as attachment-retention]
+            [core-service.integration.helpers :as helpers]
+            [d-core.core.clients.redis]
+            [d-core.core.databases.protocols.simple-sql :as sql]
+            [d-core.core.storage.minio]
+            [d-core.core.storage.protocol :as p-storage]
+            [integrant.core :as ig])
+  (:import (java.io ByteArrayOutputStream)
+           (java.awt.image BufferedImage)
+           (javax.imageio ImageIO)))
+
+(defn- write-temp-file!
+  [^bytes bytes suffix]
+  (let [file (java.io.File/createTempFile "attachment" (or suffix ".bin"))]
+    (with-open [out (java.io.FileOutputStream. file)]
+      (.write out bytes))
+    file))
+
+(defn- tiny-png-bytes
+  []
+  (let [image (BufferedImage. 1 1 BufferedImage/TYPE_INT_RGB)
+        out (ByteArrayOutputStream.)]
+    (ImageIO/write image "png" out)
+    (.toByteArray out)))
+
+(deftest attachments-upload-and-send-message
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
+        minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
+      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming}})
+            message-handler (message-authed/messages-create {:webdeps {:db db
+                                                                       :redis redis-client
+                                                                       :streams streams
+                                                                       :naming naming}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            png-bytes (tiny-png-bytes)
+            temp-file (write-temp-file! png-bytes ".png")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis-client naming conv-id)
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "image"}
+                                             :multipart-params {"file" {:tempfile temp-file
+                                                                         :filename "tiny.png"
+                                                                         :content-type "image/png"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (testing "attachment upload response"
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body) (str "upload failed: " upload-body)))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    object-key (:object_key attachment)
+                    _ (reset! object-key* object-key)
+                    stored (p-storage/storage-get-bytes minio-client object-key {})]
+                (testing "attachment upload response"
+                  (is (= "image/png" (:mime_type attachment)))
+                  (is (string? object-key)))
+                (testing "attachment stored in minio"
+                  (is (:ok stored))
+                  (is (pos? (alength ^bytes (:bytes stored)))))
+                (let [payload (json/generate-string {:type "image"
+                                                     :body {}
+                                                     :attachments [attachment]})
+                      msg-resp (message-handler {:request-method :post
+                                                 :headers {"accept" "application/json"}
+                                                 :params {:id (str conv-id)}
+                                                 :body payload
+                                                 :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})
+                      msg-body (json/parse-string (:body msg-resp) true)]
+                  (testing "message includes attachment reference"
+                    (is (= 200 (:status msg-resp)))
+                    (is (:ok msg-body) (str "message failed: " msg-body))
+                    (when (:ok msg-body)
+                      (let [msg-attachment (first (get-in msg-body [:message :attachments]))]
+                        (is (= object-key (:object_key msg-attachment))))))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists temp-file)
+              (.delete temp-file))
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest attachments-message-rejects-tampered-reference
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
+        minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (and (helpers/redis-up? redis-client) (helpers/minio-up? minio-client))
+      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming}})
+            message-handler (message-authed/messages-create {:webdeps {:db db
+                                                                       :redis redis-client
+                                                                       :streams streams
+                                                                       :naming naming}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            png-bytes (tiny-png-bytes)
+            temp-file (write-temp-file! png-bytes ".png")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis-client naming conv-id)
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "image"}
+                                             :multipart-params {"file" {:tempfile temp-file
+                                                                         :filename "tiny.png"
+                                                                         :content-type "image/png"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (testing "upload succeeds"
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body)))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    object-key (:object_key attachment)
+                    _ (reset! object-key* object-key)
+                    tampered (assoc attachment :object_key (str object-key ".tampered"))
+                    payload (json/generate-string {:type "image"
+                                                   :body {}
+                                                   :attachments [tampered]})
+                    msg-resp (message-handler {:request-method :post
+                                               :headers {"accept" "application/json"}
+                                               :params {:id (str conv-id)}
+                                               :body payload
+                                               :auth/principal {:subject (str sender-id)
+                                                                :tenant-id "tenant-1"}})
+                    msg-body (json/parse-string (:body msg-resp) true)]
+                (testing "message rejects forged attachment metadata"
+                  (is (= 200 (:status msg-resp)))
+                  (is (false? (:ok msg-body)))
+                  (is (= "invalid attachment reference" (:error msg-body)))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists temp-file)
+              (.delete temp-file))
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest attachments-retention-removes-expired-object-and-row
+  (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (helpers/minio-up? minio-client)
+      (is false "Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming
+                                                                            :attachment-retention {:max-age-ms 60000}}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            attachment-id* (atom nil)
+            png-bytes (tiny-png-bytes)
+            temp-file (write-temp-file! png-bytes ".png")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "image"}
+                                             :multipart-params {"file" {:tempfile temp-file
+                                                                         :filename "tiny.png"
+                                                                         :content-type "image/png"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (testing "upload succeeds"
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body)))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    attachment-id (java.util.UUID/fromString (:attachment_id attachment))
+                    object-key (:object_key attachment)
+                    _ (reset! attachment-id* attachment-id)
+                    _ (reset! object-key* object-key)
+                    expired-at (java.sql.Timestamp. (- (System/currentTimeMillis) 2000))]
+                (sql/execute! db ["UPDATE attachments SET expires_at = ? WHERE attachment_id = ?"
+                                  expired-at attachment-id]
+                              {})
+                (let [result (attachment-retention/cleanup! {:db db
+                                                             :minio minio-client
+                                                             :retention {:max-age-ms 1
+                                                                         :batch-size 10}})
+                      obj (p-storage/storage-get-bytes minio-client object-key {})
+                      row (first (sql/select db {:table :attachments
+                                                 :where {:attachment_id attachment-id}}))]
+                  (testing "worker deletes expired attachment object and row"
+                    (is (= :ok (:status result)))
+                    (is (= 1 (:deleted result)))
+                    (is (false? (:ok obj)))
+                    (is (nil? row)))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists temp-file)
+              (.delete temp-file))
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest attachments-retention-uses-expires-at-directly
+  (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (helpers/minio-up? minio-client)
+      (is false "Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming
+                                                                            :attachment-retention {:max-age-ms 20}}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            attachment-id* (atom nil)
+            png-bytes (tiny-png-bytes)
+            temp-file (write-temp-file! png-bytes ".png")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "image"}
+                                             :multipart-params {"file" {:tempfile temp-file
+                                                                         :filename "tiny.png"
+                                                                         :content-type "image/png"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (testing "upload succeeds"
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body)))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    attachment-id (java.util.UUID/fromString (:attachment_id attachment))
+                    object-key (:object_key attachment)
+                    _ (reset! attachment-id* attachment-id)
+                    _ (reset! object-key* object-key)]
+                ;; Wait for the attachment row TTL to pass.
+                (Thread/sleep 80)
+                (let [result (attachment-retention/cleanup! {:db db
+                                                             :minio minio-client
+                                                             ;; Large max-age to prove selection uses expires_at directly.
+                                                             :retention {:max-age-ms 60000
+                                                                         :batch-size 10}})
+                      obj (p-storage/storage-get-bytes minio-client object-key {})
+                      row (first (sql/select db {:table :attachments
+                                                 :where {:attachment_id attachment-id}}))]
+                  (testing "cleanup removes row/object once expires_at passes"
+                    (is (= :ok (:status result)))
+                    (is (= 1 (:deleted result)))
+                    (is (false? (:ok obj)))
+                    (is (nil? row)))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists temp-file)
+              (.delete temp-file))
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
