@@ -1,5 +1,6 @@
 (ns core-service.app.server.attachment.authed
-  (:require [core-service.app.db.conversations :as conversations-db]
+  (:require [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.db.conversations :as conversations-db]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.attachment.logic :as logic]
             [core-service.app.server.http :as http]
@@ -8,9 +9,19 @@
             [malli.core :as m]
             [malli.error :as me]))
 
+(def ^:private default-attachment-max-age-ms 2592000000)
+
+(defn- attachment-max-age-ms
+  [attachment-retention]
+  (let [configured (some-> (:max-age-ms attachment-retention) long)]
+    (if (and configured (pos? configured))
+      configured
+      default-attachment-max-age-ms)))
+
 (defn attachments-create
   [{:keys [webdeps]}]
-  (let [{:keys [db minio naming]} webdeps]
+  (let [{:keys [db minio naming attachment-retention]} webdeps
+        max-age-ms (attachment-max-age-ms attachment-retention)]
     (fn [req]
       (let [format (http/get-accept-format req)
             conv-id (http/parse-uuid (http/param req "id"))
@@ -69,10 +80,26 @@
 
                   :else
                   (let [store-result (p-storage/storage-put-bytes minio object-key bytes
-                                                                 {:content-type (:mime_type attachment)})]
+                                                                 {:content-type (:mime_type attachment)})
+                        expires-at (java.sql.Timestamp. (+ (System/currentTimeMillis) max-age-ms))]
                     (if-not (:ok store-result)
                       (http/format-response {:ok false :error (:error store-result)} format)
-                      (http/format-response {:ok true
-                                             :conversation_id (str conv-id)
-                                             :attachment attachment}
-                                            format))))))))))))
+                      (try
+                        (attachments-db/insert-attachment! db {:attachment-id (:attachment_id attachment)
+                                                               :conversation-id conv-id
+                                                               :uploader-id sender-id
+                                                               :object-key object-key
+                                                               :mime-type (:mime_type attachment)
+                                                               :size-bytes (:size_bytes attachment)
+                                                               :checksum (:checksum attachment)
+                                                               :expires-at expires-at})
+                        (http/format-response {:ok true
+                                               :conversation_id (str conv-id)
+                                               :attachment attachment}
+                                              format)
+                        (catch Exception _
+                          ;; Best effort: avoid leaking uploaded object if DB registry write fails.
+                          (p-storage/storage-delete minio object-key {})
+                          (http/format-response {:ok false
+                                                 :error "attachment registry write failed"}
+                                                format))))))))))))))

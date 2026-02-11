@@ -94,6 +94,11 @@
 
 (defn cleanup-conversation!
   [db conversation-id]
+  (try
+    (sql/delete! db {:table :attachments
+                     :where {:conversation_id conversation-id}})
+    (catch Exception _
+      nil))
   (sql/delete! db {:table :memberships
                    :where {:conversation_id conversation-id}})
   (sql/delete! db {:table :conversations

@@ -1,5 +1,6 @@
 (ns core-service.app.server.message.authed
-  (:require [core-service.app.db.conversations :as conversations-db]
+  (:require [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.db.conversations :as conversations-db]
             [core-service.app.libs.redis :as redis-lib]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.schemas.messaging :as msg-schema]
@@ -10,6 +11,42 @@
             [malli.error :as me]
             [taoensso.carmine :as car]))
 
+(defn- attachment-row-expired?
+  [row now-ms]
+  (let [expires-at (:expires_at row)]
+    (and expires-at
+         (<= (.getTime ^java.util.Date expires-at) now-ms))))
+
+(defn- same-attachment?
+  [payload-att row]
+  (and (= (:attachment_id payload-att) (:attachment_id row))
+       (= (:object_key payload-att) (:object_key row))
+       (= (:mime_type payload-att) (:mime_type row))
+       (= (long (:size_bytes payload-att)) (long (:size_bytes row)))
+       (= (:checksum payload-att) (:checksum row))))
+
+(defn- validate-message-attachments
+  [db conv-id attachments]
+  (let [attachments (vec (or attachments []))]
+    (if-not (seq attachments)
+      {:ok true :attachment-ids []}
+      (let [ids (mapv :attachment_id attachments)]
+        (if-not (every? uuid? ids)
+          {:ok false :error "invalid attachment reference"}
+          (let [rows (attachments-db/fetch-attachments-by-ids db ids)
+                rows-by-id (reduce (fn [acc row] (assoc acc (:attachment_id row) row)) {} rows)
+                now-ms (System/currentTimeMillis)
+                valid? (every? (fn [payload-att]
+                                 (let [row (get rows-by-id (:attachment_id payload-att))]
+                                   (and row
+                                        (= conv-id (:conversation_id row))
+                                        (not (attachment-row-expired? row now-ms))
+                                        (same-attachment? payload-att row))))
+                               attachments)]
+            (if valid?
+              {:ok true :attachment-ids (vec (distinct ids))}
+              {:ok false :error "invalid attachment reference"})))))))
+
 (defn messages-create
   [{:keys [webdeps]}]
   (let [{:keys [db redis streams naming logger logging idempotency]} webdeps]
@@ -19,7 +56,8 @@
             sender-id (logic/sender-id-from-request req)
             {:keys [ok data error]} (http/read-json-body req)
             data (when ok (logic/coerce-message-create data))
-            idempotency-result (logic/idempotency-key-from-request req data idempotency)]
+            idempotency-result (logic/idempotency-key-from-request req data idempotency)
+            attachment-validation (delay (validate-message-attachments db conv-id (:attachments data)))]
         (cond
           (not conv-id)
           (do
@@ -46,6 +84,13 @@
             (logic/log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
                                               :invalid-schema details)
             (http/invalid-response format msg-schema/MessageCreateSchema data))
+          (not (:ok @attachment-validation))
+          (do
+            (logic/log-message-create-reject! logger logging {:conversation-id conv-id :sender-id sender-id}
+                                              :invalid-attachment-reference nil)
+            (http/format-response {:ok false
+                                   :error (:error @attachment-validation)}
+                                  format))
           (not (:ok idempotency-result))
           (let [reason (:reason idempotency-result)
                 error (case reason
@@ -84,6 +129,11 @@
                     pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
                 (car/wcar (redis-lib/conn redis)
                           (car/publish pubsub-ch payload-bytes))
+                (try
+                  (attachments-db/mark-referenced! db (:attachment-ids @attachment-validation))
+                  (catch Exception e
+                    (obs-log/log! logger logging :error ::attachments-mark-referenced-failed
+                                  (merge log-ctx {:error (.getMessage e)}))))
                 (logic/log-message-create! logger logging ::redis-append
                                            (merge log-ctx {:entry-id entry-id}))
                 (http/format-response {:ok true
