@@ -5,14 +5,14 @@
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.message.logic :as logic]
             [core-service.app.server.http :as http]
-            [core-service.app.streams.redis :as streams]
+            [d-core.core.stream.protocol :as p-stream]
             [malli.core :as m]
             [malli.error :as me]
             [taoensso.carmine :as car]))
 
 (defn messages-create
   [{:keys [webdeps]}]
-  (let [{:keys [db redis naming metrics logger logging idempotency]} webdeps]
+  (let [{:keys [db redis streams naming logger logging idempotency]} webdeps]
     (fn [req]
       (let [format (http/get-accept-format req)
             conv-id (http/parse-uuid (http/param req "id"))
@@ -57,7 +57,7 @@
             (http/format-response {:ok false :error error} format))
           :else
           (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-                seq (logic/next-seq! redis metrics seq-key)
+                seq (logic/next-seq! streams seq-key)
                 message {:message_id (java.util.UUID/randomUUID)
                          :conversation_id conv-id
                          :seq seq
@@ -80,7 +80,7 @@
             (logic/log-message-create! logger logging ::message-create
                                        (merge log-ctx {:message message}))
             (try
-              (let [entry-id (streams/append! redis metrics stream payload-bytes)
+              (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
                     pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
                 (car/wcar (redis-lib/conn redis)
                           (car/publish pubsub-ch payload-bytes))
@@ -99,7 +99,7 @@
 
 (defn messages-list
   [{:keys [webdeps]}]
-  (let [{:keys [db redis minio naming segments metrics]} webdeps]
+  (let [{:keys [db streams minio naming segments metrics]} webdeps]
     (fn [req]
       (let [format (http/get-accept-format req)
             conv-id (http/parse-uuid (http/param req "id"))
@@ -109,7 +109,8 @@
             {:keys [token source direction cursor seq-cursor conversation-id]}
             (logic/parse-cursor-token cursor-param)
             direction (or (some-> (http/param req "direction") keyword)
-                          direction)
+                          direction
+                          :backward)
             query (cond-> {:limit limit}
                     (and cursor-param (not token)) (assoc :cursor cursor-param)
                     direction (assoc :direction direction))
@@ -137,7 +138,7 @@
                 ctx {:db db :minio minio :segments segments :metrics metrics}
                 {:keys [messages next-cursor]}
                 (logic/messages-page ctx {:conversation-id conv-id
-                                          :redis redis
+                                          :streams streams
                                           :stream stream
                                           :query query
                                           :token-source token-source

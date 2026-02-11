@@ -26,8 +26,10 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             handler (authed/messages-create {:webdeps {:db db
                                                        :redis redis-client
+                                                       :streams streams
                                                        :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
@@ -71,11 +73,14 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             create-handler (authed/messages-create {:webdeps {:db db
                                                               :redis redis-client
+                                                              :streams streams
                                                               :naming naming}})
             list-handler (authed/messages-list {:webdeps {:db db
                                                           :redis redis-client
+                                                          :streams streams
                                                           :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
@@ -133,8 +138,10 @@
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             list-handler (authed/messages-list {:webdeps {:db db
                                                           :redis redis-client
+                                                          :streams streams
                                                           :naming naming}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
@@ -174,12 +181,15 @@
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
             create-handler (authed/messages-create {:webdeps {:db db
                                                               :redis redis-client
+                                                              :streams streams
                                                               :naming naming}})
             list-handler (authed/messages-list {:webdeps {:db db
                                                           :redis redis-client
+                                                          :streams streams
                                                           :minio minio-client
                                                           :naming naming
                                                           :segments segment-config}})
@@ -205,6 +215,7 @@
                                             :tenant-id "tenant-1"}})
           (segments/flush-conversation! {:db db
                                          :redis redis-client
+                                         :streams streams
                                          :minio minio-client
                                          :naming naming
                                         :segments segment-config
@@ -240,12 +251,15 @@
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
             create-handler (authed/messages-create {:webdeps {:db db
                                                               :redis redis-client
+                                                              :streams streams
                                                               :naming naming}})
             list-handler (authed/messages-list {:webdeps {:db db
                                                           :redis redis-client
+                                                          :streams streams
                                                           :minio minio-client
                                                           :naming naming
                                                           :segments segment-config}})
@@ -273,6 +287,7 @@
                                             :tenant-id "tenant-1"}})
           (segments/flush-conversation! {:db db
                                          :redis redis-client
+                                         :streams streams
                                          :minio minio-client
                                          :naming naming
                                          :segments segment-config
@@ -314,12 +329,15 @@
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
       (let [{:keys [db client]} (helpers/init-db)
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
             segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
             create-handler (authed/messages-create {:webdeps {:db db
                                                               :redis redis-client
+                                                              :streams streams
                                                               :naming naming}})
             list-handler (authed/messages-list {:webdeps {:db db
                                                           :redis redis-client
+                                                          :streams streams
                                                           :minio minio-client
                                                           :naming naming
                                                           :segments segment-config}})
@@ -356,6 +374,7 @@
                                             :tenant-id "tenant-1"}})
           (segments/flush-conversation! {:db db
                                          :redis redis-client
+                                         :streams streams
                                          :minio minio-client
                                          :naming naming
                                          :segments segment-config
