@@ -47,7 +47,8 @@
            :receipts-prefix "chat:receipts:"
            :idempotency-prefix "chat:idemp:"
            :sequence-prefix "chat:seq:"
-           :flush-prefix "chat:flush:"}
+           :flush-prefix "chat:flush:"
+           :stream-meta-prefix "__dcore:stream"}
    :minio {:bucket "messages"
            :segments-prefix "segments/"
            :attachments-prefix "attachments/"}})
@@ -55,6 +56,12 @@
 (defmethod ig/init-key :core-service.app.config.messaging/storage-names
   [_ opts]
   (merge messaging-storage-names opts))
+
+(defmethod ig/init-key :core-service.app.config.messaging/stream-meta-prefix
+  [_ {:keys [naming prefix]}]
+  (or prefix
+      (get-in naming [:redis :stream-meta-prefix])
+      "__dcore:stream"))
 
 (def default-segment-config
   {:max-bytes 262144

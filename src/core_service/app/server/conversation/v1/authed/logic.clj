@@ -7,7 +7,7 @@
             [core-service.app.server.http :as http]
             [core-service.app.server.message.logic :as message-logic]
             [core-service.app.server.receipt.logic :as receipt-logic]
-            [core-service.app.streams.redis :as streams]
+            [d-core.core.stream.protocol :as p-stream]
             [d-core.core.auth.token-client :as token-client]
             [duct.logger :as logger]))
 
@@ -154,9 +154,9 @@
         (merge {:user_id user-id-str} profile)))))
 
 (defn redis-last-message
-  [redis metrics stream]
-  (when (and redis stream)
-    (let [{:keys [entries]} (streams/read! redis metrics stream {:direction :backward :limit 1})
+  [streams stream]
+  (when (and streams stream)
+    (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :backward :limit 1})
           payload (:payload (first entries))]
       (when payload
         (message-logic/decode-message payload)))))
@@ -194,16 +194,16 @@
    decoded))
 
 (defn unread-count-from-redis
-  [redis metrics naming conversation-id user-id]
-  (when (and redis naming conversation-id user-id)
+  [streams redis metrics naming conversation-id user-id]
+  (when (and streams redis naming conversation-id user-id)
     (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conversation-id)
           batch-size 100]
       (loop [cursor nil
              unread 0]
-        (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream
-                                                           {:direction :backward
-                                                            :limit batch-size
-                                                            :cursor cursor})
+        (let [{:keys [entries next-cursor]} (p-stream/read-payloads streams stream
+                                                                     {:direction :backward
+                                                                      :limit batch-size
+                                                                      :cursor cursor})
               decoded (entries->decoded entries user-id)
               readable-ids (->> decoded (filter :readable?) (mapv :message-id))
               receipts (receipt-logic/batch-receipt-read? redis metrics naming
@@ -229,19 +229,19 @@
       counterpart (assoc :counterpart counterpart))))
 
 (defn conversation-item
-  [{:keys [redis naming metrics logger] :as components} row user-id member-ids profiles]
+  [{:keys [streams redis naming metrics logger] :as components} row user-id member-ids profiles]
   (let [conv-id (:id row)
         _ (when logger (logger/log logger ::conversation-item-start {:conv-id conv-id}))
         t0 (System/nanoTime)
         stream (when (and naming conv-id)
                  (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
-        redis-msg (redis-last-message redis metrics stream)
+        redis-msg (redis-last-message streams stream)
         _ (when logger (logger/log logger ::conversation-item-after-redis {:conv-id conv-id
                                                                            :duration-ms (quot (- (System/nanoTime) t0) 1000000)}))
         minio-msg (minio-last-message components conv-id)
         _ (when logger (logger/log logger ::conversation-item-after-minio {:conv-id conv-id}))
         t1 (System/nanoTime)
-        unread-count (or (unread-count-from-redis redis metrics naming conv-id user-id) 0)
+        unread-count (or (unread-count-from-redis streams redis metrics naming conv-id user-id) 0)
         _ (when logger (logger/log logger ::conversation-item-after-unread {:conv-id conv-id
                                                                             :duration-ms (quot (- (System/nanoTime) t1) 1000000)}))
         last-message (or redis-msg minio-msg)

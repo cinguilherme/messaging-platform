@@ -1,15 +1,12 @@
 (ns core-service.app.server.message.logic
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
-            [core-service.app.libs.redis :as redis-lib]
-            [core-service.app.metrics :as app-metrics]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.pagination :as pagination]
             [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
-            [core-service.app.streams.redis :as streams]
-            [duct.logger :as logger]
-            [taoensso.carmine :as car]))
+            [d-core.core.stream.protocol :as p-stream]
+            [duct.logger :as logger]))
 
 (defn sender-id-from-request
   [req]
@@ -17,10 +14,8 @@
       (http/parse-uuid (get-in req [:auth/principal :user_id]))))
 
 (defn next-seq!
-  [redis-client metrics key]
-  (app-metrics/with-redis metrics :incr
-    #(car/wcar (redis-lib/conn redis-client)
-       (car/incr key))))
+  [streams key]
+  (p-stream/next-sequence! streams key))
 
 (defn coerce-message-create
   [data]
@@ -112,8 +107,8 @@
      :next-cursor next-cursor}))
 
 (defn fetch-redis-page
-  [redis metrics stream query]
-  (let [{:keys [entries next-cursor]} (streams/read! redis metrics stream query)
+  [streams stream query]
+  (let [{:keys [entries next-cursor]} (p-stream/read-payloads streams stream query)
         messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
     {:messages messages
      :next-cursor next-cursor}))
@@ -123,11 +118,11 @@
   (fetch-minio-page ctx conversation-id cursor limit direction))
 
 (defn read-redis-minio-history
-  [{:keys [db minio segments metrics]} conversation-id redis stream query token-source token-cursor limit direction]
+  [{:keys [db minio segments metrics]} conversation-id streams stream query token-source token-cursor limit direction]
   (let [redis-cursor (when (= token-source :redis) token-cursor)
         query (cond-> query
                 redis-cursor (assoc :cursor redis-cursor))
-        {:keys [messages next-cursor]} (fetch-redis-page redis metrics stream query)
+        {:keys [messages next-cursor]} (fetch-redis-page streams stream query)
         remaining (- limit (count messages))
         before-seq (min-seq messages)
         minio-result (when (and (pos? remaining)
@@ -153,10 +148,10 @@
      :next-cursor next-cursor}))
 
 (defn messages-page
-  [ctx {:keys [conversation-id redis stream query token-source token-seq token-cursor limit direction]}]
+  [ctx {:keys [conversation-id streams stream query token-source token-seq token-cursor limit direction]}]
   (if (= token-source :minio)
     (read-minio-history ctx conversation-id token-seq limit direction)
-    (read-redis-minio-history ctx conversation-id redis stream query token-source token-cursor limit direction)))
+    (read-redis-minio-history ctx conversation-id streams stream query token-source token-cursor limit direction)))
 
 (defn format-messages-response
   [format conversation-id messages next-cursor]

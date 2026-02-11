@@ -1,5 +1,7 @@
 (ns core-service.integration.helpers
   (:require [core-service.app.config.databases]
+            [d-core.core.stream.redis.logic :as stream-logic]
+            [d-core.core.stream.redis.redis]
             [d-core.core.clients.postgres]
             [d-core.core.storage.protocol :as p-storage]
             [d-core.core.clients.redis]
@@ -35,17 +37,30 @@
 
 (defn redis-keys
   [naming conv-id]
-  {:stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-   :seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-   :flush-key (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id)})
+  (let [meta-prefix (get-in naming [:redis :stream-meta-prefix] "__dcore:stream")
+        seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
+        flush-key (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id)]
+    {:stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
+     :seq-key seq-key
+     :flush-key flush-key
+     :sequence-hash-key (stream-logic/sequence-hash-key meta-prefix)
+     :cursor-hash-key (stream-logic/cursor-hash-key meta-prefix)}))
+
+(defn init-streams-backend
+  [redis-client naming]
+  (ig/init-key :core-service.app.streams.redis/backend
+               {:redis-client redis-client
+                :meta-key-prefix (get-in naming [:redis :stream-meta-prefix] "__dcore:stream")}))
 
 (defn clear-redis-conversation!
   [redis-client naming conv-id]
-  (let [{:keys [stream seq-key flush-key]} (redis-keys naming conv-id)]
+  (let [{:keys [stream seq-key flush-key sequence-hash-key cursor-hash-key]} (redis-keys naming conv-id)]
     (car/wcar (:conn redis-client)
       (car/del stream)
       (car/del seq-key)
-      (car/del flush-key))))
+      (car/del flush-key)
+      (car/hdel sequence-hash-key seq-key)
+      (car/hdel cursor-hash-key flush-key))))
 
 (defn stream-len
   [redis-client stream]

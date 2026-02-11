@@ -26,6 +26,7 @@
    :core-service.app.config.storage/minio {:logger #ig/ref :duct/logger}
    :core-service.app.config.messaging/default-routing {}
    :core-service.app.config.messaging/storage-names {}
+   :core-service.app.config.messaging/stream-meta-prefix {:naming #ig/ref :core-service.app.config.messaging/storage-names}
    :core-service.app.config.messaging/segment-config {}
    :core-service.app.config.messaging/retention-config {}
    :core-service.app.config.messaging/receipt-config {}
@@ -148,6 +149,11 @@
    :core-service.app.server.routes/dl-mark {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
    :core-service.app.server.routes/dl-replay {:deadletter-admin #ig/ref :d-core.core.messaging.dead-letter.admin/storage}
 
+   :core-service.app.streams.redis/backend {:redis-client #ig/ref :d-core.core.clients.redis/client
+                                            :meta-key-prefix #ig/ref :core-service.app.config.messaging/stream-meta-prefix
+                                            :logger #ig/ref :duct/logger
+                                            :metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
+
    ;; webdeps component is a bundle of general deps
    :core-service.app.config.webdeps/webdeps {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
@@ -158,6 +164,7 @@
                                              :token-client #ig/ref :d-core.core.auth/token-client
                                              :keycloak #ig/ref :core-service.app.config.auth/keycloak
                                              :redis #ig/ref :d-core.core.clients.redis/client
+                                             :streams #ig/ref :core-service.app.streams.redis/backend
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
                                              :minio #ig/ref :d-core.core.storage/common
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config
@@ -202,6 +209,7 @@
   :core-service.app.workers.segments/system {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
                                              :redis #ig/ref :d-core.core.clients.redis/client
+                                             :streams #ig/ref :core-service.app.streams.redis/backend
                                              :minio #ig/ref :d-core.core.storage/common
                                              :naming #ig/ref :core-service.app.config.messaging/storage-names
                                              :metrics #ig/ref :core-service.app.metrics/component

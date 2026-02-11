@@ -4,16 +4,14 @@
             [clojure.string :as str]
             [core-service.app.db.segments :as segments-db]
             [core-service.app.metrics :as app-metrics]
-            [core-service.app.libs.redis :as redis-lib]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.segments.format :as segment-format]
-            [core-service.app.streams.redis :as streams]
+            [d-core.core.stream.protocol :as p-stream]
             [d-core.core.storage.protocol :as p-storage]
             [d-core.core.metrics.protocol :as metrics]
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
-            [integrant.core :as ig]
-            [taoensso.carmine :as car]))
+            [integrant.core :as ig]))
 
 (def segment-component :segment-flush)
 (def segment-worker :segments-flush)
@@ -44,17 +42,8 @@
                   (merge log-ctx {:stage stage} fields))))
 
 (defn- scan-keys
-  [redis-client metrics pattern]
-  (loop [cursor "0"
-         acc []]
-    (let [[next-cursor keys] (app-metrics/with-redis metrics :scan
-                              #(car/wcar (redis-lib/conn redis-client)
-                                 (car/scan cursor "MATCH" pattern "COUNT" 200)))
-          keys (mapv redis-lib/normalize-key keys)
-          acc (into acc keys)]
-      (if (= "0" next-cursor)
-        acc
-        (recur next-cursor acc)))))
+  [streams pattern]
+  (vec (p-stream/list-streams streams pattern)))
 
 (defn- parse-conversation-id
   [stream-key prefix]
@@ -69,16 +58,12 @@
   (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id))
 
 (defn- get-cursor
-  [redis-client metrics key]
-  (app-metrics/with-redis metrics :get
-    #(car/wcar (redis-lib/conn redis-client)
-       (car/get key))))
+  [streams key]
+  (p-stream/get-cursor streams key))
 
 (defn- set-cursor!
-  [redis-client metrics key cursor]
-  (app-metrics/with-redis metrics :set
-    #(car/wcar (redis-lib/conn redis-client)
-       (car/set key cursor))))
+  [streams key cursor]
+  (p-stream/set-cursor! streams key cursor))
 
 (defn- decode-message
   [payload]
@@ -129,17 +114,16 @@
         (and (= ams bms) (<= aseq bseq)))))
 
 (defn- retention-trim-id
-  [redis metrics stream last-id trim-min-entries]
+  [streams stream last-id trim-min-entries]
   (let [trim-min-entries (long (or trim-min-entries 0))]
     (if (<= trim-min-entries 0)
       last-id
-      (let [entries (app-metrics/with-redis metrics :xrevrange
-                       #(car/wcar (redis-lib/conn redis)
-                          (car/xrevrange stream "+" "-" "COUNT" trim-min-entries)))
-            retain-id (some-> entries last first)]
-        (if (and retain-id (stream-id<=? retain-id last-id))
-          retain-id
-          last-id)))))
+      (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :backward
+                                                                       :limit (inc trim-min-entries)})
+            retain-id (when (> (count entries) trim-min-entries)
+                        (:id (last entries)))]
+        (when (and retain-id (stream-id<=? retain-id last-id))
+          retain-id)))))
 
 (defn- entry->prepared [entries codec last-seq]
   (->> entries
@@ -170,10 +154,10 @@
        vec))
 
 (defn- read-prepared
-  [redis metrics stream batch-size cursor codec last-seq]
-  (let [{:keys [entries]} (streams/read! redis metrics stream {:direction :forward
-                                                               :limit batch-size
-                                                               :cursor cursor})
+  [streams stream batch-size cursor codec last-seq]
+  (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :forward
+                                                                   :limit batch-size
+                                                                   :cursor cursor})
         prepared (entry->prepared entries codec last-seq)]
     {:entries entries
      :prepared prepared}))
@@ -271,15 +255,13 @@
                 (throw e)))))))))
 
 (defn- trim-stream!
-  [redis metrics stream last-id trim-min-entries]
-  (when-let [trim-id (retention-trim-id redis metrics stream last-id trim-min-entries)]
+  [streams stream last-id trim-min-entries]
+  (when-let [trim-id (retention-trim-id streams stream last-id trim-min-entries)]
     (when (and trim-id (not (str/blank? trim-id)))
-      (app-metrics/with-redis metrics :xtrim
-        #(car/wcar (redis-lib/conn redis)
-           (car/xtrim stream "MINID" trim-id))))))
+      (p-stream/trim-stream! streams stream trim-id))))
 
 (defn- commit-flush-conversation!
-  [{:keys [db redis minio naming logger metrics logging]}
+  [{:keys [db streams minio naming logger metrics logging]}
    {:keys [conversation-id prepared created-at
            codec compression max-bytes
            cursor-k stream trim-stream?
@@ -308,10 +290,10 @@
           result
           (do
             (when-let [last-id (:id (last selected))]
-              (set-cursor! redis metrics cursor-k last-id))
+              (set-cursor! streams cursor-k last-id))
             (when trim-stream?
               (when-let [last-id (:id (last selected))]
-                (trim-stream! redis metrics stream last-id trim-min-entries)))
+                (trim-stream! streams stream last-id trim-min-entries)))
             (assoc result :message-count (:message_count header'))))))))
 
 (defn- record-flush-metrics!
@@ -344,11 +326,11 @@
 (defn flush-conversation!
   ([components conversation-id]
    (flush-conversation! components conversation-id nil))
-  ([{:keys [db redis naming segments metrics logger logging] :as components} conversation-id log-ctx]
+  ([{:keys [db streams naming segments metrics logger logging] :as components} conversation-id log-ctx]
    (let [stream-prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
          stream (str stream-prefix conversation-id)
          cursor-k (cursor-key naming conversation-id)
-         last-cursor (get-cursor redis metrics cursor-k)
+         last-cursor (get-cursor streams cursor-k)
          last-seq (segments-db/last-seq-end db conversation-id)
          last-seq (long (or last-seq -1))
          {:keys [max-bytes batch-size compression codec trim-stream? trim-min-entries]} segments
@@ -361,7 +343,7 @@
                          :conversation-id conversation-id}
                         log-ctx)
          start (System/nanoTime)
-         {:keys [entries prepared]} (read-prepared redis metrics stream batch-size last-cursor codec last-seq)
+         {:keys [entries prepared]} (read-prepared streams stream batch-size last-cursor codec last-seq)
          prepared-bytes (reduce + 0 (map :record-size prepared))
          _ (log-stage! logger logging log-ctx :debug :buffer-snapshot
                        {:entries-count (count entries)
@@ -374,7 +356,7 @@
                   (empty? prepared)
                   (do
                     (when-let [last-id (:id (last entries))]
-                      (set-cursor! redis metrics cursor-k last-id))
+                      (set-cursor! streams cursor-k last-id))
                     {:status :skipped :reason :no-new-seq :conversation-id conversation-id})
 
                   :else
@@ -401,10 +383,10 @@
 (defn flush-all!
   ([components]
    (flush-all! components nil))
-  ([{:keys [redis naming metrics logger logging] :as components} log-ctx]
+  ([{:keys [streams naming metrics logger logging] :as components} log-ctx]
    (let [prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
          scan-start (System/nanoTime)
-         keys (scan-keys redis metrics (str prefix "*"))
+         keys (scan-keys streams (str prefix "*"))
          scan-duration (duration-ms scan-start)
          log-ctx (merge {:component segment-component
                          :worker segment-worker}
@@ -482,7 +464,7 @@
     definition))
 
 (defmethod ig/init-key :core-service.app.workers.segments/system
-  [_ {:keys [logger db redis minio naming segments definition metrics logging]}]
+  [_ {:keys [logger db redis streams minio naming segments definition metrics logging]}]
   (let [segments (merge {:max-bytes 262144
                          :flush-interval-ms 300000
                          :compression :gzip
@@ -501,6 +483,7 @@
                                        :logging logging
                                        :db db
                                        :redis redis
+                                       :streams streams
                                        :minio minio
                                        :naming naming
                                        :segments segments})))

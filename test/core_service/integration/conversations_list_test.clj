@@ -20,11 +20,13 @@
         minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
         minio (ig/init-key :d-core.core.storage/minio minio-cfg)
         naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+        streams (helpers/init-streams-backend redis naming)
         idempotency (ig/init-key :core-service.app.config.messaging/idempotency-config {})
         receipt (ig/init-key :core-service.app.config.messaging/receipt-config {})
         segment-config (ig/init-key :core-service.app.config.messaging/segment-config {})
         timeout-ms 100]
     {:redis redis
+     :streams streams
      :minio minio
      :naming naming
      :idempotency idempotency
@@ -33,9 +35,10 @@
      :timeout-ms timeout-ms}))
 
 (defn- make-webdeps
-  [{:keys [db redis naming idempotency receipt minio segments timeout-ms]}]
+  [{:keys [db redis streams naming idempotency receipt minio segments timeout-ms]}]
   (cond-> {:db db}
     redis (assoc :redis redis)
+    streams (assoc :streams streams)
     naming (assoc :naming naming)
     idempotency (assoc :idempotency idempotency)
     receipt (assoc :receipt receipt)
@@ -185,7 +188,7 @@
         (is (= "invalid cursor" (:error body)))))))
 
 (deftest conversations-list-last-message-and-unread
-  (let [{:keys [naming idempotency receipt redis]} (make-components)]
+  (let [{:keys [naming idempotency receipt redis streams]} (make-components)]
     (if-not (helpers/redis-up? redis)
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [sender-id conv-id receiver-id payload]} test-ids]
@@ -195,6 +198,7 @@
             (helpers/cleanup-conversation! db conv-id))
           (let [webdeps (make-webdeps {:db db
                                        :redis redis
+                                       :streams streams
                                        :naming naming
                                        :idempotency idempotency
                                        :receipt receipt})
@@ -232,7 +236,7 @@
                   (is (= 0 (:unread_count item2))))))))))))
 
 (deftest conversations-list-missing-minio-segment
-  (let [{:keys [redis minio naming idempotency segments]} (make-components)
+  (let [{:keys [redis streams minio naming idempotency segments]} (make-components)
         {:keys [sender-id conv-id payload]} test-ids]
     (if-not (and (helpers/redis-up? redis) (helpers/minio-up? minio))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
@@ -243,6 +247,7 @@
           (helpers/cleanup-conversation! db conv-id))
         (let [webdeps (make-webdeps {:db db
                                      :redis redis
+                                     :streams streams
                                      :naming naming
                                      :idempotency idempotency
                                      :minio minio
