@@ -57,7 +57,7 @@
                                                     :opts {:require-fn #ig/ref :core-service.app.server.auth/require-fn}
                                                     :logger #ig/ref :duct/logger}
    :core-service.app.server.middleware/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                                :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
+                                                :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics" "/openapi.json"]
                                                 :logger #ig/ref :duct/logger}
    :d-core.core.auth/token-client #ig/ref :core-service.app.config.auth/keycloak-admin
 
@@ -133,7 +133,7 @@
   :core-service.app.server.interceptors.user-context/user-context {}
   :core-service.app.server.interceptors.response-logger/response-logger {:logger #ig/ref :duct/logger}
   :core-service.app.server.interceptors.api-key/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
-                                                         :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics"]
+                                                         :bypass-paths ["/v1/auth/register" "/v1/auth/login" "/v1/auth/refresh" "/metrics" "/openapi.json"]
                                                          :logger #ig/ref :duct/logger}
   :core-service.app.server.interceptors.auth/auth {:middleware #ig/ref :d-core.core.auth.http/authentication-middleware}
   :core-service.app.server.interceptors.authz/authz {:middleware #ig/ref :d-core.core.auth.http/authorization-middleware}

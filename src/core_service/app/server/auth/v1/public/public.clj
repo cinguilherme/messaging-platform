@@ -5,6 +5,7 @@
             [integrant.core :as ig]
             [core-service.app.schemas.auth :as auth-schema]
             [core-service.app.server.http :as http]
+            [core-service.app.server.openapi :as api-docs]
             [core-service.app.db.users :as users-db]
             [core-service.app.server.auth.v1.public.logic :as logic]
             [d-core.core.auth.token-client :as token-client]
@@ -159,7 +160,28 @@
 
 (defmethod ig/init-key :core-service.app.server.auth.v1.public/routes
   [_ {:keys [webdeps]}]
-  ["/v1/auth"
-   ["/register" {:post (auth-register {:webdeps webdeps})}]
-   ["/login" {:post (auth-login {:webdeps webdeps})}]
-   ["/refresh" {:post (auth-refresh {:webdeps webdeps})}]])
+  ["/v1/auth" {:openapi {:id api-docs/docs-id}}
+   ["/register"
+    {:post {:tags ["auth"]
+            :summary "Register user"
+            :description "Creates a user in Keycloak and persists the profile locally."
+            :parameters {:body auth-schema/RegisterSchema}
+            :responses {200 {:body api-docs/AuthRegisterResponseSchema}
+                        400 {:body api-docs/ErrorEnvelopeSchema}}
+            :handler (auth-register {:webdeps webdeps})}}]
+   ["/login"
+    {:post {:tags ["auth"]
+            :summary "Login user"
+            :description "Password grant login and returns token payload."
+            :parameters {:body auth-schema/LoginSchema}
+            :responses {200 {:body api-docs/AuthTokenResponseSchema}
+                        400 {:body api-docs/ErrorEnvelopeSchema}}
+            :handler (auth-login {:webdeps webdeps})}}]
+   ["/refresh"
+    {:post {:tags ["auth"]
+            :summary "Refresh token"
+            :description "Refreshes an access token using a refresh token."
+            :parameters {:body auth-schema/RefreshSchema}
+            :responses {200 {:body api-docs/AuthTokenResponseSchema}
+                        400 {:body api-docs/ErrorEnvelopeSchema}}
+            :handler (auth-refresh {:webdeps webdeps})}}]])
