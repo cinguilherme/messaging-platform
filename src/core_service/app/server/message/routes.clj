@@ -12,7 +12,7 @@
            :parameters {:path api-docs/PathConversationIdSchema
                         :body msg-schema/MessageCreateSchema}
            :openapi {:security [api-docs/api-key-and-bearer-security]}
-           :responses {200 {:body api-docs/MessageCreateResponseSchema}
+           :responses {200 {:body api-docs/MessageCreateResultSchema}
                        400 {:body api-docs/ErrorEnvelopeSchema}}
            :handler (authed/messages-create {:webdeps webdeps})}
     :get {:tags ["messages"]
@@ -21,6 +21,6 @@
           :parameters {:path api-docs/PathConversationIdSchema
                        :query api-docs/MessagesListQuerySchema}
           :openapi {:security [api-docs/api-key-and-bearer-security]}
-          :responses {200 {:body api-docs/MessagesListResponseSchema}
+          :responses {200 {:body api-docs/MessagesListResultSchema}
                       400 {:body api-docs/ErrorEnvelopeSchema}}
           :handler (authed/messages-list {:webdeps webdeps})}}])

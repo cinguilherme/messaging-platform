@@ -149,12 +149,18 @@
    [:stream :string]
    [:entry_id :string]])
 
+(def MessageCreateResultSchema
+  [:or MessageCreateResponseSchema ErrorEnvelopeSchema])
+
 (def MessagesListResponseSchema
   [:map
    [:ok [:= true]]
    [:conversation_id :string]
    [:messages [:vector msg-schema/MessageEnvelopeSchema]]
    [:next_cursor {:optional true} [:maybe :string]]])
+
+(def MessagesListResultSchema
+  [:or MessagesListResponseSchema ErrorEnvelopeSchema])
 
 (def AttachmentCreateQuerySchema
   [:map
