@@ -5,9 +5,9 @@
 
 (def attachment-url-strategy-section
   (str "### Attachment URL Strategy\n"
-       "- Upload and message APIs return attachment metadata with `object_key`.\n"
-       "- This API does not expose a public attachment download endpoint.\n"
-       "- UI clients must resolve `object_key` via a media gateway/CDN or a signed URL service."))
+       "- Upload and message APIs return attachment metadata with `attachment_id` and `object_key`.\n"
+       "- Fetch media bytes with `GET /v1/conversations/{id}/attachments/{attachment_id}`.\n"
+       "- `object_key` is internal storage metadata; clients should use API endpoints, not direct object paths."))
 
 (def openapi-info
   {:title "Core Service HTTP API"
@@ -137,6 +137,11 @@
   [:map
    [:id :uuid]])
 
+(def PathConversationAttachmentIdSchema
+  [:map
+   [:id :uuid]
+   [:attachment_id :uuid]])
+
 (def ConversationListQuerySchema
   [:map
    [:limit {:optional true} [:int {:min 1 :max 200}]]
@@ -196,6 +201,11 @@
     "image/*" {:schema {:type "string" :format "binary"}}
     "audio/*" {:schema {:type "string" :format "binary"}}
     "application/octet-stream" {:schema {:type "string" :format "binary"}}}})
+
+(def AttachmentGetResponseContent
+  {"image/*" {:schema [:string {:format "binary"}]}
+   "audio/*" {:schema [:string {:format "binary"}]}
+   "application/octet-stream" {:schema [:string {:format "binary"}]}})
 
 (def AttachmentCreateResponseSchema
   [:map

@@ -40,6 +40,15 @@
         (sql/execute! db (into [query] attachment-ids)
                       {:builder-fn rs/as-unqualified-lower-maps})))))
 
+(defn fetch-attachment-by-id
+  [db {:keys [attachment-id]}]
+  (first
+   (sql/select db {:table :attachments
+                   :columns [:attachment_id :conversation_id :uploader_id :object_key
+                             :mime_type :size_bytes :checksum :created_at :expires_at :referenced_at]
+                   :where {:attachment_id attachment-id}
+                   :limit 1})))
+
 (defn mark-referenced!
   [db attachment-ids]
   (let [attachment-ids (->> attachment-ids (remove nil?) distinct vec)]

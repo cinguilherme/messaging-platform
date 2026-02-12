@@ -22,6 +22,10 @@
   [uri]
   (boolean (re-matches #"^/v1/conversations/[^/]+/attachments$" uri)))
 
+(defn- conversation-attachment-id?
+  [uri]
+  (boolean (re-matches #"^/v1/conversations/[^/]+/attachments/[^/]+$" uri)))
+
 (defn- read-scope []
   {:scopes #{"messages:read"}})
 
@@ -38,6 +42,7 @@
     (and (conversation-messages? uri) (= method :get)) (read-scope)
     (and (conversation-messages? uri) (= method :post)) (write-scope)
     (and (conversation-attachments? uri) (= method :post)) (write-scope)
+    (and (conversation-attachment-id? uri) (= method :get)) (read-scope)
     :else nil))
 
 (defmethod ig/init-key :core-service.app.server.auth/require-fn

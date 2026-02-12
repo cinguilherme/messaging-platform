@@ -18,6 +18,22 @@
       configured
       default-attachment-max-age-ms)))
 
+(defn- attachment-row-expired?
+  [row now-ms]
+  (let [expires-at (:expires_at row)]
+    (and expires-at
+         (<= (.getTime ^java.util.Date expires-at) now-ms))))
+
+(defn- missing-object?
+  [result]
+  (let [error-type (:error-type result)
+        error-code (:error-code result)
+        status (:status result)]
+    (or (= error-type :not-found)
+        (= error-code "NoSuchKey")
+        (= error-code "NotFound")
+        (= 404 status))))
+
 (defn attachments-create
   [{:keys [webdeps]}]
   (let [{:keys [db minio naming attachment-retention]} webdeps
@@ -103,3 +119,60 @@
                           (http/format-response {:ok false
                                                  :error "attachment registry write failed"}
                                                 format))))))))))))))
+
+(defn attachments-get
+  [{:keys [webdeps]}]
+  (let [{:keys [db minio]} webdeps]
+    (fn [req]
+      (let [format (http/get-accept-format req)
+            conv-id (http/parse-uuid (http/param req "id"))
+            attachment-id (http/parse-uuid (http/param req "attachment_id"))
+            sender-id (message-logic/sender-id-from-request req)]
+        (cond
+          (not conv-id)
+          (http/format-response {:ok false :error "invalid conversation id"} format)
+
+          (nil? attachment-id)
+          (http/format-response {:ok false :error "invalid attachment id"} format)
+
+          (nil? sender-id)
+          (http/format-response {:ok false :error "invalid sender id"} format)
+
+          (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+          (http/format-response {:ok false :error "not a member"} format)
+
+          (nil? minio)
+          (http/format-response {:ok false :error "minio not configured"} format)
+
+          :else
+          (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
+                now-ms (System/currentTimeMillis)]
+            (cond
+              (or (nil? row)
+                  (not= conv-id (:conversation_id row)))
+              {:status 404
+               :body {:ok false :error "attachment not found"}}
+
+              (attachment-row-expired? row now-ms)
+              {:status 404
+               :body {:ok false :error "attachment expired"}}
+
+              :else
+              (let [obj (p-storage/storage-get-bytes minio (:object_key row) {})
+                    bytes (:bytes obj)
+                    mime-type (or (:mime_type row) "application/octet-stream")]
+                (cond
+                  (and (:ok obj) (bytes? bytes))
+                  {:status 200
+                   :headers {"content-type" mime-type
+                             "content-length" (str (alength ^bytes bytes))
+                             "cache-control" "private, max-age=60"}
+                   :body bytes}
+
+                  (missing-object? obj)
+                  {:status 404
+                   :body {:ok false :error "attachment not found"}}
+
+                  :else
+                  {:status 500
+                   :body {:ok false :error "attachment fetch failed"}})))))))))
