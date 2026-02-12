@@ -156,6 +156,17 @@
    [:messages [:vector msg-schema/MessageEnvelopeSchema]]
    [:next_cursor {:optional true} [:maybe :string]]])
 
+(def AttachmentCreateQuerySchema
+  [:map
+   [:max-bytes {:optional true} [:int {:min 0}]]
+   [:kind {:optional true} [:enum "image" "voice" "file"]]])
+
+(def AttachmentCreateResponseSchema
+  [:map
+   [:ok [:= true]]
+   [:conversation_id :string]
+   [:attachment msg-schema/AttachmentSchema]])
+
 (def ReceiptCreateResponseSchema
   [:map
    [:ok [:= true]]
