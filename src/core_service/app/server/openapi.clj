@@ -3,10 +3,17 @@
 
 (def docs-id ::core-http-routes)
 
+(def attachment-url-strategy-section
+  (str "### Attachment URL Strategy\n"
+       "- Upload and message APIs return attachment metadata with `object_key`.\n"
+       "- This API does not expose a public attachment download endpoint.\n"
+       "- UI clients must resolve `object_key` via a media gateway/CDN or a signed URL service."))
+
 (def openapi-info
   {:title "Core Service HTTP API"
    :version "v1"
-   :description "HTTP surface for auth, users, conversations, messages, and receipts."})
+   :description (str "HTTP surface for auth, users, conversations, messages, and receipts.\n\n"
+                     attachment-url-strategy-section)})
 
 (def openapi-servers
   [{:url "/"}])
@@ -165,7 +172,30 @@
 (def AttachmentCreateQuerySchema
   [:map
    [:max-bytes {:optional true} [:int {:min 0}]]
+   [:filename {:optional true} [:string {:min 1 :max 255}]]
    [:kind {:optional true} [:enum "image" "voice" "file"]]])
+
+(def AttachmentCreateRequestBody
+  {:required true
+   :description
+   (str "Upload attachment bytes using either multipart form-data or a raw binary body.\n\n"
+        "- multipart/form-data: provide `file` or `image` field.\n"
+        "- raw body: set Content-Type to `image/*`, `audio/*`, or `application/octet-stream`.\n"
+        "- optional query params: `kind`, `max-bytes`, and `filename` (for raw-body uploads).")
+   :content
+   {"multipart/form-data"
+    {:schema {:type "object"
+              :properties {"file" {:type "string"
+                                   :format "binary"
+                                   :description "Generic attachment file field."}
+                           "image" {:type "string"
+                                    :format "binary"
+                                    :description "Image attachment alias field."}}
+              :anyOf [{:required ["file"]}
+                      {:required ["image"]}]}}
+    "image/*" {:schema {:type "string" :format "binary"}}
+    "audio/*" {:schema {:type "string" :format "binary"}}
+    "application/octet-stream" {:schema {:type "string" :format "binary"}}}})
 
 (def AttachmentCreateResponseSchema
   [:map
