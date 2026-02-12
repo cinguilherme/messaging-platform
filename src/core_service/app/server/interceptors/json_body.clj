@@ -37,6 +37,7 @@
                                  (json/parse-string text true)
                                  (catch Exception _ nil)))
                       request (cond-> request
+                                true (assoc-in [:muuntaja/request :format] "application/json")
                                 (some? text) (assoc :body (rewind-body text))
                                 (some? parsed) (assoc :body-params parsed))]
                   (assoc ctx :request request)))))})
