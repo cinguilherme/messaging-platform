@@ -112,6 +112,7 @@
   {:metrics #ig/ref :core-service.app.server.interceptors.metrics/metrics
    :cid #ig/ref :core-service.app.server.interceptors.cid/cid
    :params #ig/ref :core-service.app.server.interceptors.params/params
+   :multipart #ig/ref :core-service.app.server.interceptors.multipart/multipart
    :format #ig/ref :core-service.app.server.interceptors.format/format
    :api-key #ig/ref :core-service.app.server.interceptors.api-key/api-key
    :auth #ig/ref :core-service.app.server.interceptors.auth/auth
@@ -132,6 +133,7 @@
   :core-service.app.server.interceptors.metrics/metrics {:metrics #ig/ref :core-service.app.metrics/component}
   :core-service.app.server.interceptors.cid/cid {}
   :core-service.app.server.interceptors.params/params {}
+  :core-service.app.server.interceptors.multipart/multipart {}
   :core-service.app.server.interceptors.format/format {}
   :core-service.app.server.interceptors.json-body/json-body {}
   :core-service.app.server.interceptors.coercion/coerce-exceptions {}
