@@ -105,7 +105,8 @@
    :dl-replay #ig/ref :core-service.app.server.routes/dl-replay
    :dl-mark #ig/ref :core-service.app.server.routes/dl-mark}
   :core-service.app.server.users.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
-  :core-service.app.server.conversation.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
+  :core-service.app.server.conversation.v1.authed/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps
+                                                          :attachment-workers #ig/ref :core-service.app.workers.attachments/system}
   :core-service.app.server.auth.v1.public/routes {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps}
 
   :core-service.app.server.interceptors/http-base-interceptors
@@ -218,6 +219,12 @@
                                                      :max-age-ms 600000
                                                      :prefix "images/resized/"
                                                      :batch-size 200}}
+  :core-service.app.workers.attachments/system {:webdeps #ig/ref :core-service.app.config.webdeps/webdeps
+                                                :logger #ig/ref :duct/logger
+                                                :metrics #ig/ref :core-service.app.metrics/component
+                                                :processing {:optimize-threshold-bytes 1048576
+                                                             :alt-max-dim 320
+                                                             :standard-max-dim 1920}}
   :core-service.app.workers.segments/system {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
                                              :redis #ig/ref :d-core.core.clients.redis/client

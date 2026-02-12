@@ -1,11 +1,13 @@
 (ns core-service.app.server.attachment.authed
-  (:require [core-service.app.db.attachments :as attachments-db]
+  (:require [clojure.string :as str]
+            [core-service.app.db.attachments :as attachments-db]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.attachment.logic :as logic]
             [core-service.app.server.http :as http]
             [core-service.app.server.message.logic :as message-logic]
             [d-core.core.storage.protocol :as p-storage]
+            [d-core.libs.workers :as workers]
             [malli.core :as m]
             [malli.error :as me]))
 
@@ -36,7 +38,7 @@
 
 (defn attachments-create
   [{:keys [webdeps]}]
-  (let [{:keys [db minio naming attachment-retention]} webdeps
+  (let [{:keys [db naming attachment-retention attachment-workers]} webdeps
         max-age-ms (attachment-max-age-ms attachment-retention)]
     (fn [req]
       (let [format (http/get-accept-format req)
@@ -55,8 +57,8 @@
           (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
           (http/format-response {:ok false :error "not a member"} format)
 
-          (nil? minio)
-          (http/format-response {:ok false :error "minio not configured"} format)
+          (nil? attachment-workers)
+          (http/format-response {:ok false :error "attachment workers not configured"} format)
 
           (not upload)
           (http/format-response {:ok false :error "missing attachment payload"} format)
@@ -78,11 +80,13 @@
               :else
               (let [attachments-prefix (get-in naming [:minio :attachments-prefix] "attachments/")
                     {:keys [ok attachment object-key error]}
-                    (logic/prepare-attachment {:bytes bytes
+                   (logic/prepare-attachment {:bytes bytes
                                                :content-type content-type
                                                :filename filename
                                                :kind kind
                                                :attachments-prefix attachments-prefix
+                                               :expected-size-bytes byte-count
+                                               :expected-mime-type content-type
                                                :source source})]
                 (cond
                   (not ok)
@@ -95,30 +99,47 @@
                                         format)
 
                   :else
-                  (let [store-result (p-storage/storage-put-bytes minio object-key bytes
-                                                                 {:content-type (:mime_type attachment)})
-                        expires-at (java.sql.Timestamp. (+ (System/currentTimeMillis) max-age-ms))]
-                    (if-not (:ok store-result)
-                      (http/format-response {:ok false :error (:error store-result)} format)
+                  (let [expires-at (java.sql.Timestamp. (+ (System/currentTimeMillis) max-age-ms))
+                        attachment-id (:attachment_id attachment)]
+                    (try
+                      (attachments-db/insert-attachment! db {:attachment-id attachment-id
+                                                             :conversation-id conv-id
+                                                             :uploader-id sender-id
+                                                             :object-key object-key
+                                                             :mime-type (:mime_type attachment)
+                                                             :size-bytes (:size_bytes attachment)
+                                                             :checksum (:checksum attachment)
+                                                             :expires-at expires-at})
                       (try
-                        (attachments-db/insert-attachment! db {:attachment-id (:attachment_id attachment)
-                                                               :conversation-id conv-id
-                                                               :uploader-id sender-id
-                                                               :object-key object-key
-                                                               :mime-type (:mime_type attachment)
-                                                               :size-bytes (:size_bytes attachment)
-                                                               :checksum (:checksum attachment)
-                                                               :expires-at expires-at})
-                        (http/format-response {:ok true
-                                               :conversation_id (str conv-id)
-                                               :attachment attachment}
-                                              format)
+                        (let [accepted? (workers/command! attachment-workers
+                                                         :attachment-orchestrator
+                                                         {:attachment-id attachment-id
+                                                          :conversation-id conv-id
+                                                          :object-key object-key
+                                                          :bytes bytes
+                                                          :size-bytes (:size_bytes attachment)
+                                                          :mime-type (:mime_type attachment)
+                                                          :kind (get-in attachment [:meta :kind])})]
+                          (if (false? accepted?)
+                            (do
+                              (attachments-db/delete-attachment! db {:attachment-id attachment-id})
+                              (http/format-response {:ok false
+                                                     :error "attachment processing enqueue failed"}
+                                                    format))
+                            (http/format-response {:ok true
+                                                   :conversation_id (str conv-id)
+                                                   :attachment attachment}
+                                                  format)))
                         (catch Exception _
-                          ;; Best effort: avoid leaking uploaded object if DB registry write fails.
-                          (p-storage/storage-delete minio object-key {})
+                          ;; Best effort rollback, upload has not been persisted yet.
+                          (attachments-db/delete-attachment! db {:attachment-id attachment-id})
                           (http/format-response {:ok false
-                                                 :error "attachment registry write failed"}
-                                                format))))))))))))))
+                                                 :error "attachment processing enqueue failed"}
+                                                format)))
+                      (catch Exception _
+                        (http/format-response {:ok false
+                                               :error "attachment registry write failed"}
+                                              format)))))))))))))
 
 (defn attachments-get
   [{:keys [webdeps]}]
@@ -127,6 +148,7 @@
       (let [format (http/get-accept-format req)
             conv-id (http/parse-uuid (http/param req "id"))
             attachment-id (http/parse-uuid (http/param req "attachment_id"))
+            version (some-> (http/param req "version") str/lower-case)
             sender-id (message-logic/sender-id-from-request req)]
         (cond
           (not conv-id)
@@ -144,9 +166,13 @@
           (nil? minio)
           (http/format-response {:ok false :error "minio not configured"} format)
 
+          (not (or (nil? version) (= version "original") (= version "alt")))
+          (http/format-response {:ok false :error "invalid version"} format)
+
           :else
           (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
-                now-ms (System/currentTimeMillis)]
+                now-ms (System/currentTimeMillis)
+                alt-version? (= version "alt")]
             (cond
               (or (nil? row)
                   (not= conv-id (:conversation_id row)))
@@ -157,10 +183,20 @@
               {:status 404
                :body {:ok false :error "attachment expired"}}
 
+              (and alt-version?
+                   (not (str/starts-with? (or (:mime_type row) "") "image/")))
+              {:status 404
+               :body {:ok false :error "attachment variant not found"}}
+
               :else
-              (let [obj (p-storage/storage-get-bytes minio (:object_key row) {})
+              (let [object-key (if alt-version?
+                                 (logic/derive-alt-key (:object_key row))
+                                 (:object_key row))
+                    obj (p-storage/storage-get-bytes minio object-key {})
                     bytes (:bytes obj)
-                    mime-type (or (:mime_type row) "application/octet-stream")]
+                    mime-type (if alt-version?
+                                "image/jpeg"
+                                (or (:mime_type row) "application/octet-stream"))]
                 (cond
                   (and (:ok obj) (bytes? bytes))
                   {:status 200

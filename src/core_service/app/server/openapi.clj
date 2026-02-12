@@ -180,6 +180,10 @@
    [:filename {:optional true} [:string {:min 1 :max 255}]]
    [:kind {:optional true} [:enum "image" "voice" "file"]]])
 
+(def AttachmentGetQuerySchema
+  [:map
+   [:version {:optional true} [:enum "original" "alt"]]])
+
 (def AttachmentCreateRequestBody
   {:required true
    :description

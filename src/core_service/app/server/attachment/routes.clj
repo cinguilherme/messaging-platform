@@ -24,8 +24,10 @@
     {:openapi {:id api-docs/docs-id}
      :get {:tags ["attachments"]
            :summary "Get attachment bytes"
-           :description "Returns attachment binary payload for an attachment in the conversation."
-           :parameters {:path api-docs/PathConversationAttachmentIdSchema}
+           :description (str "Returns attachment binary payload for an attachment in the conversation.\n\n"
+                             "Use `version=alt` to fetch the generated low-resolution image placeholder.")
+           :parameters {:path api-docs/PathConversationAttachmentIdSchema
+                        :query api-docs/AttachmentGetQuerySchema}
            :openapi {:security [api-docs/api-key-and-bearer-security]}
            :responses {200 {:description "Attachment binary payload"
                             :content api-docs/AttachmentGetResponseContent}
