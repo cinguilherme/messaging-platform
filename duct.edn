@@ -117,6 +117,9 @@
    :auth #ig/ref :core-service.app.server.interceptors.auth/auth
    :user-context #ig/ref :core-service.app.server.interceptors.user-context/user-context
    :authz #ig/ref :core-service.app.server.interceptors.authz/authz
+   :json-body #ig/ref :core-service.app.server.interceptors.json-body/json-body
+   :coerce-exceptions #ig/ref :core-service.app.server.interceptors.coercion/coerce-exceptions
+   :coerce-request #ig/ref :core-service.app.server.interceptors.coercion/coerce-request
    :response-logger #ig/ref :core-service.app.server.interceptors.response-logger/response-logger}
 
   :core-service.app.server.reitit/handler
@@ -130,6 +133,9 @@
   :core-service.app.server.interceptors.cid/cid {}
   :core-service.app.server.interceptors.params/params {}
   :core-service.app.server.interceptors.format/format {}
+  :core-service.app.server.interceptors.json-body/json-body {}
+  :core-service.app.server.interceptors.coercion/coerce-exceptions {}
+  :core-service.app.server.interceptors.coercion/coerce-request {}
   :core-service.app.server.interceptors.user-context/user-context {}
   :core-service.app.server.interceptors.response-logger/response-logger {:logger #ig/ref :duct/logger}
   :core-service.app.server.interceptors.api-key/api-key {:keys #ig/ref :core-service.app.config.auth/api-keys
