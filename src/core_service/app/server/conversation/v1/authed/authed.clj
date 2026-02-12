@@ -4,6 +4,7 @@
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.conversation.v1.authed.logic :as logic]
             [core-service.app.server.http :as http]
+            [core-service.app.server.openapi :as api-docs]
             [core-service.app.server.message.authed :as message-authed]
             [core-service.app.server.message.routes :as message-routes]
             [core-service.app.server.receipt.authed :as receipt-authed]
@@ -134,9 +135,30 @@
 (defmethod ig/init-key :core-service.app.server.conversation.v1.authed/routes
   [_ {:keys [webdeps]}]
   ["/v1/conversations"
-   ["" {:post (conversations-create {:webdeps webdeps})
-        :get (conversations-list {:webdeps webdeps})}]
-   ["/:id" {:get (conversations-get {:webdeps webdeps})}]
+   ["" {:openapi {:id api-docs/docs-id}
+        :post {:tags ["conversations"]
+               :summary "Create conversation"
+               :parameters {:body msg-schema/ConversationCreateSchema}
+               :openapi {:security [api-docs/api-key-and-bearer-security]}
+               :responses {200 {:body api-docs/ConversationCreateResponseSchema}
+                           400 {:body api-docs/ErrorEnvelopeSchema}}
+               :handler (conversations-create {:webdeps webdeps})}
+        :get {:tags ["conversations"]
+              :summary "List conversations"
+              :description "Returns newest-first conversations. `cursor` must be the previous page `next_cursor` timestamp in milliseconds."
+              :parameters {:query api-docs/ConversationListQuerySchema}
+              :openapi {:security [api-docs/api-key-and-bearer-security]}
+              :responses {200 {:body api-docs/ConversationsListResponseSchema}
+                          400 {:body api-docs/ErrorEnvelopeSchema}}
+              :handler (conversations-list {:webdeps webdeps})}}]
+   ["/:id" {:openapi {:id api-docs/docs-id}
+            :get {:tags ["conversations"]
+                  :summary "Get conversation details"
+                  :parameters {:path api-docs/PathConversationIdSchema}
+                  :openapi {:security [api-docs/api-key-and-bearer-security]}
+                  :responses {200 {:body api-docs/ConversationDetailResponseSchema}
+                              400 {:body api-docs/ErrorEnvelopeSchema}}
+                  :handler (conversations-get {:webdeps webdeps})}}]
    (message-routes/routes {:webdeps webdeps})
-  (attachment-routes/routes {:webdeps webdeps})
+   (attachment-routes/routes {:webdeps webdeps})
    (receipt-routes/routes {:webdeps webdeps})])

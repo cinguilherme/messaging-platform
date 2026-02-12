@@ -16,11 +16,23 @@
    :leave (fn [ctx]
             (let [format (:request-format ctx)
                   resp   (:response ctx)]
-              (if (and (map? resp) 
-                       (not (contains? resp :status)) 
-                       (not (contains? resp :request))
-                       (not (:reitit.core/match resp)))
+              (cond
+                (and (map? resp)
+                     (not (contains? resp :status))
+                     (not (contains? resp :request))
+                     (not (:reitit.core/match resp)))
                 (assoc ctx :response (http/format-response resp format))
+
+                (and (map? resp)
+                     (contains? resp :status)
+                     (map? (:body resp)))
+                (let [formatted (http/format-response (:body resp) format)]
+                  (assoc ctx :response
+                         (-> resp
+                             (assoc :body (:body formatted))
+                             (update :headers merge (:headers formatted)))))
+
+                :else
                 ctx)))})
 
 (defmethod ig/init-key :core-service.app.server.interceptors.format/format

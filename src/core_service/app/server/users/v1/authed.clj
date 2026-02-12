@@ -6,6 +6,7 @@
             [integrant.core :as ig]
             [core-service.app.db.users :as users-db]
             [core-service.app.server.http :as http]
+            [core-service.app.server.openapi :as api-docs]
             [core-service.app.protocols :as protocols]
             [core-service.app.server.users.v1.adapers :as a.users]
             [core-service.app.config.webdeps]
@@ -144,7 +145,28 @@
 
 (defmethod ig/init-key :core-service.app.server.users.v1.authed/routes
   [_ {:keys [webdeps]}]
-  ["/v1/users"
-   ["/lookup" {:get (users-lookup {:webdeps webdeps})
-               :post (users-lookup-by-ids {:webdeps webdeps})}]
-   ["/me" {:get (users-me {:webdeps webdeps})}]])
+  ["/v1/users" {:openapi {:id api-docs/docs-id}}
+   ["/lookup"
+    {:get {:tags ["users"]
+           :summary "Lookup users"
+           :description "Lookup by `email` (Keycloak) or `username` (local profile cache). At least one query parameter is required."
+           :parameters {:query api-docs/UsersLookupQuerySchema}
+           :openapi {:security [api-docs/api-key-security]}
+           :responses {200 {:body api-docs/UsersItemsResponseSchema}
+                       400 {:body api-docs/ErrorEnvelopeSchema}}
+           :handler (users-lookup {:webdeps webdeps})}
+     :post {:tags ["users"]
+            :summary "Lookup users by ids"
+            :parameters {:body api-docs/UsersLookupByIdsRequestSchema}
+            :openapi {:security [api-docs/api-key-security]}
+            :responses {200 {:body api-docs/UsersItemsResponseSchema}
+                        400 {:body api-docs/ErrorEnvelopeSchema}}
+            :handler (users-lookup-by-ids {:webdeps webdeps})}}]
+   ["/me"
+    {:get {:tags ["users"]
+           :summary "Get current user"
+           :description "Resolves the current authenticated user profile."
+           :openapi {:security [api-docs/api-key-and-bearer-security]}
+           :responses {200 {:body api-docs/UserMeResponseSchema}
+                       401 {:body api-docs/ErrorEnvelopeSchema}}
+           :handler (users-me {:webdeps webdeps})}}]])

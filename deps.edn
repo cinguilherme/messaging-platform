@@ -17,6 +17,8 @@
         ;; Web server dependencies
         metosin/reitit {:mvn/version "0.10.0"}
         metosin/reitit-http {:mvn/version "0.10.0"}
+        fi.metosin/reitit-openapi {:mvn/version "0.10.0"}
+        metosin/reitit-swagger-ui {:mvn/version "0.10.0"}
         metosin/sieppari {:mvn/version "0.0.0-alpha13"}
         
         ;; Duct dependencies
