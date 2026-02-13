@@ -12,6 +12,9 @@
                                  "Supported payloads:\n"
                                  "- multipart/form-data with `file` or `image` field\n"
                                  "- raw binary body with Content-Type `image/*`, `audio/*`, or `application/octet-stream`\n\n"
+                                 "Image processing runs asynchronously. The API stores the original upload and generates:\n"
+                                 "- a low-res variant with a deterministic key suffix `-alt.jpg`\n"
+                                 "- an optimized standard variant for large images\n\n"
                                  "Download uploaded content via GET /v1/conversations/{id}/attachments/{attachment_id}.")
                :parameters {:path api-docs/PathConversationIdSchema
                             :query api-docs/AttachmentCreateQuerySchema}
@@ -25,7 +28,10 @@
      :get {:tags ["attachments"]
            :summary "Get attachment bytes"
            :description (str "Returns attachment binary payload for an attachment in the conversation.\n\n"
-                             "Use `version=alt` to fetch the generated low-resolution image placeholder.")
+                             "Image variants:\n"
+                             "- `version=original` (default): original attachment bytes\n"
+                             "- `version=alt`: generated low-resolution JPEG placeholder (`-alt.jpg` convention)\n\n"
+                             "Frontend recommendation: request `version=alt` first for fast placeholder rendering, then request `version=original`.")
            :parameters {:path api-docs/PathConversationAttachmentIdSchema
                         :query api-docs/AttachmentGetQuerySchema}
            :openapi {:security [api-docs/api-key-and-bearer-security]}

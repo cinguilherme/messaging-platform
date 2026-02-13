@@ -7,6 +7,9 @@
   (str "### Attachment URL Strategy\n"
        "- Upload and message APIs return attachment metadata with `attachment_id` and `object_key`.\n"
        "- Fetch media bytes with `GET /v1/conversations/{id}/attachments/{attachment_id}`.\n"
+       "- Image uploads generate a low-res variant using a deterministic key suffix: replace the original extension with `-alt.jpg`.\n"
+       "  Example: `attachments/image/123.png` -> `attachments/image/123-alt.jpg`.\n"
+       "- For image-first UX, clients can fetch `?version=alt` as the default placeholder and then fetch the original when needed.\n"
        "- `object_key` is internal storage metadata; clients should use API endpoints, not direct object paths."))
 
 (def openapi-info
