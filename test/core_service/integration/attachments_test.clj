@@ -63,7 +63,7 @@
                 :metrics nil
                 :processing {:optimize-threshold-bytes 1048576
                              :alt-max-dim 320
-                             :standard-max-dim 1280}}))
+                             :standard-max-dim 1920}}))
 
 (deftest attachments-upload-and-send-message
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
