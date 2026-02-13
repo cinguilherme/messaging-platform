@@ -1,5 +1,6 @@
 (ns core-service.integration.attachments-test
   (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [core-service.app.config.clients]
             [core-service.app.config.messaging]
@@ -64,6 +65,12 @@
         (do
           (Thread/sleep 25)
           (recur (inc attempt)))))))
+
+(defn- empty-head-body?
+  [body]
+  (or (nil? body)
+      (and (string? body) (str/blank? body))
+      (and (bytes? body) (zero? (alength ^bytes body)))))
 
 (defn- init-attachment-workers
   [minio-client]
@@ -400,6 +407,8 @@
                                                                             :attachment-workers attachment-workers-system}})
             get-handler (attachment-authed/attachments-get {:webdeps {:db db
                                                                       :minio minio-client}})
+            head-handler (attachment-authed/attachments-head {:webdeps {:db db
+                                                                        :minio minio-client}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             object-keys* (atom [])
@@ -432,6 +441,17 @@
                     _ (swap! object-keys* conj object-key alt-key)
                     original-stored (wait-for-object minio-client object-key)
                     alt-stored (wait-for-object minio-client alt-key)
+                    head-original-resp (head-handler {:request-method :head
+                                                      :params {:id (str conv-id)
+                                                               :attachment_id (str (:attachment_id attachment))}
+                                                      :auth/principal {:subject (str sender-id)
+                                                                       :tenant-id "tenant-1"}})
+                    head-alt-resp (head-handler {:request-method :head
+                                                 :params {:id (str conv-id)
+                                                          :attachment_id (str (:attachment_id attachment))
+                                                          :version "alt"}
+                                                 :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})
                     alt-resp (get-handler {:request-method :get
                                            :params {:id (str conv-id)
                                                     :attachment_id (str (:attachment_id attachment))
@@ -440,9 +460,28 @@
                                                             :tenant-id "tenant-1"}})]
                 (is (:ok original-stored))
                 (is (:ok alt-stored))
+                (is (= 200 (:status head-original-resp)))
+                (is (= (:mime_type attachment) (get-in head-original-resp [:headers "content-type"])))
+                (is (= (str (alength ^bytes (:bytes original-stored)))
+                       (get-in head-original-resp [:headers "content-length"])))
+                (is (empty-head-body? (:body head-original-resp)))
+                (is (= 200 (:status head-alt-resp)))
+                (is (= "image/jpeg" (get-in head-alt-resp [:headers "content-type"])))
+                (is (= (str (alength ^bytes (:bytes alt-stored)))
+                       (get-in head-alt-resp [:headers "content-length"])))
+                (is (empty-head-body? (:body head-alt-resp)))
                 (is (= 200 (:status alt-resp)))
                 (is (= "image/jpeg" (get-in alt-resp [:headers "content-type"])))
-                (is (bytes? (:body alt-resp))))))
+                (is (bytes? (:body alt-resp)))
+                (p-storage/storage-delete minio-client alt-key {})
+                (let [missing-alt-head (head-handler {:request-method :head
+                                                      :params {:id (str conv-id)
+                                                               :attachment_id (str (:attachment_id attachment))
+                                                               :version "alt"}
+                                                      :auth/principal {:subject (str sender-id)
+                                                                       :tenant-id "tenant-1"}})]
+                  (is (= 404 (:status missing-alt-head)))
+                  (is (empty-head-body? (:body missing-alt-head)))))))
 
           (let [upload-large (attach-handler {:request-method :post
                                               :headers {"accept" "application/json"
@@ -484,6 +523,72 @@
               (.delete small-file))
             (when (.exists large-file)
               (.delete large-file))
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
+(deftest attachments-head-returns-404-for-non-image-alt-and-missing-original
+  (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+        minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+    (if-not (helpers/minio-up? minio-client)
+      (is false "Minio not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            attachment-workers-system (init-attachment-workers minio-client)
+            attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                            :minio minio-client
+                                                                            :naming naming
+                                                                            :attachment-workers attachment-workers-system}})
+            head-handler (attachment-authed/attachments-head {:webdeps {:db db
+                                                                        :minio minio-client}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)
+            object-key* (atom nil)
+            payload-bytes (.getBytes "hello attachment" "UTF-8")
+            payload-file (write-temp-file! payload-bytes ".txt")]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (let [upload-resp (attach-handler {:request-method :post
+                                             :headers {"accept" "application/json"
+                                                       "content-type" "multipart/form-data"}
+                                             :params {:id (str conv-id)
+                                                      :kind "file"}
+                                             :multipart-params {"file" {:tempfile payload-file
+                                                                         :filename "payload.txt"
+                                                                         :content-type "text/plain"}}
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}})
+                upload-body (json/parse-string (:body upload-resp) true)]
+            (is (= 200 (:status upload-resp)))
+            (is (:ok upload-body))
+            (when (:ok upload-body)
+              (let [attachment (:attachment upload-body)
+                    object-key (:object_key attachment)
+                    _ (reset! object-key* object-key)
+                    _ (wait-for-object minio-client object-key)
+                    alt-head-resp (head-handler {:request-method :head
+                                                 :params {:id (str conv-id)
+                                                          :attachment_id (str (:attachment_id attachment))
+                                                          :version "alt"}
+                                                 :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})]
+                (is (= 404 (:status alt-head-resp)))
+                (is (empty-head-body? (:body alt-head-resp)))
+                (p-storage/storage-delete minio-client object-key {})
+                (let [missing-original-head (head-handler {:request-method :head
+                                                           :params {:id (str conv-id)
+                                                                    :attachment_id (str (:attachment_id attachment))
+                                                                    :version "original"}
+                                                           :auth/principal {:subject (str sender-id)
+                                                                            :tenant-id "tenant-1"}})]
+                  (is (= 404 (:status missing-original-head)))
+                  (is (empty-head-body? (:body missing-original-head)))))))
+          (finally
+            (when-let [object-key @object-key*]
+              (p-storage/storage-delete minio-client object-key {}))
+            (when (.exists payload-file)
+              (.delete payload-file))
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))

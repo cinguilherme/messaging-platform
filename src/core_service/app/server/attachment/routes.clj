@@ -25,6 +25,24 @@
                :handler (attachment-authed/attachments-create {:webdeps webdeps})}}]
    ["/:attachment_id"
     {:openapi {:id api-docs/docs-id}
+     :head {:tags ["attachments"]
+            :summary "Head attachment variant"
+            :description (str "Checks whether an attachment variant exists without downloading bytes.\n\n"
+                              "Supported versions:\n"
+                              "- `version=original` (default)\n"
+                              "- `version=alt` (`-alt.jpg` low-res image placeholder)\n\n"
+                              "Frontend recommendation: probe `version=alt` via HEAD before rendering placeholders.")
+            :parameters {:path api-docs/PathConversationAttachmentIdSchema
+                         :query api-docs/AttachmentGetQuerySchema}
+            :openapi {:security [api-docs/api-key-and-bearer-security]}
+            :responses {200 {:description "Attachment variant exists"
+                             :headers api-docs/AttachmentHeadResponseHeaders}
+                        400 {:description "Invalid parameters"}
+                        401 {:description "Invalid sender"}
+                        403 {:description "Not a conversation member"}
+                        404 {:description "Attachment or variant not found"}
+                        500 {:description "Attachment storage failure"}}
+            :handler (attachment-authed/attachments-head {:webdeps webdeps})}
      :get {:tags ["attachments"]
            :summary "Get attachment bytes"
            :description (str "Returns attachment binary payload for an attachment in the conversation.\n\n"

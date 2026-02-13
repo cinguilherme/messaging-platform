@@ -16,6 +16,7 @@
     (storage-delete [_ _ _] {:ok true})
     (storage-get-bytes [_ _ _] {:ok true :bytes (.getBytes "ok" "UTF-8")})
     (storage-put-bytes [_ _ _ _] {:ok true})
+    (storage-head [_ _ _] {:ok true :size 2 :content-type "text/plain"})
     (storage-list [_ _] {:ok true :items []})))
 
 (defn- tiny-png-bytes

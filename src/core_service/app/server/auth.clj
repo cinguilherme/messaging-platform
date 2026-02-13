@@ -43,6 +43,7 @@
     (and (conversation-messages? uri) (= method :post)) (write-scope)
     (and (conversation-attachments? uri) (= method :post)) (write-scope)
     (and (conversation-attachment-id? uri) (= method :get)) (read-scope)
+    (and (conversation-attachment-id? uri) (= method :head)) (read-scope)
     :else nil))
 
 (defmethod ig/init-key :core-service.app.server.auth/require-fn
