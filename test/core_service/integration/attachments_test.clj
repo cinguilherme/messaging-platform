@@ -54,6 +54,17 @@
           (Thread/sleep 25)
           (recur (inc attempt)))))))
 
+(defn- wait-for-object-where
+  [storage object-key pred]
+  (loop [attempt 0]
+    (let [result (p-storage/storage-get-bytes storage object-key {})]
+      (if (or (and (:ok result) (pred result))
+              (>= attempt 200))
+        result
+        (do
+          (Thread/sleep 25)
+          (recur (inc attempt)))))))
+
 (defn- init-attachment-workers
   [minio-client]
   (ig/init-key :core-service.app.workers.attachments/system
@@ -63,7 +74,9 @@
                 :metrics nil
                 :processing {:optimize-threshold-bytes 1048576
                              :alt-max-dim 320
-                             :standard-max-dim 1920}}))
+                             ;; Keep below test fixture dimensions (1400x1400)
+                             ;; so large-image optimization is guaranteed in integration tests.
+                             :standard-max-dim 1280}}))
 
 (deftest attachments-upload-and-send-message
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
@@ -451,7 +464,12 @@
                     object-key (:object_key attachment)
                     alt-key (attachment-logic/derive-alt-key object-key)
                     _ (swap! object-keys* conj object-key alt-key)
-                    original-stored (wait-for-object minio-client object-key)
+                    original-stored (wait-for-object-where
+                                     minio-client
+                                     object-key
+                                     (fn [result]
+                                       (< (alength ^bytes (:bytes result))
+                                          (alength ^bytes large-bytes))))
                     alt-stored (wait-for-object minio-client alt-key)
                     stored-size (alength ^bytes (:bytes original-stored))]
                 (is (:ok original-stored))
