@@ -2,7 +2,9 @@
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.metrics :as app-metrics]
             [core-service.app.server.attachment.logic :as attachment-logic]
+            [d-core.core.metrics.protocol :as metrics]
             [d-core.core.storage.protocol :as p-storage]
             [d-core.libs.workers :as workers]
             [duct.logger :as logger]
@@ -17,6 +19,10 @@
   {:optimize-threshold-bytes 1048576
    :alt-max-dim 320
    :standard-max-dim 1920})
+
+(defn- duration-seconds
+  [start-nanos]
+  (/ (double (- (System/nanoTime) start-nanos)) 1000000000.0))
 
 (defn- image-content-type?
   [value]
@@ -60,6 +66,54 @@
                        :variant variant
                        :error (.getMessage e)}))))))
 
+(defn- record-queue-metrics!
+  [metrics-component channel-id variant status duration]
+  (when (and (map? metrics-component) (:metrics metrics-component))
+    (let [metrics-api (:metrics metrics-component)
+          attachment-metrics (:attachment-workers metrics-component)]
+      (when-let [counter (:queue-total attachment-metrics)]
+        (metrics/inc! metrics-api
+                      (.labels counter (app-metrics/labels->array channel-id variant status))))
+      (when-let [hist (:queue-latency attachment-metrics)]
+        (metrics/observe! metrics-api
+                          (.labels hist (app-metrics/labels->array channel-id variant))
+                          duration)))))
+
+(defn- record-stage-metrics!
+  [metrics-component stage variant status]
+  (when (and (map? metrics-component) (:metrics metrics-component))
+    (let [metrics-api (:metrics metrics-component)
+          attachment-metrics (:attachment-workers metrics-component)]
+      (when-let [counter (:stage-total attachment-metrics)]
+        (metrics/inc! metrics-api
+                      (.labels counter (app-metrics/labels->array stage variant status)))))))
+
+(defn- enqueue!
+  [{:keys [channels components]} channel-id payload variant]
+  (let [start-nanos (System/nanoTime)
+        logger (:logger components)
+        metrics-component (:metrics components)
+        ch (get channels channel-id)]
+    (if-not ch
+      (do
+        (record-queue-metrics! metrics-component channel-id variant :missing-channel (duration-seconds start-nanos))
+        (when logger
+          (logger/log logger :warn ::attachment-enqueue-missing-channel
+                      {:channel channel-id
+                       :variant variant
+                       :attachment-id (:attachment-id payload)}))
+        false)
+      (let [callback (fn [accepted?]
+                       (let [status (if accepted? :ok :closed)]
+                         (record-queue-metrics! metrics-component channel-id variant status (duration-seconds start-nanos))
+                         (when (and logger (not accepted?))
+                           (logger/log logger :warn ::attachment-enqueue-failed
+                                       {:channel channel-id
+                                        :variant variant
+                                        :attachment-id (:attachment-id payload)
+                                        :reason :channel-closed}))))]
+        (boolean (async/put! ch payload callback))))))
+
 (defn- scaled-size
   [width height max-dim]
   (let [max-dim (long (or max-dim 0))]
@@ -98,17 +152,20 @@
 
 (defn image-storer
   [{:keys [components]}
-   {:keys [object-key bytes content-type variant attachment-id]}]
+  {:keys [object-key bytes content-type variant attachment-id]}]
   (let [storage (or (:storage components) (:minio components))
         content-type (or content-type "application/octet-stream")]
     (if-not storage
-      {:status :error
+      (do
+        (record-stage-metrics! (:metrics components) :store variant :error)
+        {:status :error
        :error "storage not configured"
        :variant variant
        :object-key object-key
-       :attachment-id attachment-id}
+       :attachment-id attachment-id})
       (let [result (p-storage/storage-put-bytes storage object-key bytes {:content-type content-type})
             status (if (:ok result) :stored :error)]
+        (record-stage-metrics! (:metrics components) :store variant status)
         (when (= status :stored)
           (maybe-update-optimized-metadata! components {:variant variant
                                                         :attachment-id attachment-id
@@ -154,6 +211,7 @@
        :object-key target-key
        :attachment-id attachment-id})
     (catch Exception e
+      (record-stage-metrics! (:metrics components) :resize variant :error)
       (when-let [log (:logger components)]
         (logger/log log :warn ::attachment-resize-failed
                     {:attachment-id attachment-id
@@ -173,44 +231,58 @@
   (let [processing (merge default-processing (:processing components))
         image? (image-kind? kind mime-type)
         size-bytes (long (or size-bytes (alength ^bytes bytes)))
-        resize-chan (get channels :attachments/resize)
-        store-chan (get channels :attachments/store)
         alt-key (attachment-logic/derive-alt-key object-key)
-        standard-format (content-type->format mime-type)]
-    ;; Store uploaded bytes first, then optionally overwrite with optimized bytes.
-    (async/put! store-chan {:attachment-id attachment-id
-                            :conversation-id conversation-id
-                            :object-key object-key
-                            :bytes bytes
-                            :content-type mime-type
-                            :variant :original})
-    (when image?
-      (async/put! resize-chan {:attachment-id attachment-id
-                               :conversation-id conversation-id
-                               :bytes bytes
-                               :variant :alt
-                               :max-dim (:alt-max-dim processing)
-                               :target-key alt-key
-                               :target-content-type "image/jpeg"
-                               :target-format "jpg"})
-      (when (and (> size-bytes (:optimize-threshold-bytes processing))
-                 standard-format)
-        (async/put! resize-chan {:attachment-id attachment-id
-                                 :conversation-id conversation-id
-                                 :bytes bytes
-                                 :variant :standard
-                                 :max-dim (:standard-max-dim processing)
-                                 :target-key object-key
-                                 :target-content-type mime-type
-                                 :target-format standard-format})))
-    {:status :queued
+        standard-format (content-type->format mime-type)
+        original-enqueued? (enqueue! {:channels channels :components components}
+                                     :attachments/store
+                                     {:attachment-id attachment-id
+                                      :conversation-id conversation-id
+                                      :object-key object-key
+                                      :bytes bytes
+                                      :content-type mime-type
+                                      :variant :original}
+                                     :original)
+        alt-enqueued? (when image?
+                        (enqueue! {:channels channels :components components}
+                                  :attachments/resize
+                                  {:attachment-id attachment-id
+                                   :conversation-id conversation-id
+                                   :bytes bytes
+                                   :variant :alt
+                                   :max-dim (:alt-max-dim processing)
+                                   :target-key alt-key
+                                   :target-content-type "image/jpeg"
+                                   :target-format "jpg"}
+                                  :alt))
+        standard-eligible? (and image?
+                                (> size-bytes (:optimize-threshold-bytes processing))
+                                (some? standard-format))
+        standard-enqueued? (when standard-eligible?
+                            (enqueue! {:channels channels :components components}
+                                      :attachments/resize
+                                      {:attachment-id attachment-id
+                                       :conversation-id conversation-id
+                                       :bytes bytes
+                                       :variant :standard
+                                       :max-dim (:standard-max-dim processing)
+                                       :target-key object-key
+                                       :target-content-type mime-type
+                                       :target-format standard-format}
+                                      :standard))]
+    (when (and (:logger components) (false? alt-enqueued?))
+      (logger/log (:logger components) :warn ::attachment-alt-queue-failed
+                  {:attachment-id attachment-id
+                   :conversation-id conversation-id
+                   :object-key object-key}))
+    {:status (if original-enqueued? :queued :error)
      :attachment-id attachment-id
      :conversation-id conversation-id
+     :enqueue {:original original-enqueued?
+               :alt (when image? alt-enqueued?)
+               :standard (when standard-eligible? standard-enqueued?)}
      :image? image?
      :alt-key (when image? alt-key)
-     :standard-optimization? (and image?
-                                  (> size-bytes (:optimize-threshold-bytes processing))
-                                  (some? standard-format))}))
+     :standard-optimization? standard-eligible?}))
 
 (def default-definition
   {:channels {:attachments/orchestrate {:buffer 64}

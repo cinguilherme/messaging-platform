@@ -3,7 +3,10 @@
             [core-service.app.db.attachments :as attachments-db]
             [core-service.app.workers.attachments :as attachment-workers]
             [d-core.core.storage.protocol :as p-storage]
-            [integrant.core :as ig]))
+            [integrant.core :as ig])
+  (:import (java.awt.image BufferedImage)
+           (java.io ByteArrayOutputStream)
+           (javax.imageio ImageIO)))
 
 (defn- mock-storage
   []
@@ -14,6 +17,13 @@
     (storage-get-bytes [_ _ _] {:ok true :bytes (.getBytes "ok" "UTF-8")})
     (storage-put-bytes [_ _ _ _] {:ok true})
     (storage-list [_ _] {:ok true :items []})))
+
+(defn- tiny-png-bytes
+  []
+  (let [image (BufferedImage. 1 1 BufferedImage/TYPE_INT_RGB)
+        out (ByteArrayOutputStream.)]
+    (ImageIO/write image "png" out)
+    (.toByteArray out)))
 
 (deftest attachment-workers-init-validates-storage
   (testing "fails when storage is missing"
@@ -69,3 +79,44 @@
              (:size-bytes (first @calls))))
       (is (string? (:checksum (first @calls))))
       (is (= 64 (count (:checksum (first @calls))))))))
+
+(deftest attachment-orchestrator-reports-queue-failures
+  (let [bytes (tiny-png-bytes)
+        closed-store (doto (clojure.core.async/chan 1) clojure.core.async/close!)
+        open-resize (clojure.core.async/chan 1)]
+    (testing "returns error when original store enqueue fails immediately"
+      (let [result (attachment-workers/attachment-orchestrator
+                    {:channels {:attachments/store closed-store
+                                :attachments/resize open-resize}
+                     :components {:processing attachment-workers/default-processing
+                                  :logger nil
+                                  :metrics nil}}
+                    {:attachment-id #uuid "00000000-0000-0000-0000-000000000100"
+                     :conversation-id #uuid "00000000-0000-0000-0000-000000000101"
+                     :object-key "attachments/image/a.png"
+                     :bytes bytes
+                     :mime-type "image/png"
+                     :kind :image})]
+        (is (= :error (:status result)))
+        (is (false? (get-in result [:enqueue :original])))))
+    (clojure.core.async/close! open-resize))
+  (let [bytes (tiny-png-bytes)
+        open-store (clojure.core.async/chan 1)
+        closed-resize (doto (clojure.core.async/chan 1) clojure.core.async/close!)]
+    (testing "continues with queued original and exposes failed alt enqueue"
+      (let [result (attachment-workers/attachment-orchestrator
+                    {:channels {:attachments/store open-store
+                                :attachments/resize closed-resize}
+                     :components {:processing attachment-workers/default-processing
+                                  :logger nil
+                                  :metrics nil}}
+                    {:attachment-id #uuid "00000000-0000-0000-0000-000000000110"
+                     :conversation-id #uuid "00000000-0000-0000-0000-000000000111"
+                     :object-key "attachments/image/b.png"
+                     :bytes bytes
+                     :mime-type "image/png"
+                     :kind :image})]
+        (is (= :queued (:status result)))
+        (is (true? (get-in result [:enqueue :original])))
+        (is (false? (get-in result [:enqueue :alt])))))
+    (clojure.core.async/close! open-store)))

@@ -35,6 +35,19 @@
                                            :help "Worker errors"
                                            :labels [:worker :kind]})})
 
+(defn- attachment-worker-metrics
+  [metrics]
+  {:queue-total (metrics/counter metrics {:name :attachment_worker_queue_total
+                                          :help "Attachment worker internal queue outcomes"
+                                          :labels [:channel :variant :status]})
+   :queue-latency (metrics/histogram metrics {:name :attachment_worker_queue_latency_seconds
+                                              :help "Attachment worker queue enqueue latency in seconds"
+                                              :labels [:channel :variant]
+                                              :buckets [0.0005 0.001 0.005 0.01 0.025 0.05 0.1 0.25 0.5 1 2]})
+   :stage-total (metrics/counter metrics {:name :attachment_worker_stage_total
+                                          :help "Attachment worker stage outcomes"
+                                          :labels [:stage :variant :status]})})
+
 (defn- segment-metrics
   [metrics]
   {:flush-total (metrics/counter metrics {:name :segment_flush_total
@@ -152,6 +165,7 @@
   [_ {:keys [metrics]}]
   (let [http (http-metrics metrics)
         workers (worker-metrics metrics)
+        attachment-workers (attachment-worker-metrics metrics)
         segments (segment-metrics metrics)
         redis (redis-metrics metrics)
         consumers (consumer-metrics metrics)]
@@ -159,6 +173,7 @@
      :registry (metrics/registry metrics)
      :http http
      :workers workers
+     :attachment-workers attachment-workers
      :segments segments
      :redis redis
      :consumers consumers
