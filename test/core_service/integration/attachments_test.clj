@@ -7,7 +7,6 @@
             [core-service.app.server.attachment.authed :as attachment-authed]
             [core-service.app.server.attachment.logic :as attachment-logic]
             [core-service.app.server.conversation.v1.authed.authed :as message-authed]
-            [core-service.app.workers.attachments :as attachment-workers]
             [core-service.app.workers.attachment-retention :as attachment-retention]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
