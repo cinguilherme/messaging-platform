@@ -1,6 +1,7 @@
 (ns core-service.app.workers.attachments
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
+            [core-service.app.db.attachments :as attachments-db]
             [core-service.app.server.attachment.logic :as attachment-logic]
             [d-core.core.storage.protocol :as p-storage]
             [d-core.libs.workers :as workers]
@@ -9,6 +10,7 @@
   (:import (java.awt RenderingHints)
            (java.awt.image BufferedImage)
            (java.io ByteArrayInputStream ByteArrayOutputStream)
+           (java.security MessageDigest)
            (javax.imageio ImageIO)))
 
 (def default-processing
@@ -35,6 +37,28 @@
     "image/gif" "gif"
     "image/webp" "webp"
     nil))
+
+(defn- sha256-hex
+  [^bytes bytes]
+  (let [digest (MessageDigest/getInstance "SHA-256")
+        hash-bytes (.digest digest bytes)]
+    (apply str (map (fn [b] (format "%02x" (bit-and b 0xff))) hash-bytes))))
+
+(defn- maybe-update-optimized-metadata!
+  [{:keys [db logger]} {:keys [variant attachment-id bytes]}]
+  (when (and db (= variant :standard) attachment-id (bytes? bytes))
+    (try
+      (attachments-db/update-attachment-storage-metadata!
+       db
+       {:attachment-id attachment-id
+        :size-bytes (alength ^bytes bytes)
+        :checksum (sha256-hex bytes)})
+      (catch Exception e
+        (when logger
+          (logger/log logger :warn ::attachment-metadata-update-failed
+                      {:attachment-id attachment-id
+                       :variant variant
+                       :error (.getMessage e)}))))))
 
 (defn- scaled-size
   [width height max-dim]
@@ -85,6 +109,10 @@
        :attachment-id attachment-id}
       (let [result (p-storage/storage-put-bytes storage object-key bytes {:content-type content-type})
             status (if (:ok result) :stored :error)]
+        (when (= status :stored)
+          (maybe-update-optimized-metadata! components {:variant variant
+                                                        :attachment-id attachment-id
+                                                        :bytes bytes}))
         (when-let [log (:logger components)]
           (logger/log log (if (= status :stored) :debug :warn) ::attachment-store
                       {:attachment-id attachment-id
@@ -222,6 +250,7 @@
                              :storage-type (some-> storage class str)})))
         components {:logger logger
                     :storage storage
+                    :db (:db webdeps)
                     :metrics (or metrics (:metrics webdeps))
                     :observability (or metrics (:metrics webdeps))
                     :processing (merge default-processing processing)}]

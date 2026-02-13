@@ -1,6 +1,7 @@
 (ns core-service.unit.attachment-workers-test
   (:require [clojure.test :refer [deftest is testing]]
-            [core-service.app.workers.attachments]
+            [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.workers.attachments :as attachment-workers]
             [d-core.core.storage.protocol :as p-storage]
             [integrant.core :as ig]))
 
@@ -39,3 +40,32 @@
       (is (map? system))
       (is (fn? (:stop! system)))
       (ig/halt-key! :core-service.app.workers.attachments/system system))))
+
+(deftest image-storer-updates-db-metadata-only-for-standard-variant
+  (let [calls (atom [])
+        bytes (.getBytes "optimized-image-bytes" "UTF-8")
+        ctx {:components {:storage (mock-storage)
+                          :db :db
+                          :logger nil}}]
+    (with-redefs [attachments-db/update-attachment-storage-metadata!
+                  (fn [_db args]
+                    (swap! calls conj args)
+                    {:updated 1})]
+      (attachment-workers/image-storer ctx {:attachment-id #uuid "00000000-0000-0000-0000-000000000001"
+                                            :object-key "attachments/image/a.jpg"
+                                            :bytes bytes
+                                            :content-type "image/jpeg"
+                                            :variant :standard})
+      (attachment-workers/image-storer ctx {:attachment-id #uuid "00000000-0000-0000-0000-000000000001"
+                                            :object-key "attachments/image/a.jpg"
+                                            :bytes bytes
+                                            :content-type "image/jpeg"
+                                            :variant :original}))
+    (testing "db update happens once, only for :standard overwrite"
+      (is (= 1 (count @calls)))
+      (is (= #uuid "00000000-0000-0000-0000-000000000001"
+             (:attachment-id (first @calls))))
+      (is (= (alength ^bytes bytes)
+             (:size-bytes (first @calls))))
+      (is (string? (:checksum (first @calls))))
+      (is (= 64 (count (:checksum (first @calls))))))))

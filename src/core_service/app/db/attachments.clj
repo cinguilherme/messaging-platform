@@ -77,3 +77,10 @@
   [db {:keys [attachment-id]}]
   (sql/delete! db {:table :attachments
                    :where {:attachment_id attachment-id}}))
+
+(defn update-attachment-storage-metadata!
+  [db {:keys [attachment-id size-bytes checksum]}]
+  (sql/update! db {:size_bytes (long size-bytes)
+                   :checksum checksum}
+               {:table :attachments
+                :where {:attachment_id attachment-id}}))
