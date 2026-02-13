@@ -211,6 +211,15 @@
   (let [webdeps (or webdeps {})
         logger (or logger (:logger webdeps))
         storage (or (:storage webdeps) (:minio webdeps))
+        _ (when-not (some? storage)
+            (throw (ex-info "attachment workers storage not configured"
+                            {:component :core-service.app.workers.attachments/system
+                             :reason :missing-storage})))
+        _ (when-not (satisfies? p-storage/StorageProtocol storage)
+            (throw (ex-info "attachment workers storage does not implement StorageProtocol"
+                            {:component :core-service.app.workers.attachments/system
+                             :reason :invalid-storage
+                             :storage-type (some-> storage class str)})))
         components {:logger logger
                     :storage storage
                     :metrics (or metrics (:metrics webdeps))
