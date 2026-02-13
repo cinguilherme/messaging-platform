@@ -49,6 +49,12 @@
         ext (or ext "bin")]
     (str prefix (name kind) "/" (UUID/randomUUID) "." ext)))
 
+(defn derive-alt-key
+  [object-key]
+  (when object-key
+    (let [base (str/replace (str object-key) #"\.[^./]+$" "")]
+      (str base "-alt.jpg"))))
+
 (defn- sha256-hex
   [^bytes bytes]
   (let [digest (MessageDigest/getInstance "SHA-256")
@@ -78,14 +84,15 @@
       nil)))
 
 (defn prepare-attachment
-  [{:keys [bytes content-type filename kind attachments-prefix source]}]
-  (let [content-type (or content-type "application/octet-stream")
+  [{:keys [bytes content-type filename kind attachments-prefix source
+           expected-size-bytes expected-mime-type]}]
+  (let [content-type (or expected-mime-type content-type "application/octet-stream")
         kind (resolve-kind kind content-type)
         ext (content-type->ext content-type)
         object-key (build-object-key {:prefix attachments-prefix
                                        :kind kind
                                        :ext ext})
-        size-bytes (alength ^bytes bytes)
+        size-bytes (long (or expected-size-bytes (alength ^bytes bytes)))
         checksum (sha256-hex bytes)
         image (when (= kind :image) (image-dimensions bytes))
         voice-duration (when (= kind :voice) (voice-duration-ms bytes))]
@@ -94,17 +101,17 @@
       {:ok false :error "invalid image payload"}
 
       :else
-            (let [base {:attachment_id (UUID/randomUUID)
-              :object_key object-key
-              :mime_type content-type
-              :size_bytes size-bytes
-              :checksum checksum
-              :meta {:filename filename
-                :kind kind
-                :upload_source source}}
-             attachment (cond-> base
-                image (assoc :image image)
-                voice-duration (assoc :voice {:duration_ms voice-duration}))]
-         {:ok true
-          :object-key object-key
-          :attachment attachment}))))
+      (let [base {:attachment_id (UUID/randomUUID)
+                  :object_key object-key
+                  :mime_type content-type
+                  :size_bytes size-bytes
+                  :checksum checksum
+                  :meta {:filename filename
+                         :kind kind
+                         :upload_source source}}
+            attachment (cond-> base
+                         image (assoc :image image)
+                         voice-duration (assoc :voice {:duration_ms voice-duration}))]
+        {:ok true
+         :object-key object-key
+         :attachment attachment}))))

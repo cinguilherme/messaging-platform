@@ -28,9 +28,7 @@
   [payload-att row]
   (and (= (:attachment_id payload-att) (:attachment_id row))
        (= (:object_key payload-att) (:object_key row))
-       (= (:mime_type payload-att) (:mime_type row))
-       (= (long (:size_bytes payload-att)) (long (:size_bytes row)))
-       (= (:checksum payload-att) (:checksum row))))
+       (= (:mime_type payload-att) (:mime_type row))))
 
 (defn- validate-message-attachments
   [db conv-id attachments]

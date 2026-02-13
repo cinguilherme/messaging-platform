@@ -5,7 +5,8 @@
 
 (defrecord WebDeps [logger db metrics producer consumer storage
                     token-client keycloak redis streams naming minio segments
-                    idempotency logging receipt attachment-retention])
+                    idempotency logging receipt attachment-retention
+                    attachment-workers])
 
 (defmethod ig/init-key :core-service.app.config.webdeps/webdeps
   [_ deps]

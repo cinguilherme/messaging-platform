@@ -65,7 +65,7 @@
         cutoff-ts (or (->timestamp cutoff)
                       (java.sql.Timestamp. (System/currentTimeMillis)))]
     (sql/execute! db
-                  [(str "SELECT attachment_id, conversation_id, object_key, expires_at "
+                  [(str "SELECT attachment_id, conversation_id, object_key, mime_type, expires_at "
                         "FROM attachments "
                         "WHERE expires_at <= ? "
                         "ORDER BY expires_at ASC "
@@ -77,3 +77,10 @@
   [db {:keys [attachment-id]}]
   (sql/delete! db {:table :attachments
                    :where {:attachment_id attachment-id}}))
+
+(defn update-attachment-storage-metadata!
+  [db {:keys [attachment-id size-bytes checksum]}]
+  (sql/update! db {:size_bytes (long size-bytes)
+                   :checksum checksum}
+               {:table :attachments
+                :where {:attachment_id attachment-id}}))
