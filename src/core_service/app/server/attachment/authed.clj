@@ -9,7 +9,9 @@
             [d-core.core.storage.protocol :as p-storage]
             [d-core.libs.workers :as workers]
             [malli.core :as m]
-            [malli.error :as me]))
+            [malli.error :as me])
+  (:import (java.time ZoneOffset)
+           (java.time.format DateTimeFormatter)))
 
 (def ^:private default-attachment-max-age-ms 2592000000)
 
@@ -35,6 +37,12 @@
         (= error-code "NoSuchKey")
         (= error-code "NotFound")
         (= 404 status))))
+
+(defn- format-http-date
+  [value]
+  (when (instance? java.util.Date value)
+    (.format DateTimeFormatter/RFC_1123_DATE_TIME
+             (.atZone (.toInstant ^java.util.Date value) ZoneOffset/UTC))))
 
 (defn attachments-create
   [{:keys [webdeps]}]
@@ -212,3 +220,74 @@
                   :else
                   {:status 500
                    :body {:ok false :error "attachment fetch failed"}})))))))))
+
+(defn attachments-head
+  [{:keys [webdeps]}]
+  (let [{:keys [db minio]} webdeps]
+    (fn [req]
+      (let [conv-id (http/parse-uuid (http/param req "id"))
+            attachment-id (http/parse-uuid (http/param req "attachment_id"))
+            version (some-> (http/param req "version") str/lower-case)
+            sender-id (message-logic/sender-id-from-request req)]
+        (cond
+          (not conv-id)
+          {:status 400 :body nil}
+
+          (nil? attachment-id)
+          {:status 400 :body nil}
+
+          (nil? sender-id)
+          {:status 401 :body nil}
+
+          (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+          {:status 403 :body nil}
+
+          (nil? minio)
+          {:status 500 :body nil}
+
+          (not (or (nil? version) (= version "original") (= version "alt")))
+          {:status 400 :body nil}
+
+          :else
+          (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
+                now-ms (System/currentTimeMillis)
+                alt-version? (= version "alt")]
+            (cond
+              (or (nil? row)
+                  (not= conv-id (:conversation_id row)))
+              {:status 404 :body nil}
+
+              (attachment-row-expired? row now-ms)
+              {:status 404 :body nil}
+
+              (and alt-version?
+                   (not (str/starts-with? (or (:mime_type row) "") "image/")))
+              {:status 404 :body nil}
+
+              :else
+              (let [object-key (if alt-version?
+                                 (logic/derive-alt-key (:object_key row))
+                                 (:object_key row))
+                    obj (p-storage/storage-head minio object-key {})
+                    mime-type-fallback (if alt-version?
+                                         "image/jpeg"
+                                         (or (:mime_type row) "application/octet-stream"))
+                    content-type (or (:content-type obj) mime-type-fallback)
+                    content-length (or (:size obj) 0)
+                    etag (:etag obj)
+                    last-modified (format-http-date (:last-modified obj))]
+                (cond
+                  (:ok obj)
+                  {:status 200
+                   :headers (cond-> {"content-type" content-type
+                                     "content-length" (str content-length)
+                                     "cache-control" "private, max-age=60"}
+                              (seq etag) (assoc "etag" etag)
+                              (seq last-modified) (assoc "last-modified" last-modified))
+                   :body nil}
+
+                  (missing-object? obj)
+                  {:status 404 :body nil}
+
+                  :else
+                  {:status 500 :body nil})))))))))

@@ -8,7 +8,13 @@
   "Create a mock StorageProtocol that returns `result` for storage-get-bytes."
   [result]
   (reify p-storage/StorageProtocol
-    (storage-get-bytes [_ _ _] result)))
+    (storage-get [_ _ _] {:ok false :error "unsupported"})
+    (storage-put [_ _ _ _] {:ok false :error "unsupported"})
+    (storage-delete [_ _ _] {:ok false :error "unsupported"})
+    (storage-get-bytes [_ _ _] result)
+    (storage-put-bytes [_ _ _ _] {:ok false :error "unsupported"})
+    (storage-head [_ _ _] {:ok false :error "unsupported"})
+    (storage-list [_ _] {:ok false :error "unsupported"})))
 
 (deftest fetch-messages-prunes-missing-segment
   (let [conv-id (java.util.UUID/randomUUID)

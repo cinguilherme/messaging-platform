@@ -7,9 +7,10 @@
   (str "### Attachment URL Strategy\n"
        "- Upload and message APIs return attachment metadata with `attachment_id` and `object_key`.\n"
        "- Fetch media bytes with `GET /v1/conversations/{id}/attachments/{attachment_id}`.\n"
+       "- Probe variant availability with `HEAD /v1/conversations/{id}/attachments/{attachment_id}`.\n"
        "- Image uploads generate a low-res variant using a deterministic key suffix: replace the original extension with `-alt.jpg`.\n"
        "  Example: `attachments/image/123.png` -> `attachments/image/123-alt.jpg`.\n"
-       "- For image-first UX, clients can fetch `?version=alt` as the default placeholder and then fetch the original when needed.\n"
+       "- For image-first UX, clients can `HEAD ?version=alt` for readiness checks, then `GET ?version=alt` for placeholder rendering, and finally fetch the original when needed.\n"
        "- `object_key` is internal storage metadata; clients should use API endpoints, not direct object paths."))
 
 (def openapi-info
@@ -213,6 +214,18 @@
   {"image/*" {:schema [:string {:format "binary"}]}
    "audio/*" {:schema [:string {:format "binary"}]}
    "application/octet-stream" {:schema [:string {:format "binary"}]}})
+
+(def AttachmentHeadResponseHeaders
+  {"Content-Type" {:description "Attachment media type."
+                   :schema {:type "string"}}
+   "Content-Length" {:description "Attachment byte size."
+                     :schema {:type "integer" :format "int64" :minimum 0}}
+   "Cache-Control" {:description "Cache policy for authenticated attachment checks."
+                    :schema {:type "string"}}
+   "ETag" {:description "Opaque entity tag when available from storage."
+           :schema {:type "string"}}
+   "Last-Modified" {:description "Last modification timestamp in RFC 1123 format when available."
+                    :schema {:type "string"}}})
 
 (def AttachmentCreateResponseSchema
   [:map
