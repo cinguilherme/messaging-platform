@@ -28,3 +28,17 @@
                   #(car/wcar (redis-lib/conn redis)
                      (car/hgetall key)))]
     (apply hash-map entries)))
+
+(defn batch-get-receipts
+  [{:keys [redis naming metrics]} {:keys [conversation-id message-ids]}]
+  (if (empty? message-ids)
+    {}
+    (let [keys (mapv #(receipt-key naming conversation-id %) message-ids)
+          entries-by-key (app-metrics/with-redis metrics :hgetall_batch
+                          #(car/wcar (redis-lib/conn redis)
+                             (mapv car/hgetall keys)))]
+      (reduce-kv
+       (fn [acc idx message-id]
+         (assoc acc message-id (apply hash-map (nth entries-by-key idx))))
+       {}
+       message-ids))))

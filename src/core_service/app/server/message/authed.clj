@@ -1,8 +1,10 @@
 (ns core-service.app.server.message.authed
-  (:require [core-service.app.db.attachments :as attachments-db]
+  (:require [clojure.string :as str]
+            [core-service.app.db.attachments :as attachments-db]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.libs.redis :as redis-lib]
             [core-service.app.observability.logging :as obs-log]
+            [core-service.app.redis.receipts :as receipts]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.message.logic :as logic]
             [core-service.app.server.http :as http]
@@ -55,6 +57,41 @@
                                               (canonical-attachment (get rows-by-id (:attachment_id payload-att))))
                                             attachments)}
               {:ok false :error "invalid attachment reference"})))))))
+
+(defn- has-foreign-receipt?
+  [entries prefix sender-id]
+  (let [prefix-len (count prefix)
+        sender (str sender-id)]
+    (boolean
+     (some (fn [field]
+             (and (string? field)
+                  (str/starts-with? field prefix)
+                  (not= (subs field prefix-len) sender)))
+           (keys entries)))))
+
+(defn- enrich-message-statuses
+  [redis naming metrics conversation-id requester-id messages]
+  (let [own-message-ids (->> messages
+                             (filter #(= requester-id (:sender_id %)))
+                             (map :message_id)
+                             (remove nil?)
+                             vec)
+        receipts-by-message-id (receipts/batch-get-receipts
+                                {:redis redis
+                                 :naming naming
+                                 :metrics metrics}
+                                {:conversation-id conversation-id
+                                 :message-ids own-message-ids})]
+    (mapv (fn [message]
+            (if (not= requester-id (:sender_id message))
+              message
+              (let [entries (get receipts-by-message-id (:message_id message) {})
+                    status (cond
+                             (has-foreign-receipt? entries "read:" requester-id) "read"
+                             (has-foreign-receipt? entries "delivered:" requester-id) "delivered"
+                             :else "sent")]
+                (assoc message :status status))))
+          messages)))
 
 (defn messages-create
   [{:keys [webdeps]}]
@@ -159,7 +196,7 @@
 
 (defn messages-list
   [{:keys [webdeps]}]
-  (let [{:keys [db streams minio naming segments metrics]} webdeps]
+  (let [{:keys [db streams minio redis naming segments metrics]} webdeps]
     (fn [req]
       (let [format (http/get-accept-format req)
             conv-id (http/parse-uuid (http/param req "id"))
@@ -206,4 +243,7 @@
                                           :token-cursor token-cursor
                                           :limit limit
                                           :direction direction})]
-            (logic/format-messages-response format conv-id messages next-cursor)))))))
+            (logic/format-messages-response format
+                                           conv-id
+                                           (enrich-message-statuses redis naming metrics conv-id sender-id messages)
+                                           next-cursor)))))))

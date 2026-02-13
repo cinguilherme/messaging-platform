@@ -1,10 +1,12 @@
 (ns core-service.app.server.receipt.authed
   (:require [core-service.app.db.conversations :as conversations-db]
+            [core-service.app.libs.redis :as redis-lib]
             [core-service.app.redis.receipts :as receipts]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.receipt.logic :as logic]
             [core-service.app.server.http :as http]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [taoensso.carmine :as car]))
 
 (defn receipts-create
   [{:keys [webdeps]}]
@@ -34,6 +36,14 @@
                                :user-id sender-id
                                :receipt-type (:receipt_type data)
                                :at (:at data)})
+            (let [pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
+                  event {:kind :receipt
+                         :receipt_type (name (:receipt_type data))
+                         :message_id (str (:message_id data))
+                         :user_id (str sender-id)
+                         :at (or (:at data) (System/currentTimeMillis))}]
+              (car/wcar (redis-lib/conn redis)
+                (car/publish pubsub-ch (pr-str event))))
             (http/format-response {:ok true
                                    :conversation_id (str conv-id)
                                    :message_id (str (:message_id data))
