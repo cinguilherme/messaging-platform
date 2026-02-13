@@ -65,7 +65,7 @@
         cutoff-ts (or (->timestamp cutoff)
                       (java.sql.Timestamp. (System/currentTimeMillis)))]
     (sql/execute! db
-                  [(str "SELECT attachment_id, conversation_id, object_key, expires_at "
+                  [(str "SELECT attachment_id, conversation_id, object_key, mime_type, expires_at "
                         "FROM attachments "
                         "WHERE expires_at <= ? "
                         "ORDER BY expires_at ASC "

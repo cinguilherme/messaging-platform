@@ -266,9 +266,11 @@
               (let [attachment (:attachment upload-body)
                     attachment-id (java.util.UUID/fromString (:attachment_id attachment))
                     object-key (:object_key attachment)
+                    alt-key (attachment-logic/derive-alt-key object-key)
                     _ (reset! attachment-id* attachment-id)
                     _ (reset! object-key* object-key)
                     _ (wait-for-object minio-client object-key)
+                    _ (wait-for-object minio-client alt-key)
                     expired-at (java.sql.Timestamp. (- (System/currentTimeMillis) 2000))]
                 (sql/execute! db ["UPDATE attachments SET expires_at = ? WHERE attachment_id = ?"
                                   expired-at attachment-id]
@@ -278,12 +280,14 @@
                                                              :retention {:max-age-ms 1
                                                                          :batch-size 10}})
                       obj (p-storage/storage-get-bytes minio-client object-key {})
+                      alt-obj (p-storage/storage-get-bytes minio-client alt-key {})
                       row (first (sql/select db {:table :attachments
                                                  :where {:attachment_id attachment-id}}))]
-                  (testing "worker deletes expired attachment object and row"
+                  (testing "worker deletes expired attachment original/alt objects and row"
                     (is (= :ok (:status result)))
                     (is (= 1 (:deleted result)))
                     (is (false? (:ok obj)))
+                    (is (false? (:ok alt-obj)))
                     (is (nil? row)))))))
           (finally
             (when-let [object-key @object-key*]
@@ -336,9 +340,11 @@
               (let [attachment (:attachment upload-body)
                     attachment-id (java.util.UUID/fromString (:attachment_id attachment))
                     object-key (:object_key attachment)
+                    alt-key (attachment-logic/derive-alt-key object-key)
                     _ (reset! attachment-id* attachment-id)
                     _ (reset! object-key* object-key)
-                    _ (wait-for-object minio-client object-key)]
+                    _ (wait-for-object minio-client object-key)
+                    _ (wait-for-object minio-client alt-key)]
                 ;; Wait for the attachment row TTL to pass.
                 (Thread/sleep 80)
                 (let [result (attachment-retention/cleanup! {:db db
@@ -347,12 +353,14 @@
                                                              :retention {:max-age-ms 60000
                                                                          :batch-size 10}})
                       obj (p-storage/storage-get-bytes minio-client object-key {})
+                      alt-obj (p-storage/storage-get-bytes minio-client alt-key {})
                       row (first (sql/select db {:table :attachments
                                                  :where {:attachment_id attachment-id}}))]
                   (testing "cleanup removes row/object once expires_at passes"
                     (is (= :ok (:status result)))
                     (is (= 1 (:deleted result)))
                     (is (false? (:ok obj)))
+                    (is (false? (:ok alt-obj)))
                     (is (nil? row)))))))
           (finally
             (when-let [object-key @object-key*]
