@@ -70,6 +70,25 @@
 
 (def ^:private default-conversation-item-timeout-ms 10000)
 
+(defn- futures->items [logger item-timeout-ms sender-id profiles futures]
+  (util/ltap logger ::conversations-list-items
+             (mapv (fn [{:keys [row member-ids] f :future}]
+                     (let [result (deref f item-timeout-ms ::timeout)]
+                       (if (= result ::timeout)
+                         (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
+                             (future-cancel f)
+                             (logic/conversation-item-fallback row sender-id member-ids profiles))
+                         result)))
+                   futures)))
+
+(defn- rows->futures [members-by-conv components sender-id profiles rows]
+  (mapv (fn [row]
+          (let [mids (get members-by-conv (:id row))]
+            {:row row
+             :member-ids mids
+             :future (future (logic/conversation-item components row sender-id mids profiles))}))
+        rows))
+
 (defn conversations-list
   [{:keys [webdeps]}]
   (let [{:keys [db token-client keycloak logger] :as components} webdeps
@@ -95,21 +114,8 @@
                 members-by-conv (util/ltap logger ::conversations-list-members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids}))
                 member-ids (util/ltap logger ::conversations-list-member-ids (->> members-by-conv vals (mapcat identity) distinct ttap))
                 profiles (util/ltap logger ::conversations-list-profiles (logic/resolve-member-profiles db token-client keycloak member-ids))
-                futures (mapv (fn [row]
-                                (let [mids (get members-by-conv (:id row))]
-                                  {:row row
-                                   :member-ids mids
-                                   :future (future (logic/conversation-item components row sender-id mids profiles))}))
-                              rows)
-                items (util/ltap logger ::conversations-list-items
-                                 (mapv (fn [{:keys [row member-ids] f :future}]
-                                         (let [result (deref f item-timeout-ms ::timeout)]
-                                           (if (= result ::timeout)
-                                             (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
-                                                 (future-cancel f)
-                                                 (logic/conversation-item-fallback row sender-id member-ids profiles))
-                                             result)))
-                                       futures))
+                futures (rows->futures members-by-conv components sender-id profiles rows)
+                items (futures->items logger item-timeout-ms sender-id profiles futures)
                 next-cursor (util/ltap logger ::conversations-list-next-cursor (when (= (count rows) limit)
                                                                                  (some-> (last rows) :created_at (.getTime) str)))
                 _ (logger/log logger ::conversations-list-end-let items next-cursor)]

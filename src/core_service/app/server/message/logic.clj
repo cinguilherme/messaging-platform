@@ -18,6 +18,8 @@
   (p-stream/next-sequence! streams key))
 
 (defn coerce-message-create
+  "Coerces raw message creation data into internal types, 
+  converting strings to keywords and UUIDs where necessary."
   [data]
   (cond-> (update data :type (fn [v] (if (string? v) (keyword v) v)))
     (contains? data :attachments)
@@ -33,12 +35,17 @@
                       atts))))))
 
 (defn normalize-idempotency-key
+  "Trims and ensures the idempotency key is a non-blank string. 
+  Returns nil if the value is empty or only whitespace."
   [value]
   (let [value (some-> value str str/trim)]
     (when (and value (not (str/blank? value)))
       value)))
 
 (defn idempotency-key-from-request
+  "Extracts and validates an idempotency key from either the request headers 
+  or the message data. Returns a map with :ok status and the key or a 
+  failure reason."
   [req data {:keys [header require? allow-client-ref? max-length]}]
   (let [header-name (str/lower-case (or header "idempotency-key"))
         header-key (normalize-idempotency-key (get-in req [:headers header-name]))
@@ -57,6 +64,8 @@
                        client-key :client-ref)})))
 
 (defn decode-message
+  "Decodes a message payload from bytes or string into a Clojure map 
+  using EDN reader."
   [payload]
   (cond
     (bytes? payload) (edn/read-string (String. ^bytes payload "UTF-8"))
@@ -64,12 +73,16 @@
     :else nil))
 
 (defn min-seq
+  "Returns the minimum sequence number from a collection of messages.
+  Returns nil if the collection is empty."
   [messages]
   (when (seq messages)
     (reduce min (map :seq messages))))
 
 (defn redis-token
   [{:keys [conversation-id cursor direction]}]
+  "Encodes a pagination token for messages sourced from Redis.
+  Includes conversation ID, cursor, direction, and 'redis' source."
   (pagination/encode-token {:conversation_id (str conversation-id)
                             :cursor cursor
                             :direction (name direction)
@@ -99,6 +112,8 @@
 
 (defn fetch-minio-page
   [{:keys [db minio segments metrics]} conversation-id cursor limit direction]
+  "Fetches a page of messages from Minio storage using segments.
+  Returns a map with :messages and an encoded :next-cursor if more data exists."
   (let [result (segment-reader/fetch-messages {:db db
                                                :minio minio
                                                :segments segments
@@ -118,6 +133,9 @@
 
 (defn fetch-redis-page
   [streams stream query]
+  "Fetches a page of messages from a Redis stream.
+  Decodes the payloads from EDN and returns a map with :messages 
+  and the :next-cursor from the stream."
   (let [{:keys [entries next-cursor]} (p-stream/read-payloads streams stream query)
         messages (->> entries (map :payload) (map decode-message) (remove nil?) vec)]
     {:messages messages
