@@ -1,30 +1,21 @@
 ## Service Template - Duct Framed Monolith or Microservices
 
-This is a template for a Duct framed monolith or microservices.
+This is a sample application built using Duct + Integrant + D-core
+Its a POC showcasing the abstractions of the Duct+Integrat+D-core stack mainly. 
 
-It is designed to be configurable to support different features using multitude of different services like Postgres, Redis, Kafka, etc but also none as well.
+One such goal is to present Clojure in a more inviting way, specifiually to new audiences and new developers still learning. So building a simple but complete application is a good way to show how the pieces fit together, and how to build something real with Clojure. Not those old school "hello world", whatever API etc fromt he old (NodeJS+Express) days.
 
-Its a JVM based service written in Clojure using the Duct framework. It is designed to be a base for a monolith or microservices.
+## Introduction
 
-The big core design decision here is that general use of features are decoupled from underlying implementation details or dependecies, allowing for easy swapping of dependencies or even implementing new features with different dependencies without even requiring touching logic code, ideally.
+The application is a simple messaging platform. Designed to be low cost to operate with a sisable feature set, it can be used as a base for building more complex messaging solutions. It includes features like:
+- User registration and authentication (via Keycloak)
+- Creating and managing conversations
+- Sending and receiving messages in real-time (via WebSockets)
+- Handling attachments and media messages
+- Read receipts and message status tracking
+- Unread message indexing for efficient retrieval of unread counts
 
-The main abstractions are:
-- [] Storage
-- [] Messaging Queues, Bus & or Event Bus and Deadletters
-- [] Database
-- [] Text Search
-- [] Cache
-- [] Rate Limiting
-- [] Monitoring
-
-The supported clients give way to common protocols that can be implemented by different services, like:
-- [] Cache Protocol
-- [] Storage Protocol
-- [] Messaging Protocol (Producers and Consumers)
-- [] Database Protocol
-- [] Text Search Protocol
-
-This is meant to both allow for same system to run with mostly the same feature set to run on dev or staging evnrioments but with wildly different dependencies (infra), lets way you use Kafka for the events in prod, but in dev you use in-memory for the events, this way you can test the system with different dependencies without even requiring touching logic code, ideally.
+There are some exploratory things yet to be cleaned up.
 
 ## Development
 
@@ -42,41 +33,5 @@ docker build -t core-service:latest .
 
 Run the container:
 ```bash
-docker run -p 3000:3000 core-service:latest
+docker run  -p 3000:3000 -p 3001:3001 core-service:latest
 ```
-
-Run with environment variables:
-```bash
-docker run -p 3000:3000 core-service
-```
-
-Supported clients:
-- [ ] Cache
-- [ ] Storage
-- [ ] Messaging Queues, Bus & or Event Bus
-- [ ] Database
-- [ ] Text Search
-
-Supported protocols:
-- [ ] Cache Protocol
-- [ ] Storage Protocol
-- [ ] Messaging Protocol
-- [ ] Database Protocol
-- [ ] Text Search Protocol
-
-### Databases
-
-- [ ] Postgres
-- [ ] Redis
-
-### Storage
-
-- [ ] S3
-- [ ] Minio
-
-### Messaging Queues, Bus & or Event Bus
-
-- [ ] Redis
-- [ ] Kafka
-- [ ] RabbitMQ
-- [ ] In-memory
