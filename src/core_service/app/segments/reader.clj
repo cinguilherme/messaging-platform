@@ -1,51 +1,10 @@
 (ns core-service.app.segments.reader
-  (:require [core-service.app.db.segments :as segments-db]
-            [core-service.app.segments.format :as segment-format]
-            [d-core.core.storage.protocol :as p-storage]))
-
-(defn- missing-object?
-  [result]
-  (let [error-type (:error-type result)
-        error-code (:error-code result)
-        status (:status result)]
-    (or (= error-type :not-found)
-        (= error-code "NoSuchKey")
-        (= error-code "NotFound")
-        (= 404 status))))
-
-(defn- segment-messages
-  [{:keys [db minio]} {:keys [conversation_id seq_start object_key]}
-   {:keys [compression codec cursor direction]}]
-  (let [obj (p-storage/storage-get-bytes minio object_key {})]
-    (cond
-      (:ok obj)
-      (let [decoded (segment-format/decode-segment (:bytes obj)
-                                                   {:compression compression
-                                                    :codec codec})
-            msgs (:messages decoded)
-            filtered (cond
-                       (= direction :forward)
-                       (if cursor
-                         (filter #(> (:seq %) cursor) msgs)
-                         msgs)
-                       :else
-                       (if cursor
-                         (filter #(< (:seq %) cursor) msgs)
-                         msgs))]
-        (->> filtered
-             (sort-by :seq (if (= direction :forward) < >))
-             vec))
-      (missing-object? obj)
-      (do
-        (segments-db/delete-segment! db {:conversation-id conversation_id
-                                         :seq-start seq_start})
-        [])
-      :else [])))
+  (:require [core-service.app.segments.logic :as s-logic]))
 
 (defn fetch-messages
   "Fetch messages from Minio segments.
   Options: {:limit n :cursor seq :direction :backward|:forward}."
-  [{:keys [db minio segments metrics] :as components} conversation-id {:keys [limit cursor direction]}]
+  [{:keys [db minio segments]} conversation-id {:keys [limit cursor direction]}]
   (let [limit (long (or limit 50))
         segment-batch (long (or (:segment-batch segments) 10))
         compression (or (:compression segments) :gzip)
@@ -58,26 +17,12 @@
         {:messages acc
          :next-seq (when (seq acc) (:seq (last acc)))
          :has-more? true}
-        (let [rows (if (= direction :forward)
-                     (segments-db/list-segments-forward db {:conversation-id conversation-id
-                                                            :after-seq cursor
-                                                            :limit segment-batch})
-                     (segments-db/list-segments db {:conversation-id conversation-id
-                                                    :before-seq cursor
-                                                    :limit segment-batch}))]
+        (let [rows (s-logic/fetch-conv-rows direction db conversation-id cursor segment-batch)]
           (if (empty? rows)
             {:messages acc
              :next-seq (when (seq acc) (:seq (last acc)))
              :has-more? false}
-            (let [messages (->> rows
-                                (mapcat (fn [row]
-                                          (segment-messages {:db db :minio minio}
-                                                            row
-                                                            {:compression compression
-                                                             :codec codec
-                                                             :cursor cursor
-                                                             :direction direction})))
-                                vec)
+            (let [messages (s-logic/rows->messages db minio compression codec cursor direction rows)
                   used (vec (take remaining messages))
                   remaining' (- remaining (count used))
                   acc' (into acc used)

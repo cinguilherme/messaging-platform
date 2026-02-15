@@ -10,6 +10,7 @@
   (.write out data))
 
 (defn- gzip-bytes
+  "Compresses a byte array using GZIP."
   [^bytes data]
   (let [out (ByteArrayOutputStream.)
         gzip (GZIPOutputStream. out)]
@@ -18,6 +19,7 @@
     (.toByteArray out)))
 
 (defn- gunzip-bytes
+  "Decompresses a GZIP-compressed byte array."
   [^bytes data]
   (let [in (GZIPInputStream. (ByteArrayInputStream. data))
         out (ByteArrayOutputStream.)
@@ -29,6 +31,7 @@
     (.toByteArray out)))
 
 (defn- read-records
+  "Reads all records from a DataInputStream until EOF. Each record is prefixed by a 4-byte integer length."
   [^DataInputStream in]
   (loop [acc []]
     (let [len (try
