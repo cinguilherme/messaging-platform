@@ -1,7 +1,9 @@
 (ns core-service.app.server.receipt.authed
   (:require [core-service.app.db.conversations :as conversations-db]
             [core-service.app.libs.redis :as redis-lib]
+            [core-service.app.observability.logging :as obs-log]
             [core-service.app.redis.receipts :as receipts]
+            [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.schemas.messaging :as msg-schema]
             [core-service.app.server.receipt.logic :as logic]
             [core-service.app.server.http :as http]
@@ -49,7 +51,7 @@
   optional TTL, and publishes a receipt event to the conversation's 
   Pub/Sub channel for real-time updates."
   [{:keys [webdeps]}]
-  (let [{:keys [db redis naming receipt metrics]} webdeps]
+  (let [{:keys [db redis naming receipt metrics logger logging]} webdeps]
     (fn [req]
       (let [conv-id (get-in req [:parameters :path :id])
             sender-id (:user-id req)
@@ -72,6 +74,18 @@
                                :user-id sender-id
                                :receipt-type (:receipt_type data)
                                :at (:at data)})
+            (when (= :read (:receipt_type data))
+              (try
+                (unread-index/update-last-read-by-message! {:redis redis
+                                                            :naming naming
+                                                            :metrics metrics}
+                                                           conv-id sender-id (:message_id data))
+                (catch Exception e
+                  (obs-log/log! logger logging :warn ::last-read-update-failed
+                                {:conversation-id conv-id
+                                 :sender-id sender-id
+                                 :message-id (:message_id data)
+                                 :error (.getMessage e)}))))
             (publish-to-conv-stream! redis naming conv-id data sender-id)
             {:ok true
              :conversation_id (str conv-id)

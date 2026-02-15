@@ -5,6 +5,7 @@
             [core-service.app.db.segments :as segments-db]
             [core-service.app.metrics :as app-metrics]
             [core-service.app.observability.logging :as obs-log]
+            [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.segments.format :as segment-format]
             [d-core.core.stream.protocol :as p-stream]
             [d-core.core.storage.protocol :as p-storage]
@@ -261,7 +262,7 @@
       (p-stream/trim-stream! streams stream trim-id))))
 
 (defn- commit-flush-conversation!
-  [{:keys [db streams minio naming logger metrics logging]}
+  [{:keys [db redis streams minio naming logger metrics logging]}
    {:keys [conversation-id prepared created-at
            codec compression max-bytes
            cursor-k stream trim-stream?
@@ -293,7 +294,21 @@
               (set-cursor! streams cursor-k last-id))
             (when trim-stream?
               (when-let [last-id (:id (last selected))]
-                (trim-stream! streams stream last-id trim-min-entries)))
+                (trim-stream! streams stream last-id trim-min-entries))
+              (try
+                (unread-index/trim-index! {:redis redis
+                                           :naming naming
+                                           :metrics metrics}
+                                          {:conversation-id conversation-id
+                                           :seq-end (:seq_end header')
+                                           :trim-min-entries trim-min-entries})
+                (catch Exception e
+                  (obs-log/log! logger logging :warn ::unread-index-trim-failed
+                                (merge log-ctx
+                                       {:conversation-id conversation-id
+                                        :seq-end (:seq_end header')
+                                        :error (.getMessage e)}))))
+              )
             (assoc result :message-count (:message_count header'))))))))
 
 (defn- record-flush-metrics!

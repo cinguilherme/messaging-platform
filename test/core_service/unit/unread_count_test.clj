@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [d-core.core.stream.protocol :as p-stream]
             [core-service.app.server.conversation.v1.authed.logic :as logic]
+            [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.server.receipt.logic :as receipt-logic]))
 
 ;; Access the private function via its var
@@ -26,8 +27,18 @@
   "Rebind p-stream/read-payloads and batch-receipt-read? for unit testing."
   [read-fn receipt-fn & body]
   `(with-redefs [p-stream/read-payloads ~read-fn
+                 unread-index/unread-count (fn [& _#] nil)
                  receipt-logic/batch-receipt-read? ~receipt-fn]
      ~@body))
+
+(deftest uses-zcount-when-index-available
+  (testing "returns optimized unread count when unread index has last-read state"
+    (let [stream-calls (atom 0)]
+      (with-redefs [unread-index/unread-count (fn [_ _ _] 7)
+                    p-stream/read-payloads (fn [& _] (swap! stream-calls inc) {:entries [] :next-cursor nil})
+                    receipt-logic/batch-receipt-read? (fn [& _] {})]
+        (is (= 7 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (is (= 0 @stream-calls) "legacy stream scan should not execute when index is available")))))
 
 (def ^:private no-receipts
   "A batch-receipt-read? mock that returns no receipts."

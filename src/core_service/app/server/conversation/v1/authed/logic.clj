@@ -3,6 +3,7 @@
             [clj-http.client :as http-client]
             [clojure.string :as str]
             [core-service.app.db.users :as users-db]
+            [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
             [core-service.app.server.message.logic :as message-logic]
@@ -204,7 +205,7 @@
    {:unread unread :done? false}
    decoded))
 
-(defn unread-count-from-redis
+(defn unread-count-from-redis-scan
   [streams redis metrics naming conversation-id user-id]
   (when (and streams redis naming conversation-id user-id)
     (let [stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conversation-id)
@@ -225,6 +226,15 @@
             (empty? entries) (:unread result)
             (nil? next-cursor) (:unread result)
             :else (recur next-cursor (:unread result))))))))
+
+(defn unread-count-from-redis
+  [streams redis metrics naming conversation-id user-id]
+  (when (and streams redis naming conversation-id user-id)
+    (or (unread-index/unread-count {:redis redis
+                                    :naming naming
+                                    :metrics metrics}
+                                   conversation-id user-id)
+        (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id))))
 
 (defn conversation-item-fallback
   "Returns a conversation item with last_message nil and unread_count 0 (e.g. on timeout)."

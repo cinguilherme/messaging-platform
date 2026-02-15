@@ -6,6 +6,7 @@
    [core-service.app.libs.redis :as redis-lib]
    [core-service.app.observability.logging :as obs-log]
    [core-service.app.redis.receipts :as receipts]
+  [core-service.app.redis.unread-index :as unread-index]
    [core-service.app.server.message.logic :as logic]
    [d-core.core.stream.protocol :as p-stream]
    [taoensso.carmine :as car]))
@@ -156,6 +157,16 @@
             (try
               (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
                     pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
+                (try
+                  (unread-index/index-message! {:redis redis :naming naming}
+                                               {:conversation-id conv-id
+                                                :message-id (:message_id message)
+                                                :seq seq})
+                  (unread-index/update-last-read-seq! {:redis redis :naming naming}
+                                                      conv-id sender-id seq)
+                  (catch Exception e
+                    (obs-log/log! logger logging :warn ::unread-index-sync-failed
+                                  (merge log-ctx {:error (.getMessage e)}))))
                 (car/wcar (redis-lib/conn redis)
                           (car/publish pubsub-ch payload-bytes))
                 (try
