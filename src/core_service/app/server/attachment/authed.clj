@@ -158,31 +158,27 @@
   (let [{:keys [db naming attachment-retention attachment-workers]} webdeps
         max-age-ms (attachment-max-age-ms attachment-retention)]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            conv-id (http/parse-uuid (http/param req "id"))
-            sender-id (message-logic/sender-id-from-request req)
-            max-bytes (http/parse-long (http/param req "max-bytes") 10485760)
-            kind (http/param req "kind")
-            upload (http/read-upload req)
-            payload (cond
-                      (not conv-id)
-                      {:ok false :error "invalid conversation id"}
+      (let [conv-id (get-in req [:parameters :path :id])
+            sender-id (:user-id req)
+            query (get-in req [:parameters :query])
+            max-bytes (or (:max-bytes query) 10485760)
+            kind (:kind query)
+            upload (http/read-upload req)]
+        (cond
+          (nil? sender-id)
+          {:status 401 :body {:ok false :error "invalid sender id"}}
 
-                      (nil? sender-id)
-                      {:ok false :error "invalid sender id"}
+          (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+          {:status 403 :body {:ok false :error "not a member"}}
 
-                      (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-                      {:ok false :error "not a member"}
+          (nil? attachment-workers)
+          {:status 500 :body {:ok false :error "attachment workers not configured"}}
 
-                      (nil? attachment-workers)
-                      {:ok false :error "attachment workers not configured"}
+          (not upload)
+          {:status 400 :body {:ok false :error "missing attachment payload"}}
 
-                      (not upload)
-                      {:ok false :error "missing attachment payload"}
-
-                      :else
-                      (create! upload max-bytes naming kind max-age-ms db conv-id sender-id attachment-workers))]
-        (render-response payload format)))))
+          :else
+          (create! upload max-bytes naming kind max-age-ms db conv-id sender-id attachment-workers))))))
 
 (defn- fetch-ref-db-then-storage [db attachment-id version conv-id minio]
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
@@ -235,33 +231,25 @@
   [{:keys [webdeps]}]
   (let [{:keys [db minio]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            conv-id (http/parse-uuid (http/param req "id"))
-            attachment-id (http/parse-uuid (http/param req "attachment_id"))
-            version (some-> (http/param req "version") str/lower-case)
-            sender-id (message-logic/sender-id-from-request req)
-            payload (cond
-                      (not conv-id)
-                      {:ok false :error "invalid conversation id"}
+      (let [conv-id (get-in req [:parameters :path :id])
+            attachment-id (get-in req [:parameters :path :attachment_id])
+            version (some-> (get-in req [:parameters :query :version]) str/lower-case)
+            sender-id (:user-id req)]
+        (cond
+          (nil? sender-id)
+          {:status 401 :body {:ok false :error "invalid sender id"}}
 
-                      (nil? attachment-id)
-                      {:ok false :error "invalid attachment id"}
+          (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+          {:status 403 :body {:ok false :error "not a member"}}
 
-                      (nil? sender-id)
-                      {:ok false :error "invalid sender id"}
+          (nil? minio)
+          {:status 500 :body {:ok false :error "minio not configured"}}
 
-                      (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-                      {:ok false :error "not a member"}
+          (not (or (nil? version) (= version "original") (= version "alt")))
+          {:status 400 :body {:ok false :error "invalid version"}}
 
-                      (nil? minio)
-                      {:ok false :error "minio not configured"}
-
-                      (not (or (nil? version) (= version "original") (= version "alt")))
-                      {:ok false :error "invalid version"}
-
-                      :else
-                      (fetch-ref-db-then-storage db attachment-id version conv-id minio))]
-        (render-response payload format)))))
+          :else
+          (fetch-ref-db-then-storage db attachment-id version conv-id minio))))))
 
 (defn- fetch-ref-from-db-then-storage [db attachment-id version conv-id minio]
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
@@ -312,30 +300,22 @@
   [{:keys [webdeps]}]
   (let [{:keys [db minio]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            conv-id (http/parse-uuid (http/param req "id"))
-            attachment-id (http/parse-uuid (http/param req "attachment_id"))
-            version (some-> (http/param req "version") str/lower-case)
-            sender-id (message-logic/sender-id-from-request req)
-            payload (cond
-                      (not conv-id)
-                      {:status 400 :body nil}
+      (let [conv-id (get-in req [:parameters :path :id])
+            attachment-id (get-in req [:parameters :path :attachment_id])
+            version (some-> (get-in req [:parameters :query :version]) str/lower-case)
+            sender-id (:user-id req)]
+        (cond
+          (nil? sender-id)
+          {:status 401 :body nil}
 
-                      (nil? attachment-id)
-                      {:status 400 :body nil}
+          (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
+          {:status 403 :body nil}
 
-                      (nil? sender-id)
-                      {:status 401 :body nil}
+          (nil? minio)
+          {:status 500 :body nil}
 
-                      (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-                      {:status 403 :body nil}
+          (not (or (nil? version) (= version "original") (= version "alt")))
+          {:status 400 :body nil}
 
-                      (nil? minio)
-                      {:status 500 :body nil}
-
-                      (not (or (nil? version) (= version "original") (= version "alt")))
-                      {:status 400 :body nil}
-
-                      :else
-                      (fetch-ref-from-db-then-storage db attachment-id version conv-id minio))]
-        (render-response payload format)))))
+          :else
+          (fetch-ref-from-db-then-storage db attachment-id version conv-id minio))))))

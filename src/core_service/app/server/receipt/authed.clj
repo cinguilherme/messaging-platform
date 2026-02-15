@@ -51,18 +51,29 @@
   [{:keys [webdeps]}]
   (let [{:keys [db redis naming receipt metrics]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            conv-id (http/parse-uuid (http/param req "id"))
-            sender-id (logic/sender-id-from-request req)
-            {:keys [ok data error]} (http/read-json-body req)
-            data (when ok (logic/coerce-receipt-create data))]
+      (let [conv-id (get-in req [:parameters :path :id])
+            sender-id (:user-id req)
+            data (get-in req [:parameters :body])]
         (cond
-          (not conv-id) (http/format-response {:ok false :error "invalid conversation id"} format)
-          (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
+          (nil? sender-id)
+          {:status 401 :body {:ok false :error "invalid sender id"}}
+
           (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-          (http/format-response {:ok false :error "not a member"} format)
-          (not ok) (http/format-response {:ok false :error error} format)
-          (not (m/validate msg-schema/ReceiptCreateSchema data))
-          (http/invalid-response format msg-schema/ReceiptCreateSchema data)
+          {:status 403 :body {:ok false :error "not a member"}}
+
           :else
-          (record-then-publish! redis naming receipt metrics conv-id data sender-id format))))))
+          (do
+            (receipts/record! {:redis redis
+                               :naming naming
+                               :receipt receipt
+                               :metrics metrics}
+                              {:conversation-id conv-id
+                               :message-id (:message_id data)
+                               :user-id sender-id
+                               :receipt-type (:receipt_type data)
+                               :at (:at data)})
+            (publish-to-conv-stream! redis naming conv-id data sender-id)
+            {:ok true
+             :conversation_id (str conv-id)
+             :message_id (str (:message_id data))
+             :receipt_type (name (:receipt_type data))}))))))

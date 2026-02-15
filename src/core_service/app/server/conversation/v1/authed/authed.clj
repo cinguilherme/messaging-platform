@@ -18,55 +18,49 @@
   [{:keys [webdeps]}]
   (let [{:keys [db logger]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            {:keys [ok data error]} (http/read-json-body req)
-            data (when ok (logic/coerce-conversation-create data))
+      (let [data (get-in req [:parameters :body])
             tenant-id (logic/tenant-id-from-request req)]
-        (logger/log logger ::conversations-create-req format)
+        (logger/log logger ::conversations-create-req {:tenant-id tenant-id})
         (cond
-          (not ok) (http/format-response {:ok false :error error} format)
-          (nil? tenant-id) (http/format-response {:ok false :error "missing tenant"} format)
-          (not (m/validate msg-schema/ConversationCreateSchema data))
-          (http/invalid-response format msg-schema/ConversationCreateSchema data)
+          (nil? tenant-id)
+          {:status 400 :body {:ok false :error "missing tenant"}}
+
           (empty? (:member_ids data))
-          (http/format-response {:ok false :error "member_ids cannot be empty"} format)
+          {:status 400 :body {:ok false :error "member_ids cannot be empty"}}
+
           :else
-          (let [result (conversations-db/create-conversation!
-                        db
-                        {:tenant-id tenant-id
-                         :type (:type data)
-                         :title (:title data)
-                         :member-ids (:member_ids data)})]
-            (http/format-response (assoc result :ok true) format)))))))
+          (-> (conversations-db/create-conversation!
+               db
+               {:tenant-id tenant-id
+                :type (:type data)
+                :title (:title data)
+                :member-ids (:member_ids data)})
+              (assoc :ok true)))))))
 
 (defn conversations-get
   [{:keys [webdeps]}]
   (let [{:keys [db token-client keycloak]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            conv-id (http/parse-uuid (http/param req "id"))
-            sender-id (logic/sender-id-from-request req)]
+      (let [conv-id (get-in req [:parameters :path :id])
+            sender-id (:user-id req)]
         (cond
-          (not conv-id)
-          (http/format-response {:ok false :error "invalid conversation id"} format)
-
           (nil? sender-id)
-          (http/format-response {:ok false :error "invalid sender id"} format)
+          {:status 401 :body {:ok false :error "invalid sender id"}}
 
           (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
-          (http/format-response {:ok false :error "not a member"} format)
+          {:status 403 :body {:ok false :error "not a member"}}
 
           :else
           (let [row (conversations-db/get-conversation db {:conversation-id conv-id})]
             (if-not row
-              (http/format-response {:ok false :error "conversation not found"} format)
+              {:status 404 :body {:ok false :error "conversation not found"}}
               (let [members-by-conv (conversations-db/list-memberships db {:conversation-ids [conv-id]})
                     member-ids (get members-by-conv conv-id)
                     profiles (logic/resolve-member-profiles db token-client keycloak member-ids)
                     members (logic/build-member-items member-ids profiles)
                     item (assoc (logic/conversation-row->detail row)
                                 :members members)]
-                (http/format-response {:ok true :item item} format)))))))))
+                {:ok true :item item}))))))))
 
 (def ^:private default-conversation-item-timeout-ms 10000)
 
@@ -94,36 +88,29 @@
   (let [{:keys [db token-client keycloak logger] :as components} webdeps
         item-timeout-ms (or (get webdeps :conversations-list-item-timeout-ms) default-conversation-item-timeout-ms)]
     (fn [req]
-      (let [ttap (partial util/ltap logger ::conversations-list-req)
-            format (ttap (http/get-accept-format req))
-            sender-id (logic/sender-id-from-request req)
-            limit (http/parse-long (http/param req "limit") 50)
-            cursor-param (http/param req "cursor")
-            before-ms (http/parse-long cursor-param ::invalid)
-            invalid-cursor? (and (some? cursor-param) (= before-ms ::invalid))
-            before-ms (when-not invalid-cursor? before-ms)
+      (let [{:keys [limit cursor]} (get-in req [:parameters :query])
+            sender-id (:user-id req)
+            before-ms (http/parse-long cursor nil)
             before-ts (logic/timestamp-from-ms before-ms)]
-        (cond
-          (nil? sender-id) (http/format-response {:ok false :error "invalid sender id"} format)
-          invalid-cursor? (http/format-response {:ok false :error "invalid cursor"} format)
-          :else
-          (let [rows (ttap (conversations-db/list-conversations db {:user-id sender-id
-                                                                    :limit limit
-                                                                    :before-ts before-ts}))
-                conv-ids (ttap (mapv :id rows))
-                members-by-conv (util/ltap logger ::conversations-list-members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids}))
-                member-ids (util/ltap logger ::conversations-list-member-ids (->> members-by-conv vals (mapcat identity) distinct ttap))
-                profiles (util/ltap logger ::conversations-list-profiles (logic/resolve-member-profiles db token-client keycloak member-ids))
+        (if (nil? sender-id)
+          {:status 401 :body {:ok false :error "invalid sender id"}}
+          (let [limit (or limit 50)
+                rows (util/ltap logger ::conversations-list-rows
+                                (conversations-db/list-conversations db {:user-id sender-id
+                                                                         :limit limit
+                                                                         :before-ts before-ts}))
+                conv-ids (mapv :id rows)
+                members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
+                member-ids (->> members-by-conv vals (mapcat identity) distinct vec)
+                profiles (logic/resolve-member-profiles db token-client keycloak member-ids)
                 futures (rows->futures members-by-conv components sender-id profiles rows)
                 items (futures->items logger item-timeout-ms sender-id profiles futures)
-                next-cursor (util/ltap logger ::conversations-list-next-cursor (when (= (count rows) limit)
-                                                                                 (some-> (last rows) :created_at (.getTime) str)))
-                _ (logger/log logger ::conversations-list-end-let items next-cursor)]
-            (logger/log logger ::conversations-list-resp items next-cursor)
-            (http/format-response {:ok true
-                                   :items items
-                                   :next_cursor next-cursor}
-                                  format)))))))
+                next-cursor (when (= (count rows) limit)
+                              (some-> (last rows) :created_at (.getTime) str))]
+            (logger/log logger ::conversations-list-resp {:count (count items)})
+            {:ok true
+             :items items
+             :next_cursor next-cursor}))))))
 
 ;; Keep compatibility with existing tests/callers while handlers live in resource namespaces.
 (defn messages-create

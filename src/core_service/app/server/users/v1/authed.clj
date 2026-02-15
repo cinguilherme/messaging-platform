@@ -42,27 +42,26 @@
   [{:keys [webdeps]}]
   (let [{:keys [db token-client keycloak logger]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            email (a.users/normalize-email (http/param req "email"))
-            username (a.users/normalize-username (http/param req "username"))]
+      (let [query (get-in req [:parameters :query])
+            email (a.users/normalize-email (:email query))
+            username (a.users/normalize-username (:username query))]
         (when logger
           (logger/log logger ::users-lookup-req email username))
         (cond
           (and (str/blank? email) (str/blank? username))
-          (http/format-response {:ok false :error "missing email or username"} format)
+          {:status 400 :body {:ok false :error "missing email or username"}}
 
           (and (seq username) (nil? db))
-          (http/format-response {:ok false :error "lookup backend not configured"} format)
+          {:status 500 :body {:ok false :error "lookup backend not configured"}}
 
           (seq username)
           (let [profile (users-db/fetch-user-profile-by-username db {:username username})
                 item (when profile (a.users/profile->item profile))]
-            (http/format-response {:ok true
-                                   :items (vec (remove nil? [item]))}
-                                  format))
+            {:ok true
+             :items (vec (remove nil? [item]))})
 
           (or (nil? token-client) (nil? (:admin-url keycloak)))
-          (http/format-response {:ok false :error "lookup backend not configured"} format)
+          {:status 500 :body {:ok false :error "lookup backend not configured"}}
 
           :else
           (try
@@ -79,41 +78,31 @@
                   status (:status resp)
                   parsed (some-> (:body resp) (json/parse-string true))]
               (if (<= 200 status 299)
-                (http/format-response {:ok true
-                                       :items (vec (map a.users/user->item parsed))}
-                                      format)
-                (http/format-response {:ok false
-                                       :error "lookup failed"
-                                       :status status
-                                       :details parsed}
-                                      format)))
+                {:ok true
+                 :items (vec (map a.users/user->item parsed))}
+                {:status status
+                 :body {:ok false
+                        :error "lookup failed"
+                        :details parsed}}))
             (catch Exception ex
-              (http/format-response {:ok false
-                                     :error "lookup failed"
-                                     :details (.getMessage ex)}
-                                    format))))))))
+              {:status 500
+               :body {:ok false
+                      :error "lookup failed"
+                      :details (.getMessage ex)}})))))))
 
 (defn users-lookup-by-ids
   "Lookup users by id via local user_profiles store."
   [{:keys [webdeps]}]
   (let [{:keys [db]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            {:keys [ok data error]} (http/read-json-body req)
-            ids (when ok (coerce-user-ids (:ids data)))]
-        (cond
-          (not ok)
-          (http/format-response {:ok false :error error} format)
-
-          (not (seq ids))
-          (http/format-response {:ok false :error "missing ids"} format)
-
-          :else
+      (let [ids (get-in req [:parameters :body :ids])]
+        (if (empty? ids)
+          {:status 400 :body {:ok false :error "missing ids"}}
           (let [rows (users-db/fetch-user-profiles db {:user-ids ids})
                 items (mapv (fn [row]
                               (assoc row :user_id (str (:user_id row))))
                             rows)]
-            (http/format-response {:ok true :items items} format)))))))
+            {:ok true :items items}))))))
 
 (extend-type WebDeps
   protocols/ProfileService
@@ -133,9 +122,8 @@
   Uses local user_profiles cache with a Keycloak admin fallback."
   [{:keys [webdeps]}]
   (let [{:keys [logger]} webdeps]
-    (fn [{:keys [user-id response-format]}]
+    (fn [{:keys [user-id]}]
       (when logger
-        (logger/log logger ::users-me-req response-format)
         (logger/log logger ::users-me user-id))
       (if (nil? user-id)
         {:status 401 :body {:ok false :error "invalid user id"}}

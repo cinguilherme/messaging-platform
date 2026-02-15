@@ -72,6 +72,11 @@
     (string? payload) (edn/read-string payload)
     :else nil))
 
+(defn encode-message
+  "Encodes a message map into UTF-8 bytes using EDN (pr-str)."
+  [message]
+  (.getBytes (pr-str message) "UTF-8"))
+
 (defn min-seq
   "Returns the minimum sequence number from a collection of messages.
   Returns nil if the collection is empty."

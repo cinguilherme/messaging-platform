@@ -16,19 +16,18 @@
   [{:keys [webdeps]}]
   (let [{:keys [db token-client keycloak logger]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            {:keys [ok data error]} (http/read-json-body req)]
+      (let [data (get-in req [:parameters :body])]
         (logger/log logger ::auth-register data)
         (cond
-          (not ok) (http/format-response {:ok false :error error} format)
-          (not (m/validate auth-schema/RegisterSchema data))
-          (http/invalid-response format auth-schema/RegisterSchema data)
           (or (nil? token-client) (nil? (:admin-url keycloak)))
-          (http/format-response {:ok false :error "auth backend not configured"} format)
+          {:status 500 :body {:ok false :error "auth backend not configured"}}
+
           (nil? (:token-url keycloak))
-          (http/format-response {:ok false :error "token endpoint not configured"} format)
+          {:status 500 :body {:ok false :error "token endpoint not configured"}}
+
           (nil? (:client-id keycloak))
-          (http/format-response {:ok false :error "client id not configured"} format)
+          {:status 500 :body {:ok false :error "client id not configured"}}
+
           :else
           (try
             (logger/log logger ::auth-register-token-client token-client)
@@ -64,99 +63,81 @@
                                                          :last-name (:last_name data)
                                                          :email (:email data)
                                                          :enabled (if (some? (:enabled data)) (:enabled data) true)})))
-                  (http/format-response {:ok true
-                                         :action :register
-                                         :location location}
-                                        format))
-                (http/format-response {:ok false
-                                       :error "registration failed"
-                                       :status status
-                                       :details (some-> (:body resp) (json/parse-string true))
-                                       :debug log-details}
-                                      format)))
+                  {:ok true
+                   :action :register
+                   :location location})
+                {:status status
+                 :body {:ok false
+                        :error "registration failed"
+                        :details (some-> (:body resp) (json/parse-string true))
+                        :debug log-details}}))
             (catch Exception ex
-              (http/format-response {:ok false
-                                     :error "registration failed"
-                                     :details (.getMessage ex)}
-                                    format))))))))
+              {:status 500
+               :body {:ok false
+                      :error "registration failed"
+                      :details (.getMessage ex)}})))))))
 
 (defn auth-login
   "Proxy endpoint for user login (backed by Keycloak)."
   [{:keys [webdeps]}]
   (let [{:keys [db keycloak token-client logger]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            {:keys [ok data error]} (http/read-json-body req)]
+      (let [data (get-in req [:parameters :body])]
         (logger/log logger ::auth-login data)
-        (cond
-          (not ok) (http/format-response {:ok false :error error} format)
-          (not (m/validate auth-schema/LoginSchema data))
-          (http/invalid-response format auth-schema/LoginSchema data)
-          :else
-          (let [{:keys [token-url client-id client-secret http-opts]} keycloak
-                params (cond-> {:grant_type "password"
-                                :username (:username data)
-                                :password (:password data)}
-                         (:scope data) (assoc :scope (:scope data)))
-                resp (logic/token-request {:token-url token-url
-                                     :client-id client-id
-                                     :client-secret client-secret
-                                     :http-opts http-opts}
-                                    params)]
-            (logger/log logger ::auth-login-resp resp)
-            (if (:ok resp)
-              (do
-                (when-let [profile (logic/fetch-user-by-username {:token-client token-client
-                                                                  :keycloak keycloak}
-                                                                 (:username data))]
-                  (when db
-                    (users-db/upsert-user-profile! db profile)))
-                (http/format-response {:ok true
-                                       :action :login
-                                       :token (:data resp)}
-                                      format))
-              (http/format-response {:ok false
-                                     :error "login failed"
-                                     :status (:status resp)
-                                     :details (:error resp)}
-                                    format))))))))
+        (let [{:keys [token-url client-id client-secret http-opts]} keycloak
+              params (cond-> {:grant_type "password"
+                              :username (:username data)
+                              :password (:password data)}
+                       (:scope data) (assoc :scope (:scope data)))
+              resp (logic/token-request {:token-url token-url
+                                         :client-id client-id
+                                         :client-secret client-secret
+                                         :http-opts http-opts}
+                                        params)]
+          (logger/log logger ::auth-login-resp resp)
+          (if (:ok resp)
+            (do
+              (when-let [profile (logic/fetch-user-by-username {:token-client token-client
+                                                                :keycloak keycloak}
+                                                               (:username data))]
+                (when db
+                  (users-db/upsert-user-profile! db profile)))
+              {:ok true
+               :action :login
+               :token (:data resp)})
+            {:status (:status resp)
+             :body {:ok false
+                    :error "login failed"
+                    :details (:error resp)}}))))))
 
 (defn auth-refresh
   "Proxy endpoint for token refresh (backed by Keycloak)."
   [{:keys [webdeps]}]
   (let [{:keys [keycloak logger]} webdeps]
     (fn [req]
-      (let [format (http/get-accept-format req)
-            {:keys [ok data error]} (http/read-json-body req)
+      (let [data (get-in req [:parameters :body])
             safe-data (cond-> data
                         (contains? data :refresh_token)
                         (assoc :refresh_token "<redacted>"))]
         (logger/log logger ::auth-refresh safe-data)
-        (cond
-          (not ok) (http/format-response {:ok false :error error} format)
-          (not (m/validate auth-schema/RefreshSchema data))
-          (http/invalid-response format auth-schema/RefreshSchema data)
-          :else
-          (let [{:keys [token-url client-id client-secret http-opts]} keycloak
-                params (cond-> {:grant_type "refresh_token"
-                                :refresh_token (:refresh_token data)}
-                         (:scope data) (assoc :scope (:scope data)))
-                resp (logic/token-request {:token-url token-url
-                                     :client-id client-id
-                                     :client-secret client-secret
-                                     :http-opts http-opts}
-                                    params)]
-            (logger/log logger ::auth-refresh-resp resp)
-            (if (:ok resp)
-              (http/format-response {:ok true
-                                     :action :refresh
-                                     :token (:data resp)}
-                                    format)
-              (http/format-response {:ok false
-                                     :error "refresh failed"
-                                     :status (:status resp)
-                                     :details (:error resp)}
-                                    format))))))))
+        (let [{:keys [token-url client-id client-secret http-opts]} keycloak
+              params (cond-> {:grant_type "refresh_token"
+                              :refresh_token (:refresh_token data)}
+                       (:scope data) (assoc :scope (:scope data)))
+              resp (logic/token-request {:token-url token-url
+                                         :client-id client-id
+                                         :client-secret client-secret
+                                         :http-opts http-opts}
+                                        params)]
+          (logger/log logger ::auth-refresh-resp resp)
+          (if (:ok resp)
+            {:ok true
+             :action :refresh
+             :token (:data resp)}
+            {:status (:status resp)
+             :body {:ok false
+                    :error "refresh failed"
+                    :details (:error resp)}}))))))
 
 (defmethod ig/init-key :core-service.app.server.auth.v1.public/routes
   [_ {:keys [webdeps]}]

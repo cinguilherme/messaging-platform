@@ -90,6 +90,22 @@
           {}
           rows))
 
+(defn fetch-keycloak-profile
+  [admin-url headers http-opts user-id]
+  (try
+    (let [resp (http-client/get (str admin-url "/users/" user-id)
+                                (merge {:headers headers
+                                        :as :text
+                                        :throw-exceptions false}
+                                       http-opts))
+          status (:status resp)
+          parsed (some-> (:body resp) (json/parse-string true))]
+      (if (<= 200 status 299)
+        {user-id (keycloak-user->profile parsed)}
+        {}))
+    (catch Exception _
+      {})))
+
 (defn fetch-keycloak-profiles
   [{:keys [token-client keycloak]} user-ids]
   (let [user-ids (->> user-ids (map str) distinct vec)]
@@ -103,19 +119,9 @@
               admin-url (:admin-url keycloak)
               http-opts (:http-opts keycloak)
               headers {"authorization" (str "Bearer " access-token)}]
-          (reduce (fn [acc user-id]
-                    (let [resp (http-client/get (str admin-url "/users/" user-id)
-                                                (merge {:headers headers
-                                                        :as :text
-                                                        :throw-exceptions false}
-                                                       http-opts))
-                          status (:status resp)
-                          parsed (some-> (:body resp) (json/parse-string true))]
-                      (if (<= 200 status 299)
-                        (assoc acc user-id (keycloak-user->profile parsed))
-                        acc)))
-                  {}
-                  user-ids))
+          (->> user-ids
+               (pmap (partial fetch-keycloak-profile admin-url headers http-opts))
+               (apply merge)))
         (catch Exception _
           {})))))
 
@@ -127,8 +133,13 @@
         fallback-profiles (fetch-keycloak-profiles {:token-client token-client
                                                     :keycloak keycloak}
                                                    missing-ids)]
-    (doseq [[user-id profile] fallback-profiles]
-      (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+    (when (seq fallback-profiles)
+      (future
+        (try
+          (doseq [[user-id profile] fallback-profiles]
+            (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+          (catch Exception _
+            nil))))
     (merge profiles fallback-profiles)))
 
 (defn build-member-items
@@ -235,16 +246,14 @@
         t0 (System/nanoTime)
         stream (when (and naming conv-id)
                  (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
-        redis-msg (redis-last-message streams stream)
-        _ (when logger (logger/log logger ::conversation-item-after-redis {:conv-id conv-id
-                                                                           :duration-ms (quot (- (System/nanoTime) t0) 1000000)}))
-        minio-msg (minio-last-message components conv-id)
-        _ (when logger (logger/log logger ::conversation-item-after-minio {:conv-id conv-id}))
+        last-message (or (redis-last-message streams stream)
+                         (minio-last-message components conv-id))
+        _ (when logger (logger/log logger ::conversation-item-after-last-msg {:conv-id conv-id
+                                                                              :duration-ms (quot (- (System/nanoTime) t0) 1000000)}))
         t1 (System/nanoTime)
         unread-count (or (unread-count-from-redis streams redis metrics naming conv-id user-id) 0)
         _ (when logger (logger/log logger ::conversation-item-after-unread {:conv-id conv-id
                                                                             :duration-ms (quot (- (System/nanoTime) t1) 1000000)}))
-        last-message (or redis-msg minio-msg)
         base (conversation-row->item row)
         members (build-member-items member-ids profiles)
         counterpart (when (direct-conversation? (:type base))
