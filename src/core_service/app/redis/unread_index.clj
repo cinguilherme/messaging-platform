@@ -110,21 +110,33 @@
           keep-n (long (or trim-min-entries 0))]
       (if (<= keep-n 0)
         (when-let [end-seq (parse-long-safe seq-end)]
-          (app-metrics/with-redis metrics :message_index_trim
-            #(car/wcar (redis-lib/conn redis)
-               (let [ids (car/zrangebyscore idx-key "-inf" end-seq)]
-                 (when (seq ids)
-                   (car/zremrangebyscore idx-key "-inf" end-seq)
-                   (hdel-many! seq-key ids)
-                   (count ids))))))
-        (app-metrics/with-redis metrics :message_index_trim
-          #(car/wcar (redis-lib/conn redis)
-             (let [card (long (or (parse-long-safe (car/zcard idx-key)) 0))
-                   remove-count (max 0 (- card keep-n))]
-               (when (pos? remove-count)
-                 (let [last-rank (dec remove-count)
-                       ids (car/zrange idx-key 0 last-rank)]
-                   (car/zremrangebyrank idx-key 0 last-rank)
-                   (when (seq ids)
-                     (hdel-many! seq-key ids))
-                   remove-count)))))))))
+          (let [ids (app-metrics/with-redis metrics :message_index_trim
+                      #(car/wcar (redis-lib/conn redis)
+                         (car/zrangebyscore idx-key "-inf" end-seq)))]
+            (when (seq ids)
+              (app-metrics/with-redis metrics :message_index_trim
+                #(car/wcar (redis-lib/conn redis)
+                   (car/zremrangebyscore idx-key "-inf" end-seq)))
+              (app-metrics/with-redis metrics :message_index_trim
+                #(car/wcar (redis-lib/conn redis)
+                   (hdel-many! seq-key ids)))
+              (count ids))))
+        (let [card (long (or (parse-long-safe
+                              (app-metrics/with-redis metrics :message_index_trim
+                                #(car/wcar (redis-lib/conn redis)
+                                   (car/zcard idx-key))))
+                             0))
+              remove-count (max 0 (- card keep-n))]
+          (when (pos? remove-count)
+            (let [last-rank (dec remove-count)
+                  ids (app-metrics/with-redis metrics :message_index_trim
+                        #(car/wcar (redis-lib/conn redis)
+                           (car/zrange idx-key 0 last-rank)))]
+              (app-metrics/with-redis metrics :message_index_trim
+                #(car/wcar (redis-lib/conn redis)
+                   (car/zremrangebyrank idx-key 0 last-rank)))
+              (when (seq ids)
+                (app-metrics/with-redis metrics :message_index_trim
+                  #(car/wcar (redis-lib/conn redis)
+                     (hdel-many! seq-key ids))))
+              remove-count)))))))

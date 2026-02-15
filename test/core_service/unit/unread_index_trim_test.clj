@@ -15,7 +15,7 @@
     (let [calls (atom [])]
       (with-redefs [app-metrics/with-redis (fn [_ op _f]
                                              (swap! calls conj op)
-                                             :ok)]
+                                             nil)]
         (is (nil? (unread-index/trim-index! {:redis nil :naming naming}
                                             {:conversation-id conv-id
                                              :seq-end 10
@@ -35,7 +35,7 @@
     (let [calls (atom [])]
       (with-redefs [app-metrics/with-redis (fn [_ op _f]
                                              (swap! calls conj op)
-                                             :ok)]
+                                             [])]
         (unread-index/trim-index! {:redis :redis :naming naming :metrics :metrics}
                                   {:conversation-id conv-id
                                    :seq-end 42
@@ -46,7 +46,7 @@
     (let [calls (atom [])]
       (with-redefs [app-metrics/with-redis (fn [_ op _f]
                                              (swap! calls conj op)
-                                             :ok)]
+                                             nil)]
         (is (nil? (unread-index/trim-index! {:redis :redis :naming naming :metrics :metrics}
                                             {:conversation-id conv-id
                                              :seq-end nil
@@ -58,7 +58,7 @@
     (let [calls (atom [])]
       (with-redefs [app-metrics/with-redis (fn [_ op _f]
                                              (swap! calls conj op)
-                                             :ok)]
+                                             nil)]
         (unread-index/trim-index! {:redis :redis :naming naming :metrics :metrics}
                                   {:conversation-id conv-id
                                    :seq-end nil
