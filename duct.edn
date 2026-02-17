@@ -167,6 +167,7 @@
                                             :metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
 
    :core-service.app.libs.executor/executor {:thread-count 20}
+   :core-service.app.libs.executor/keycloak-profile-fetch-executor {:thread-count 8}
 
    ;; webdeps component is a bundle of general deps
    :core-service.app.config.webdeps/webdeps {:logger #ig/ref :duct/logger
@@ -187,6 +188,7 @@
                                              :logging #ig/ref :core-service.app.config.observability/logging
                                              :receipt #ig/ref :core-service.app.config.messaging/receipt-config
                                              :executor #ig/ref :core-service.app.libs.executor/executor
+                                             :keycloak-profile-fetch-executor #ig/ref :core-service.app.libs.executor/keycloak-profile-fetch-executor
                                              :conversations-list-item-timeout-ms 10000}
 
   ;; WebSocket server (Aleph) - separate port

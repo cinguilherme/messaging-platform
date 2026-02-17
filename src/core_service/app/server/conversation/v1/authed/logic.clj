@@ -82,6 +82,31 @@
      :email (:email user)
      :enabled (:enabled user)}))
 
+(def ^:private default-profile-hydration
+  {:max-concurrency 8
+   :total-timeout-ms 600
+   :request-timeout-ms 250})
+
+(defn- positive-long
+  [value default]
+  (let [v (cond
+            (number? value) (long value)
+            (string? value) (try
+                              (Long/parseLong value)
+                              (catch Exception _
+                                nil))
+            :else nil)]
+    (if (and (some? v) (pos? v))
+      v
+      default)))
+
+(defn- profile-hydration-config
+  [keycloak]
+  (let [cfg (:profile-hydration keycloak)]
+    {:max-concurrency (positive-long (:max-concurrency cfg) (:max-concurrency default-profile-hydration))
+     :total-timeout-ms (positive-long (:total-timeout-ms cfg) (:total-timeout-ms default-profile-hydration))
+     :request-timeout-ms (positive-long (:request-timeout-ms cfg) (:request-timeout-ms default-profile-hydration))}))
+
 (defn profiles-by-id
   [rows]
   (reduce (fn [acc row]
@@ -108,8 +133,46 @@
     (catch Exception _
       {})))
 
+(defn- with-http-timeout-defaults
+  [http-opts request-timeout-ms]
+  (let [request-timeout-ms (int (max 1 (long request-timeout-ms)))
+        http-opts (or http-opts {})]
+    (cond-> http-opts
+      (nil? (:conn-timeout http-opts)) (assoc :conn-timeout request-timeout-ms)
+      (nil? (:socket-timeout http-opts)) (assoc :socket-timeout request-timeout-ms))))
+
+(defn- fetch-keycloak-profiles-bounded
+  [{:keys [admin-url headers http-opts fetch-executor max-concurrency timeout-ms]} user-ids]
+  (let [timeout-ms (long (max 1 timeout-ms))
+        http-opts (with-http-timeout-defaults http-opts timeout-ms)
+        tasks (keep (fn [user-id]
+                      (try
+                        {:user-id user-id
+                         :task (executor/execute fetch-executor
+                                                 (fn []
+                                                   (fetch-keycloak-profile admin-url headers http-opts user-id)))}
+                        (catch Exception _
+                          nil)))
+                    user-ids)]
+    (reduce (fn [acc {:keys [task]}]
+              (let [result (executor/wait-for task timeout-ms ::timeout)]
+                (if (= result ::timeout)
+                  (do
+                    (executor/cancel task)
+                    (update acc :timed-out inc))
+                  (if (map? result)
+                    (-> acc
+                        (update :profiles merge result)
+                        (update :fetched + (count result)))
+                    acc))))
+            {:profiles {}
+             :fetched 0
+             :timed-out 0
+             :max-concurrency max-concurrency}
+            tasks)))
+
 (defn fetch-keycloak-profiles
-  [{:keys [token-client keycloak]} user-ids]
+  [{:keys [token-client keycloak keycloak-fetch-executor logger]} user-ids]
   (let [user-ids (->> user-ids (map str) distinct vec)]
     (if (or (empty? user-ids)
             (nil? token-client)
@@ -120,10 +183,58 @@
               access-token (:access-token admin-token)
               admin-url (:admin-url keycloak)
               http-opts (:http-opts keycloak)
-              headers {"authorization" (str "Bearer " access-token)}]
-          (->> user-ids
-               (pmap (partial fetch-keycloak-profile admin-url headers http-opts))
-               (apply merge)))
+              headers {"authorization" (str "Bearer " access-token)}
+              {:keys [max-concurrency total-timeout-ms request-timeout-ms]} (profile-hydration-config keycloak)
+              started-at (System/currentTimeMillis)]
+          (if keycloak-fetch-executor
+            (loop [remaining user-ids
+                   acc-profiles {}
+                   acc-fetched 0
+                   acc-timed-out 0]
+              (let [elapsed (- (System/currentTimeMillis) started-at)
+                    remaining-budget (- total-timeout-ms elapsed)]
+                (if (or (empty? remaining) (<= remaining-budget 0))
+                  (do
+                    (when logger
+                      (logger/log logger :info ::keycloak-profile-hydration
+                                  {:requested (count user-ids)
+                                   :fetched acc-fetched
+                                   :timed_out acc-timed-out
+                                   :duration-ms (- (System/currentTimeMillis) started-at)
+                                   :max-concurrency max-concurrency
+                                   :total-timeout-ms total-timeout-ms
+                                   :request-timeout-ms request-timeout-ms
+                                   :bounded? true}))
+                    acc-profiles)
+                  (let [batch (vec (take max-concurrency remaining))
+                        batch-timeout (long (max 1 (min remaining-budget request-timeout-ms)))
+                        {:keys [profiles fetched timed-out]}
+                        (fetch-keycloak-profiles-bounded {:admin-url admin-url
+                                                          :headers headers
+                                                          :http-opts http-opts
+                                                          :fetch-executor keycloak-fetch-executor
+                                                          :max-concurrency max-concurrency
+                                                          :timeout-ms batch-timeout}
+                                                         batch)]
+                    (recur (drop (count batch) remaining)
+                           (merge acc-profiles profiles)
+                           (+ acc-fetched fetched)
+                           (+ acc-timed-out timed-out))))))
+            (let [http-opts (with-http-timeout-defaults http-opts request-timeout-ms)
+                  profiles (->> user-ids
+                                (pmap (partial fetch-keycloak-profile admin-url headers http-opts))
+                                (apply merge))]
+              (when logger
+                (logger/log logger :info ::keycloak-profile-hydration
+                            {:requested (count user-ids)
+                             :fetched (count profiles)
+                             :timed_out 0
+                             :duration-ms (- (System/currentTimeMillis) started-at)
+                             :max-concurrency max-concurrency
+                             :total-timeout-ms total-timeout-ms
+                             :request-timeout-ms request-timeout-ms
+                             :bounded? false}))
+              profiles)))
         (catch Exception _
           {})))))
 
@@ -155,15 +266,21 @@
         nil))))
 
 (defn resolve-member-profiles
-  [db token-client keycloak executor-pool member-ids]
-  (let [local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
-        profiles (profiles-by-id local-profiles)
-        missing-ids (remove #(contains? profiles (str %)) member-ids)
-        fallback-profiles (fetch-keycloak-profiles {:token-client token-client
-                                                    :keycloak keycloak}
-                                                   missing-ids)]
-    (schedule-fallback-profile-persist! db executor-pool fallback-profiles)
-    (merge profiles fallback-profiles)))
+  ([db token-client keycloak persist-executor member-ids]
+   (resolve-member-profiles db token-client keycloak persist-executor nil nil member-ids))
+  ([db token-client keycloak persist-executor keycloak-fetch-executor member-ids]
+   (resolve-member-profiles db token-client keycloak persist-executor keycloak-fetch-executor nil member-ids))
+  ([db token-client keycloak persist-executor keycloak-fetch-executor logger member-ids]
+   (let [local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
+         profiles (profiles-by-id local-profiles)
+         missing-ids (remove #(contains? profiles (str %)) member-ids)
+         fallback-profiles (fetch-keycloak-profiles {:token-client token-client
+                                                     :keycloak keycloak
+                                                     :keycloak-fetch-executor keycloak-fetch-executor
+                                                     :logger logger}
+                                                    missing-ids)]
+     (schedule-fallback-profile-persist! db persist-executor fallback-profiles)
+     (merge profiles fallback-profiles))))
 
 (defn build-member-items
   [member-ids profiles]

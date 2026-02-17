@@ -40,7 +40,7 @@
 
 (defn conversations-get
   [{:keys [webdeps]}]
-  (let [{:keys [db token-client keycloak executor]} webdeps]
+  (let [{:keys [db token-client keycloak executor keycloak-profile-fetch-executor logger]} webdeps]
     (fn [req]
       (let [conv-id (get-in req [:parameters :path :id])
             sender-id (:user-id req)]
@@ -57,7 +57,7 @@
               {:status 404 :body {:ok false :error "conversation not found"}}
               (let [members-by-conv (conversations-db/list-memberships db {:conversation-ids [conv-id]})
                     member-ids (get members-by-conv conv-id)
-                    profiles (logic/resolve-member-profiles db token-client keycloak executor member-ids)
+                    profiles (logic/resolve-member-profiles db token-client keycloak executor keycloak-profile-fetch-executor logger member-ids)
                     members (logic/build-member-items member-ids profiles)
                     item (assoc (logic/conversation-row->detail row)
                                 :members members)]
@@ -88,7 +88,7 @@
 
 (defn conversations-list
   [{:keys [webdeps]}]
-  (let [{:keys [db token-client keycloak logger executor] :as components} webdeps
+  (let [{:keys [db token-client keycloak logger executor keycloak-profile-fetch-executor] :as components} webdeps
         item-timeout-ms (or (get webdeps :conversations-list-item-timeout-ms) default-conversation-item-timeout-ms)]
     (fn [req]
       (let [query (or (get-in req [:parameters :query]) {})
@@ -110,7 +110,7 @@
                 last-messages-by-conv (logic/last-messages-by-conversation components conv-ids)
                 members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
                 member-ids (->> members-by-conv vals (mapcat identity) distinct vec)
-                profiles (logic/resolve-member-profiles db token-client keycloak executor member-ids)
+                profiles (logic/resolve-member-profiles db token-client keycloak executor keycloak-profile-fetch-executor logger member-ids)
                 tasks (rows->tasks executor members-by-conv components sender-id profiles last-messages-by-conv rows)
                 items (tasks->items logger item-timeout-ms sender-id profiles last-messages-by-conv tasks)
                 next-cursor (when (= (count rows) limit)

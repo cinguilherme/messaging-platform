@@ -6,12 +6,37 @@ The WebDeps component is used as a "bundle" containing nearly 20 different depen
 Issue: This obscures what a specific handler actually depends on and makes unit testing significantly harder, as you must mock the entire record even if a handler only needs the DB.
 Refinement: Refactor integrant components to accept only the specific dependencies they require in duct.edn.
 
-2. Performance: N+1 External Request Problem
+2. (DONE) Performance: N+1 External Request Problem
 
-In logic/fetch-keycloak-profiles, the system makes a sequential HTTP GET request to Keycloak for every unique user ID in a list.
+In logic/fetch-keycloak-profiles, the system makes one HTTP GET request to Keycloak for every unique missing user ID.
 
-Issue: Fetching a list of 50 conversations with many unique members can trigger hundreds of sequential HTTP calls, causing severe latency.
-Refinement: Use a bulk search API if available in Keycloak, or at minimum, parallelize these requests using pmap or a dedicated thread pool.
+Issue: Fetching a list of 50 conversations with many unique members can still trigger hundreds of external Keycloak calls in the same request path, causing latency spikes and upstream pressure.
+Refinement: Prefer a bulk lookup strategy if supported by Keycloak; otherwise enforce bounded concurrency and caching/refresh policies to reduce per-request fan-out.
+
+Implemented improvement:
+- Replaced the unbounded hydration path with a bounded, deadline-aware fetch loop in `fetch-keycloak-profiles` (conversation path).
+- Added profile hydration config in Keycloak auth config:
+- `:profile-hydration :max-concurrency` (default `8`)
+- `:profile-hydration :total-timeout-ms` (default `600`)
+- `:profile-hydration :request-timeout-ms` (default `250`)
+- Added env overrides:
+- `KEYCLOAK_PROFILE_FETCH_MAX_CONCURRENCY`
+- `KEYCLOAK_PROFILE_FETCH_TOTAL_TIMEOUT_MS`
+- `KEYCLOAK_PROFILE_FETCH_REQUEST_TIMEOUT_MS`
+- Added dedicated executor isolation (`keycloak-profile-fetch-executor`) and wired it through `webdeps`.
+- Added timeout defaults for Keycloak HTTP calls (`conn-timeout` and `socket-timeout`) when not explicitly configured.
+- Added hydration observability logs with requested/fetched/timed_out counts and duration.
+- Added unit coverage for:
+- max-concurrency cap
+- partial result behavior when total budget expires
+- dedupe handling
+- failure path returning empty map without breaking responses
+
+How it addresses the performance issue:
+- Caps fan-out concurrency to prevent request-time thread/resource spikes.
+- Enforces a total hydration time budget so conversation list/detail no longer block unboundedly on slow Keycloak responses.
+- Returns partial profile enrichment when budget is exhausted, preserving response availability and latency.
+- Isolates Keycloak hydration work from other executor workloads, reducing contention impact on unrelated tasks.
 
 3. (DONE) Data Integrity & Performance: Synchronous DB Writes in GETs
 The resolve-member-profiles function performs an upsert-user-profile! for every profile fetched from Keycloak, one by one, inside a loop.
