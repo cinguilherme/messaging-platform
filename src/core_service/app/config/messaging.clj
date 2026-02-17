@@ -44,6 +44,7 @@
 (def messaging-storage-names
   {:redis {:stream-prefix "chat:conv:"
            :pubsub-prefix "chat:conv:"
+           :conversation-last-prefix "chat:conv_last:"
            :receipts-prefix "chat:receipts:"
            :message-index-prefix "chat:msg_index:"
            :message-seq-prefix "chat:msg_seq:"

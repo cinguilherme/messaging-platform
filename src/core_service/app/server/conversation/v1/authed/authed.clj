@@ -65,25 +65,25 @@
 
 (def ^:private default-conversation-item-timeout-ms 10000)
 
-(defn- tasks->items [logger item-timeout-ms sender-id profiles tasks]
+(defn- tasks->items [logger item-timeout-ms sender-id profiles last-messages-by-conv tasks]
   (util/ltap logger ::conversations-list-items
              (mapv (fn [{:keys [row member-ids task]}]
                      (let [result (executor/wait-for task item-timeout-ms ::timeout)]
                        (if (= result ::timeout)
                          (do (when logger (logger/log logger ::conversation-item-timeout {:conv-id (:id row)}))
                              (executor/cancel task)
-                             (logic/conversation-item-fallback row sender-id member-ids profiles))
+                             (logic/conversation-item-fallback row sender-id member-ids profiles last-messages-by-conv))
                          result)))
                    tasks)))
 
-(defn- rows->tasks [executor-pool members-by-conv components sender-id profiles rows]
+(defn- rows->tasks [executor-pool members-by-conv components sender-id profiles last-messages-by-conv rows]
   (mapv (fn [row]
           (let [mids (get members-by-conv (:id row))]
             {:row row
              :member-ids mids
              :task (executor/execute executor-pool
                                      (fn []
-                                       (logic/conversation-item components row sender-id mids profiles)))}))
+                                       (logic/conversation-item components row sender-id mids profiles last-messages-by-conv)))}))
         rows))
 
 (defn conversations-list
@@ -107,11 +107,12 @@
                                                                          :limit limit
                                                                          :before-ts before-ts}))
                 conv-ids (mapv :id rows)
+                last-messages-by-conv (logic/last-messages-by-conversation components conv-ids)
                 members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
                 member-ids (->> members-by-conv vals (mapcat identity) distinct vec)
                 profiles (logic/resolve-member-profiles db token-client keycloak executor member-ids)
-                tasks (rows->tasks executor members-by-conv components sender-id profiles rows)
-                items (tasks->items logger item-timeout-ms sender-id profiles tasks)
+                tasks (rows->tasks executor members-by-conv components sender-id profiles last-messages-by-conv rows)
+                items (tasks->items logger item-timeout-ms sender-id profiles last-messages-by-conv tasks)
                 next-cursor (when (= (count rows) limit)
                               (some-> (last rows) :created_at (.getTime) str))]
             (logger/log logger ::conversations-list-resp {:count (count items)})

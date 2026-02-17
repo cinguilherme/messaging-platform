@@ -5,15 +5,15 @@
             [core-service.app.libs.executor]
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
+            [core-service.app.redis.conversation-last :as conversation-last]
             [core-service.app.server.conversation.v1.authed.authed :as authed]
-            [core-service.app.segments.reader :as segment-reader]
-            [core-service.app.workers.segments :as segments]
-            [d-core.core.storage.protocol :as p-storage]
+            [core-service.app.server.conversation.v1.authed.logic :as conv-logic]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
             [d-core.core.storage.minio]
             [d-core.core.databases.protocols.simple-sql :as sql]
-            [integrant.core :as ig]))
+            [integrant.core :as ig]
+            [taoensso.carmine :as car]))
 
 (defn- make-components []
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
@@ -220,6 +220,12 @@
                                     :tenant-id "tenant-1")
                   body (parse-body resp)
                   message-id (get-in body [:message :message_id])]
+              (testing "message create updates last-message summary cache"
+                (let [{:keys [last-message-key]} (helpers/redis-keys naming conv-id)
+                      raw-payload (car/wcar (:conn redis) (car/hget last-message-key "payload"))
+                      cached (conversation-last/batch-last-messages {:redis redis :naming naming} [conv-id])]
+                  (is (some? raw-payload))
+                  (is (= "hello" (get-in cached [conv-id :body :text])))))
               (testing "list shows last_message and unread_count before receipt"
                 (let [resp1 (authed-get list receiver-id)
                       body1 (parse-body resp1)
@@ -242,58 +248,41 @@
                   (is (= "hello" (get-in item2 [:last_message :body :text])))
                   (is (= 0 (:unread_count item2))))))))))))
 
-(deftest conversations-list-missing-minio-segment
-  (let [{:keys [redis streams minio naming idempotency segments]} (make-components)
+(deftest conversations-list-keeps-last-message-after-stream-clear
+  (let [{:keys [redis streams naming idempotency receipt]} (make-components)
         {:keys [sender-id conv-id payload]} test-ids]
-    (if-not (and (helpers/redis-up? redis) (helpers/minio-up? minio))
-      (is false "Redis or Minio not reachable. Start docker-compose and retry.")
+    (if-not (helpers/redis-up? redis)
+      (is false "Redis not reachable. Start docker-compose and retry.")
       (with-db-cleanup [db client executor]
         (do
           (helpers/clear-redis-conversation! redis naming conv-id)
-          (helpers/cleanup-segment-object-and-index! db minio conv-id)
           (helpers/cleanup-conversation! db conv-id))
         (let [webdeps (make-webdeps {:db db
                                      :redis redis
                                      :streams streams
                                      :naming naming
                                      :idempotency idempotency
-                                     :minio minio
-                                     :segments segments
+                                     :receipt receipt
                                      :executor executor})
-              {:keys [create list]} (make-handlers webdeps)
-              row (do
-                    (helpers/setup-conversation! db {:conversation-id conv-id
-                                                     :user-id sender-id})
-                    (helpers/clear-redis-conversation! redis naming conv-id)
-                    (authed-post create sender-id
-                                 :headers {"idempotency-key" (str (java.util.UUID/randomUUID))}
-                                 :params {:id (str conv-id)}
-                                 :body payload
-                                 :tenant-id "tenant-1")
-                    (segments/flush-conversation! webdeps conv-id)
-                    (first (sql/select db {:table :segment_index
-                                           :where {:conversation_id conv-id}})))
-              object-key (:object_key row)
-              resp (do
-                     (testing "segment created"
-                       (is (string? object-key)))
-                     (p-storage/storage-delete minio object-key {})
-                     (testing "segment index remains after object removal"
-                       (is (seq (sql/select db {:table :segment_index
-                                                :where {:conversation_id conv-id}}))))
-                     (helpers/clear-redis-conversation! redis naming conv-id)
-                     (authed-get list sender-id))
-              body (parse-body resp)
-              item (first (:items body))]
-          (testing "list returns even when minio segment is missing"
-            (is (= 200 (:status resp)))
-            (is (:ok body))
-            (is (= (str conv-id) (:conversation_id item)))
-            (is (nil? (:last_message item)))
-            (is (= 0 (:unread_count item))))
-          (testing "stale segment index is removed"
-            (is (empty? (sql/select db {:table :segment_index
-                                        :where {:conversation_id conv-id}})))))))))
+              {:keys [create list]} (make-handlers webdeps)]
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis naming conv-id)
+          (authed-post create sender-id
+                       :headers {"idempotency-key" (str (java.util.UUID/randomUUID))}
+                       :params {:id (str conv-id)}
+                       :body payload
+                       :tenant-id "tenant-1")
+          (let [{:keys [stream]} (helpers/redis-keys naming conv-id)
+                _ (car/wcar (:conn redis) (car/del stream))
+                resp (authed-get list sender-id)
+                body (parse-body resp)
+                item (first (:items body))]
+            (testing "list still returns last_message from summary cache"
+              (is (= 200 (:status resp)))
+              (is (:ok body))
+              (is (= (str conv-id) (:conversation_id item)))
+              (is (= "hello" (get-in item [:last_message :body :text]))))))))))
 
 (deftest conversations-list-timeout-returns-fallback-item
   (let [{:keys [sender-id conv-id]} test-ids
@@ -303,15 +292,11 @@
         (helpers/cleanup-conversation! db conv-id))
       (let [webdeps (make-webdeps {:db db
                                    :executor executor
-                                   :minio :fake-minio
-                                   :segments {:segment-batch 1
-                                              :compression :none
-                                              :codec :raw}
                                    :timeout-ms 50})
             {:keys [list]} (make-handlers webdeps)]
         (helpers/setup-conversation! db {:conversation-id conv-id
                                          :user-id sender-id})
-        (with-redefs [segment-reader/fetch-messages (fn [_ _ _] @blocking-promise)]
+        (with-redefs [conv-logic/unread-count-from-redis (fn [& _] @blocking-promise)]
           (let [resp (authed-get list sender-id)
                 body (parse-body resp)
                 item (first (:items body))]
@@ -321,4 +306,4 @@
               (is (= (str conv-id) (:conversation_id item)))
               (is (nil? (:last_message item)))
               (is (= 0 (:unread_count item)))))
-          (deliver blocking-promise {:messages [] :has-more? false}))))))
+          (deliver blocking-promise 0))))))
