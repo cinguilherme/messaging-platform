@@ -130,10 +130,29 @@
 (defn- persist-fallback-profiles!
   [db fallback-profiles]
   (try
-    (doseq [[user-id profile] fallback-profiles]
-      (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+    (let [profiles (->> fallback-profiles
+                        (map (fn [[user-id profile]]
+                               {:user-id user-id
+                                :username (:username profile)
+                                :first-name (:first_name profile)
+                                :last-name (:last_name profile)
+                                :avatar-url (:avatar_url profile)
+                                :email (:email profile)
+                                :enabled (:enabled profile)}))
+                        vec)]
+      (users-db/upsert-user-profiles! db profiles))
     (catch Exception _
       nil)))
+
+(defn- schedule-fallback-profile-persist!
+  [db executor-pool fallback-profiles]
+  (when (and executor-pool (seq fallback-profiles))
+    (try
+      (executor/execute executor-pool
+                        (fn []
+                          (persist-fallback-profiles! db fallback-profiles)))
+      (catch Exception _
+        nil))))
 
 (defn resolve-member-profiles
   [db token-client keycloak executor-pool member-ids]
@@ -143,10 +162,7 @@
         fallback-profiles (fetch-keycloak-profiles {:token-client token-client
                                                     :keycloak keycloak}
                                                    missing-ids)]
-    (when (seq fallback-profiles)
-      (executor/execute executor-pool
-                        (fn []
-                          (persist-fallback-profiles! db fallback-profiles))))
+    (schedule-fallback-profile-persist! db executor-pool fallback-profiles)
     (merge profiles fallback-profiles)))
 
 (defn build-member-items

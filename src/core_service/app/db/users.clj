@@ -24,35 +24,59 @@
   [value]
   (some-> value normalize-text str/lower-case))
 
-(defn upsert-user-profile!
-  [db {:keys [user-id username first-name last-name avatar-url email enabled]}]
-  (let [user-id (normalize-id user-id)
-        username (normalize-text username)
-        first-name (normalize-text first-name)
-        last-name (normalize-text last-name)
-        avatar-url (normalize-text avatar-url)
-        email (normalize-email email)]
+(def ^:private upsert-profiles-chunk-size 200)
+
+(def ^:private user-profile-values-placeholder
+  "(?, ?, ?, ?, ?, ?, ?, now())")
+
+(def ^:private user-profile-upsert-suffix
+  (str "ON CONFLICT (user_id) DO UPDATE SET "
+       "username = EXCLUDED.username, "
+       "first_name = EXCLUDED.first_name, "
+       "last_name = EXCLUDED.last_name, "
+       "avatar_url = EXCLUDED.avatar_url, "
+       "email = EXCLUDED.email, "
+       "enabled = EXCLUDED.enabled, "
+       "updated_at = now()"))
+
+(defn- normalize-profile-row
+  [{:keys [user-id username first-name last-name avatar-url email enabled]}]
+  (let [user-id (normalize-id user-id)]
     (when user-id
-      (sql/execute! db
-                    [(str "INSERT INTO user_profiles "
-                          "(user_id, username, first_name, last_name, avatar_url, email, enabled, updated_at) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, now()) "
-                          "ON CONFLICT (user_id) DO UPDATE SET "
-                          "username = EXCLUDED.username, "
-                          "first_name = EXCLUDED.first_name, "
-                          "last_name = EXCLUDED.last_name, "
-                          "avatar_url = EXCLUDED.avatar_url, "
-                          "email = EXCLUDED.email, "
-                          "enabled = EXCLUDED.enabled, "
-                          "updated_at = now()")
-                     user-id
-                     username
-                     first-name
-                     last-name
-                     avatar-url
-                     email
-                     enabled]
-                    {}))))
+      {:user-id user-id
+       :username (normalize-text username)
+       :first-name (normalize-text first-name)
+       :last-name (normalize-text last-name)
+       :avatar-url (normalize-text avatar-url)
+       :email (normalize-email email)
+       :enabled enabled})))
+
+(defn- row->params
+  [{:keys [user-id username first-name last-name avatar-url email enabled]}]
+  [user-id username first-name last-name avatar-url email enabled])
+
+(defn upsert-user-profiles!
+  [db profiles]
+  (let [rows (->> profiles
+                  (map normalize-profile-row)
+                  (remove nil?)
+                  vec)]
+    (when (seq rows)
+      (mapv (fn [chunk]
+              (let [placeholders (str/join ", " (repeat (count chunk) user-profile-values-placeholder))
+                    query (str "INSERT INTO user_profiles "
+                               "(user_id, username, first_name, last_name, avatar_url, email, enabled, updated_at) "
+                               "VALUES " placeholders " "
+                               user-profile-upsert-suffix)
+                    params (->> chunk
+                                (mapcat row->params)
+                                vec)]
+                (sql/execute! db (into [query] params) {})))
+            (partition-all upsert-profiles-chunk-size rows)))))
+
+(defn upsert-user-profile!
+  [db profile]
+  (some-> (upsert-user-profiles! db [profile]) first))
 
 (defn fetch-user-profiles
   [db {:keys [user-ids]}]

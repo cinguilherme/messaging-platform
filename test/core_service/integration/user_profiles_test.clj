@@ -8,12 +8,21 @@
             [core-service.integration.helpers :as helpers]
             [d-core.core.auth.token-client :as token-client]
             [d-core.core.databases.protocols.simple-sql :as sql]
-            [integrant.core :as ig]))
+            [integrant.core :as ig]
+            [next.jdbc.result-set :as rs]))
 
 (defn- cleanup-user!
   [db user-id]
   (sql/delete! db {:table :user_profiles
                    :where {:user_id user-id}}))
+
+(defn- fetch-updated-at
+  [db user-id]
+  (-> (sql/execute! db
+                    ["SELECT updated_at FROM user_profiles WHERE user_id = ?" user-id]
+                    {:builder-fn rs/as-unqualified-lower-maps})
+      first
+      :updated_at))
 
 (deftest users-lookup-by-ids-returns-items
   (let [{:keys [db client]} (helpers/init-db)
@@ -39,6 +48,66 @@
           (is (= "alice" (:username item)))))
       (finally
         (cleanup-user! db user-id)
+        (ig/halt-key! :d-core.core.clients.postgres/client client)))))
+
+(deftest upsert-user-profiles-batches-and-updates-existing-rows
+  (let [{:keys [db client]} (helpers/init-db)
+        user-a (java.util.UUID/randomUUID)
+        user-b (java.util.UUID/randomUUID)]
+    (try
+      (users-db/upsert-user-profiles! db [{:user-id user-a
+                                           :username "alice"
+                                           :first-name "Alice"
+                                           :last-name "One"
+                                           :avatar-url "https://example.com/a.png"
+                                           :email "alice@example.com"
+                                           :enabled true}
+                                          {:user-id user-b
+                                           :username "bob"
+                                           :first-name "Bob"
+                                           :last-name "Two"
+                                           :avatar-url "https://example.com/b.png"
+                                           :email "bob@example.com"
+                                           :enabled true}])
+      (let [initial-a (users-db/fetch-user-profile db {:user-id user-a})
+            initial-b (users-db/fetch-user-profile db {:user-id user-b})
+            initial-a-updated-at (fetch-updated-at db user-a)]
+        (testing "initial insert persists all rows"
+          (is (= "alice" (:username initial-a)))
+          (is (= "Alice" (:first_name initial-a)))
+          (is (= "One" (:last_name initial-a)))
+          (is (= "https://example.com/a.png" (:avatar_url initial-a)))
+          (is (= "alice@example.com" (:email initial-a)))
+          (is (= true (:enabled initial-a)))
+          (is (= "bob" (:username initial-b)))
+          (is (= "Bob" (:first_name initial-b)))
+          (is (= "Two" (:last_name initial-b))))
+        (Thread/sleep 5)
+        (users-db/upsert-user-profiles! db [{:user-id user-a
+                                             :username "alice-updated"
+                                             :first-name "Alice2"
+                                             :last-name "Updated"
+                                             :avatar-url "https://example.com/a2.png"
+                                             :email "alice2@example.com"
+                                             :enabled false}])
+        (let [updated-a (users-db/fetch-user-profile db {:user-id user-a})
+              updated-a-updated-at (fetch-updated-at db user-a)
+              unchanged-b (users-db/fetch-user-profile db {:user-id user-b})]
+          (testing "upsert updates existing row and touches updated_at"
+            (is (= "alice-updated" (:username updated-a)))
+            (is (= "Alice2" (:first_name updated-a)))
+            (is (= "Updated" (:last_name updated-a)))
+            (is (= "https://example.com/a2.png" (:avatar_url updated-a)))
+            (is (= "alice2@example.com" (:email updated-a)))
+            (is (= false (:enabled updated-a)))
+            (is (> (.getTime updated-a-updated-at) (.getTime initial-a-updated-at))))
+          (testing "other rows remain intact"
+            (is (= "bob" (:username unchanged-b)))
+            (is (= "Bob" (:first_name unchanged-b)))
+            (is (= "Two" (:last_name unchanged-b))))))
+      (finally
+        (cleanup-user! db user-a)
+        (cleanup-user! db user-b)
         (ig/halt-key! :d-core.core.clients.postgres/client client)))))
 
 (deftest auth-register-upserts-profile

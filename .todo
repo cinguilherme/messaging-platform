@@ -13,13 +13,22 @@ In logic/fetch-keycloak-profiles, the system makes a sequential HTTP GET request
 Issue: Fetching a list of 50 conversations with many unique members can trigger hundreds of sequential HTTP calls, causing severe latency.
 Refinement: Use a bulk search API if available in Keycloak, or at minimum, parallelize these requests using pmap or a dedicated thread pool.
 
-3. Data Integrity & Performance: Synchronous DB Writes in GETs
+3. (DONE) Data Integrity & Performance: Synchronous DB Writes in GETs
 The resolve-member-profiles function performs an upsert-user-profile! for every profile fetched from Keycloak, one by one, inside a loop.
 
 Issue: This happens during a READ operation (listing conversations). It slows down the response and increases DB contention.
 Refinement: Perform these updates in a single batch operation or move the "sync with Keycloak" logic to an asynchronous background job/worker.
 
-4. Bottleneck: Heavy Conversation List Logic
+Implemented improvement:
+- Added batched persistence API `upsert-user-profiles!` in `core-service.app.db.users`, with chunking (200 rows per statement) and kept `upsert-user-profile!` as compatibility wrapper.
+- Refactored conversation fallback profile persistence to perform one batched upsert call instead of one write per profile.
+- Fixed profile key mapping before persistence (`:first_name/:last_name/:avatar_url` -> `:first-name/:last-name/:avatar-url`) to preserve data integrity.
+- Added defensive executor scheduling in `resolve-member-profiles`: if executor is unavailable, response still succeeds and persistence is skipped.
+- Added coverage:
+- Integration test for batch insert/update behavior in `user_profiles_test`.
+- Unit tests for fallback mapping + batched scheduling + nil-executor/empty-fallback behavior in `member_profiles_sync_test`.
+
+4. (DONE) Bottleneck: Heavy Conversation List Logic
 The conversations-list implementation uses future to parallelize item construction, but each item still performs its own I/O to Redis and S3 to find the "last message".
 
 Issue: This is still an N+1 pattern across different storage layers.
