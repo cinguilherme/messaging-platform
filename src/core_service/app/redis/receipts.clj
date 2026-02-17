@@ -36,9 +36,16 @@
     (let [keys (mapv #(receipt-key naming conversation-id %) message-ids)
           entries-by-key (app-metrics/with-redis metrics :hgetall_batch
                           #(car/wcar (redis-lib/conn redis)
-                             (mapv car/hgetall keys)))]
+                             (mapv car/hgetall keys)))
+          entries-by-key (if (sequential? entries-by-key)
+                           entries-by-key
+                           [])]
       (reduce-kv
        (fn [acc idx message-id]
-         (assoc acc message-id (apply hash-map (nth entries-by-key idx))))
+         (let [entries (nth entries-by-key idx nil)]
+           (assoc acc message-id
+                  (if (and entries (sequential? entries))
+                    (apply hash-map entries)
+                    {}))))
        {}
        message-ids))))

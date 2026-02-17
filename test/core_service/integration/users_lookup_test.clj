@@ -13,12 +13,12 @@
   (let [handler (users/users-lookup {:webdeps {:db :dummy
                                                :token-client :dummy
                                                :keycloak {:admin-url "http://keycloak"}}})
-        resp (handler {:request-method :get
+        resp (helpers/invoke-handler handler {:request-method :get
                        :headers {"accept" "application/json"}
                        :query-params {}})
         body (json/parse-string (:body resp) true)]
     (testing "missing email"
-      (is (= 200 (:status resp)))
+      (is (= 400 (:status resp)))
       (is (= false (:ok body)))
       (is (= "missing email or username" (:error body))))))
 
@@ -26,12 +26,12 @@
   (let [handler (users/users-lookup {:webdeps {:db nil
                                                :token-client nil
                                                :keycloak nil}})
-        resp (handler {:request-method :get
+        resp (helpers/invoke-handler handler {:request-method :get
                        :headers {"accept" "application/json"}
                        :query-params {"email" "user@example.com"}})
         body (json/parse-string (:body resp) true)]
     (testing "backend not configured"
-      (is (= 200 (:status resp)))
+      (is (= 500 (:status resp)))
       (is (= false (:ok body)))
       (is (= "lookup backend not configured" (:error body))))))
 
@@ -49,7 +49,7 @@
     (let [handler (users/users-lookup {:webdeps {:db :dummy
                                                  :token-client :dummy
                                                  :keycloak {:admin-url "http://keycloak"}}})
-          resp (handler {:request-method :get
+          resp (helpers/invoke-handler handler {:request-method :get
                          :headers {"accept" "application/json"}
                          :query-params {"email" "USER@EXAMPLE.COM"}})
           body (json/parse-string (:body resp) true)
@@ -77,7 +77,7 @@
                                          :last-name "Example"
                                          :email "alice@example.com"
                                          :enabled true})
-      (let [resp (handler {:request-method :get
+      (let [resp (helpers/invoke-handler handler {:request-method :get
                            :headers {"accept" "application/json"}
                            :query-params {"username" "@alice"}})
             body (json/parse-string (:body resp) true)

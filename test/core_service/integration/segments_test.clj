@@ -40,13 +40,13 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (handler {:request-method :post
+          (helpers/invoke-handler handler {:request-method :post
                     :headers {"accept" "application/json"}
                     :params {:id (str conv-id)}
                     :body payload-one
                     :auth/principal {:subject (str sender-id)
                                      :tenant-id "tenant-1"}})
-          (handler {:request-method :post
+          (helpers/invoke-handler handler {:request-method :post
                     :headers {"accept" "application/json"}
                     :params {:id (str conv-id)}
                     :body payload-two
@@ -109,7 +109,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (handler {:request-method :post
+          (helpers/invoke-handler handler {:request-method :post
                     :headers {"accept" "application/json"}
                     :params {:id (str conv-id)}
                     :body payload
@@ -175,7 +175,7 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (doseq [payload payloads]
-            (handler {:request-method :post
+            (helpers/invoke-handler handler {:request-method :post
                       :headers {"accept" "application/json"}
                       :params {:id (str conv-id)}
                       :body payload

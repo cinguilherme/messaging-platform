@@ -95,7 +95,7 @@
   [{:keys [webdeps]}]
   (let [{:keys [db redis streams naming logger logging idempotency]} webdeps]
     (fn [req]
-      (let [data (get-in req [:parameters :body])
+      (let [data (some-> (get-in req [:parameters :body]) logic/coerce-message-create)
             conv-id (get-in req [:parameters :path :id])
             sender-id (:user-id req)
             idempotency-result (logic/idempotency-key-from-request req data idempotency)

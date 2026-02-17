@@ -1,5 +1,8 @@
 (ns core-service.integration.helpers
-  (:require [core-service.app.config.databases]
+  (:require [cheshire.core :as json]
+            [core-service.app.config.databases]
+            [core-service.app.server.http :as http]
+            [core-service.app.server.middleware :as middleware]
             [d-core.core.stream.redis.logic :as stream-logic]
             [d-core.core.stream.redis.redis]
             [d-core.core.clients.postgres]
@@ -11,6 +14,105 @@
             [duct.logger :as logger]
             [integrant.core :as ig]
             [taoensso.carmine :as car]))
+
+(def ^:private path-param-keys
+  #{:id :attachment_id})
+
+(defn- keywordize-map-keys
+  [m]
+  (if (map? m)
+    (reduce-kv (fn [acc k v]
+                 (if (string? k)
+                   (assoc acc (keyword k) v)
+                   (assoc acc k v)))
+               {}
+               m)
+    {}))
+
+(defn- maybe-parse-long
+  [value]
+  (if (and (string? value) (re-matches #"^-?\d+$" value))
+    (try
+      (Long/parseLong value)
+      (catch Exception _
+        value))
+    value))
+
+(defn- infer-path-params
+  [params]
+  (->> path-param-keys
+       (reduce (fn [acc k]
+                 (let [raw (or (get params k) (get params (name k)))
+                       parsed (http/parse-uuid raw)]
+                   (if parsed
+                     (assoc acc k parsed)
+                     acc)))
+               {})))
+
+(defn- infer-query-params
+  [req params]
+  (let [params-query (dissoc params :id "id" :attachment_id "attachment_id")]
+    (reduce-kv (fn [acc k v]
+                 (assoc acc k (maybe-parse-long v)))
+               {}
+               (keywordize-map-keys (merge (:query-params req) params-query)))))
+
+(defn- infer-json-body
+  [req]
+  (let [body (:body req)]
+    (cond
+      (map? body) body
+      (string? body) (try
+                       (json/parse-string body true)
+                       (catch Exception _
+                         nil))
+      :else nil)))
+
+(defn- attach-inferred-parameters
+  [req]
+  (let [params (or (:params req) {})
+        existing (or (:parameters req) {})
+        inferred-path (infer-path-params params)
+        inferred-query (infer-query-params req params)
+        inferred-body (infer-json-body req)]
+    (assoc req
+           :parameters
+           (cond-> existing
+             (and (seq inferred-path) (empty? (:path existing)))
+             (assoc :path inferred-path)
+             (and (seq inferred-query) (empty? (:query existing)))
+             (assoc :query inferred-query)
+             (and (map? inferred-body) (nil? (:body existing)))
+             (assoc :body inferred-body)))))
+
+(defn- format-like-interceptor
+  [req resp]
+  (let [format (http/get-accept-format req)]
+    (cond
+      (and (map? resp)
+           (not (contains? resp :status))
+           (not (contains? resp :request))
+           (not (:reitit.core/match resp)))
+      (http/format-response resp format)
+
+      (and (map? resp)
+           (contains? resp :status)
+           (map? (:body resp)))
+      (let [formatted (http/format-response (:body resp) format)]
+        (-> resp
+            (assoc :body (:body formatted))
+            (update :headers merge (:headers formatted))))
+
+      :else
+      resp)))
+
+(defn invoke-handler
+  [handler req]
+  (let [req' (-> req
+                 (update :headers #(merge {"accept" "application/json"} (or % {})))
+                 (attach-inferred-parameters))
+        response ((middleware/wrap-user-context handler) req')]
+    (format-like-interceptor req' response)))
 
 (defn init-db
   []

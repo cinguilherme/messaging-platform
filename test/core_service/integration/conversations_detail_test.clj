@@ -32,7 +32,7 @@
                                          :username "bob"
                                          :first-name "Bob"
                                          :last-name "Example"})
-      (let [resp (handler {:request-method :get
+      (let [resp (helpers/invoke-handler handler {:request-method :get
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :auth/principal {:subject (str sender-id)}})

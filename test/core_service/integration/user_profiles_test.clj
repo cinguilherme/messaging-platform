@@ -27,7 +27,7 @@
                                          :avatar-url "https://example.com/a.png"
                                          :email "alice@example.com"
                                          :enabled true})
-      (let [resp (handler {:request-method :post
+      (let [resp (helpers/invoke-handler handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :body (json/generate-string {:ids [(str user-id)]})})
             body (json/parse-string (:body resp) true)
@@ -54,7 +54,7 @@
                     http-client/post (fn [_ _]
                                        {:status 201
                                         :headers {"location" (str "http://keycloak/admin/realms/d-core/users/" user-id)}})]
-        (let [resp (handler {:request-method :post
+        (let [resp (helpers/invoke-handler handler {:request-method :post
                              :headers {"accept" "application/json"}
                              :body (json/generate-string {:username "alice"
                                                           :password "password"
@@ -98,7 +98,7 @@
                                                 :firstName "Alice"
                                                 :lastName "Example"
                                                 :enabled true}])})]
-        (let [resp (handler {:request-method :post
+        (let [resp (helpers/invoke-handler handler {:request-method :post
                              :headers {"accept" "application/json"}
                              :body (json/generate-string {:username "alice"
                                                           :password "password"})})
@@ -128,7 +128,7 @@
                                      {:status 200
                                       :body (json/generate-string {:access_token "new-token"
                                                                    :refresh_token "new-refresh"})})]
-      (let [resp (handler {:request-method :post
+      (let [resp (helpers/invoke-handler handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :body (json/generate-string {:refresh_token "refresh-123"
                                                         :scope "openid"})})

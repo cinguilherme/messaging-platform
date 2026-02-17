@@ -3,6 +3,7 @@
             [core-service.app.db.attachments :as attachments-db]
             [core-service.app.db.conversations :as conversations-db]
             [core-service.app.server.attachment.authed :as attachment-authed]
+            [core-service.integration.helpers :as helpers]
             [core-service.app.server.message.logic :as message-logic]
             [d-core.core.storage.protocol :as p-storage]))
 
@@ -31,12 +32,12 @@
                                                         :last-modified last-modified})
                                p-storage/storage-get-bytes (fn [& _]
                                                             (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
-                   (handler {:request-method :head
-                             :params {:id (str conv-id)
-                                      :attachment_id (str attachment-id)
-                                      :version "alt"}
-                             :auth/principal {:subject (str sender-id)
-                                              :tenant-id "tenant-1"}}))]
+                   (helpers/invoke-handler handler {:request-method :head
+                                                    :params {:id (str conv-id)
+                                                             :attachment_id (str attachment-id)
+                                                             :version "alt"}
+                                                    :auth/principal {:subject (str sender-id)
+                                                                     :tenant-id "tenant-1"}}))]
     (testing "HEAD probes alt key through storage-head and returns metadata headers"
       (is (= "attachments/image/test-alt.jpg" @storage-key*))
       (is (= 200 (:status response)))

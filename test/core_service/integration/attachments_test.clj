@@ -8,6 +8,7 @@
             [core-service.app.server.attachment.authed :as attachment-authed]
             [core-service.app.server.attachment.logic :as attachment-logic]
             [core-service.app.server.conversation.v1.authed.authed :as message-authed]
+            [core-service.app.workers.attachments]
             [core-service.app.workers.attachment-retention :as attachment-retention]
             [core-service.integration.helpers :as helpers]
             [d-core.core.clients.redis]
@@ -114,7 +115,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [upload-resp (attach-handler {:request-method :post
+          (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
                                              :headers {"accept" "application/json"
                                                        "content-type" "multipart/form-data"}
                                              :params {:id (str conv-id)
@@ -148,7 +149,7 @@
                 (let [payload (json/generate-string {:type "image"
                                                      :body {}
                                                      :attachments [attachment]})
-                      msg-resp (message-handler {:request-method :post
+                      msg-resp (helpers/invoke-handler message-handler {:request-method :post
                                                  :headers {"accept" "application/json"}
                                                  :params {:id (str conv-id)}
                                                  :body payload
@@ -201,7 +202,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [upload-resp (attach-handler {:request-method :post
+          (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
                                              :headers {"accept" "application/json"
                                                        "content-type" "multipart/form-data"}
                                              :params {:id (str conv-id)
@@ -223,7 +224,7 @@
                     payload (json/generate-string {:type "image"
                                                    :body {}
                                                    :attachments [tampered]})
-                    msg-resp (message-handler {:request-method :post
+                    msg-resp (helpers/invoke-handler message-handler {:request-method :post
                                                :headers {"accept" "application/json"}
                                                :params {:id (str conv-id)}
                                                :body payload
@@ -231,7 +232,7 @@
                                                                 :tenant-id "tenant-1"}})
                     msg-body (json/parse-string (:body msg-resp) true)]
                 (testing "message rejects forged attachment metadata"
-                  (is (= 200 (:status msg-resp)))
+                  (is (= 400 (:status msg-resp)))
                   (is (false? (:ok msg-body)))
                   (is (= "invalid attachment reference" (:error msg-body)))))))
           (finally
@@ -268,7 +269,7 @@
         (try
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
-          (let [upload-resp (attach-handler {:request-method :post
+          (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
                                              :headers {"accept" "application/json"
                                                        "content-type" "multipart/form-data"}
                                              :params {:id (str conv-id)
@@ -342,7 +343,7 @@
         (try
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
-          (let [upload-resp (attach-handler {:request-method :post
+          (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
                                              :headers {"accept" "application/json"
                                                        "content-type" "multipart/form-data"}
                                              :params {:id (str conv-id)
@@ -420,7 +421,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
 
-          (let [upload-small (attach-handler {:request-method :post
+          (let [upload-small (helpers/invoke-handler attach-handler {:request-method :post
                                               :headers {"accept" "application/json"
                                                         "content-type" "multipart/form-data"}
                                               :params {:id (str conv-id)
@@ -441,18 +442,18 @@
                     _ (swap! object-keys* conj object-key alt-key)
                     original-stored (wait-for-object minio-client object-key)
                     alt-stored (wait-for-object minio-client alt-key)
-                    head-original-resp (head-handler {:request-method :head
+                    head-original-resp (helpers/invoke-handler head-handler {:request-method :head
                                                       :params {:id (str conv-id)
                                                                :attachment_id (str (:attachment_id attachment))}
                                                       :auth/principal {:subject (str sender-id)
                                                                        :tenant-id "tenant-1"}})
-                    head-alt-resp (head-handler {:request-method :head
+                    head-alt-resp (helpers/invoke-handler head-handler {:request-method :head
                                                  :params {:id (str conv-id)
                                                           :attachment_id (str (:attachment_id attachment))
                                                           :version "alt"}
                                                  :auth/principal {:subject (str sender-id)
                                                                   :tenant-id "tenant-1"}})
-                    alt-resp (get-handler {:request-method :get
+                    alt-resp (helpers/invoke-handler get-handler {:request-method :get
                                            :params {:id (str conv-id)
                                                     :attachment_id (str (:attachment_id attachment))
                                                     :version "alt"}
@@ -474,7 +475,7 @@
                 (is (= "image/jpeg" (get-in alt-resp [:headers "content-type"])))
                 (is (bytes? (:body alt-resp)))
                 (p-storage/storage-delete minio-client alt-key {})
-                (let [missing-alt-head (head-handler {:request-method :head
+                (let [missing-alt-head (helpers/invoke-handler head-handler {:request-method :head
                                                       :params {:id (str conv-id)
                                                                :attachment_id (str (:attachment_id attachment))
                                                                :version "alt"}
@@ -483,7 +484,7 @@
                   (is (= 404 (:status missing-alt-head)))
                   (is (empty-head-body? (:body missing-alt-head)))))))
 
-          (let [upload-large (attach-handler {:request-method :post
+          (let [upload-large (helpers/invoke-handler attach-handler {:request-method :post
                                               :headers {"accept" "application/json"
                                                         "content-type" "multipart/form-data"}
                                               :params {:id (str conv-id)
@@ -549,7 +550,7 @@
         (try
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
-          (let [upload-resp (attach-handler {:request-method :post
+          (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
                                              :headers {"accept" "application/json"
                                                        "content-type" "multipart/form-data"}
                                              :params {:id (str conv-id)
@@ -567,7 +568,7 @@
                     object-key (:object_key attachment)
                     _ (reset! object-key* object-key)
                     _ (wait-for-object minio-client object-key)
-                    alt-head-resp (head-handler {:request-method :head
+                    alt-head-resp (helpers/invoke-handler head-handler {:request-method :head
                                                  :params {:id (str conv-id)
                                                           :attachment_id (str (:attachment_id attachment))
                                                           :version "alt"}
@@ -576,7 +577,7 @@
                 (is (= 404 (:status alt-head-resp)))
                 (is (empty-head-body? (:body alt-head-resp)))
                 (p-storage/storage-delete minio-client object-key {})
-                (let [missing-original-head (head-handler {:request-method :head
+                (let [missing-original-head (helpers/invoke-handler head-handler {:request-method :head
                                                            :params {:id (str conv-id)
                                                                     :attachment_id (str (:attachment_id attachment))
                                                                     :version "original"}

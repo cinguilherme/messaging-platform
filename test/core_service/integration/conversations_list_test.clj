@@ -83,18 +83,18 @@
 
 (defn- authed-get
   [handler user-id & {:keys [query-params headers]}]
-  (handler {:request-method :get
-            :headers (merge accept-json headers)
-            :query-params query-params
-            :auth/principal (auth-principal user-id)}))
+  (helpers/invoke-handler handler {:request-method :get
+                                   :headers (merge accept-json headers)
+                                   :query-params query-params
+                                   :auth/principal (auth-principal user-id)}))
 
 (defn- authed-post
   [handler user-id & {:keys [params body headers tenant-id]}]
-  (handler {:request-method :post
-            :headers (merge accept-json headers)
-            :params params
-            :body body
-            :auth/principal (auth-principal user-id tenant-id)}))
+  (helpers/invoke-handler handler {:request-method :post
+                                   :headers (merge accept-json headers)
+                                   :params params
+                                   :body body
+                                   :auth/principal (auth-principal user-id tenant-id)}))
 
 (def test-ids {:sender-id (java.util.UUID/randomUUID)
                :receiver-id (java.util.UUID/randomUUID)
@@ -109,11 +109,11 @@
 (deftest conversations-list-requires-sender
   (with-db [db client]
     (let [{:keys [list]} (make-handlers (make-webdeps {:db db :client client}))
-          resp (list {:request-method :get
-                      :headers accept-json})
+          resp (helpers/invoke-handler list {:request-method :get
+                                             :headers accept-json})
           body (parse-body resp)]
       (testing "missing sender id"
-        (is (= 200 (:status resp)))
+        (is (= 401 (:status resp)))
         (is (= false (:ok body)))
         (is (= "invalid sender id" (:error body)))))))
 
@@ -183,7 +183,7 @@
           resp (authed-get list sender-id :query-params {"cursor" "nope"})
           body (parse-body resp)]
       (testing "invalid cursor"
-        (is (= 200 (:status resp)))
+        (is (= 400 (:status resp)))
         (is (= false (:ok body)))
         (is (= "invalid cursor" (:error body)))))))
 

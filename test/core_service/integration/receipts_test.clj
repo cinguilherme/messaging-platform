@@ -59,7 +59,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [resp (handler {:request-method :post
+          (let [resp (helpers/invoke-handler handler {:request-method :post
                                :headers {"accept" "application/json"}
                                :params {:id (str conv-id)}
                                :body (json/generate-string {:receipt_type "read"

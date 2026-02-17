@@ -39,7 +39,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [resp (handler {:request-method :post
+          (let [resp (helpers/invoke-handler handler {:request-method :post
                                :headers {"accept" "application/json"}
                                :params {:id (str conv-id)}
                                :body payload
@@ -90,19 +90,19 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-one
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-two
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (let [resp (list-handler {:request-method :get
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
                                     :headers {"accept" "application/json"}
                                     :params {:id (str conv-id)}
                                     :query-params {"limit" "1"}
@@ -115,7 +115,7 @@
               (is (= 200 (:status resp)))
               (is (= "two 😀" (get-in msg [:body :text])))
               (is (string? cursor)))
-            (let [resp2 (list-handler {:request-method :get
+            (let [resp2 (helpers/invoke-handler list-handler {:request-method :get
                                        :headers {"accept" "application/json"}
                                        :params {:id (str conv-id)}
                                        :query-params {"limit" "1"
@@ -155,7 +155,7 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [resp (list-handler {:request-method :get
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
                                     :headers {"accept" "application/json"}
                                     :params {:id (str conv-id)}
                                     :query-params {"limit" "1"
@@ -164,7 +164,7 @@
                                                      :tenant-id "tenant-1"}})
                 body (json/parse-string (:body resp) true)]
             (testing "cursor conversation mismatch"
-              (is (= 200 (:status resp)))
+              (is (= 400 (:status resp)))
               (is (= false (:ok body)))
               (is (= "cursor conversation mismatch" (:error body)))))
           (finally
@@ -201,13 +201,13 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-one
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-two
@@ -223,7 +223,7 @@
                                        conv-id)
           ;; simulate older history living only in Minio
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [resp (list-handler {:request-method :get
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
                                     :headers {"accept" "application/json"}
                                     :params {:id (str conv-id)}
                                     :query-params {"limit" "2"}
@@ -273,13 +273,13 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           ;; first two messages -> flush to Minio
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-one
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-two
@@ -294,13 +294,13 @@
                                          :logger nil}
                                         conv-id)
           ;; third message stays in Redis
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-three
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (let [resp (list-handler {:request-method :get
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
                                     :headers {"accept" "application/json"}
                                     :params {:id (str conv-id)}
                                     :query-params {"limit" "3"}
@@ -354,19 +354,19 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-one
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-two
                            :auth/principal {:subject (str sender-id)
                                             :tenant-id "tenant-1"}})
-          (create-handler {:request-method :post
+          (helpers/invoke-handler create-handler {:request-method :post
                            :headers {"accept" "application/json"}
                            :params {:id (str conv-id)}
                            :body payload-three
@@ -381,7 +381,7 @@
                                          :logger nil}
                                         conv-id)
           (helpers/clear-redis-conversation! redis-client naming conv-id)
-          (let [resp (list-handler {:request-method :get
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
                                     :headers {"accept" "application/json"}
                                     :params {:id (str conv-id)}
                                     :query-params {"limit" "2"
@@ -397,7 +397,7 @@
               (is (= 2 (count msgs)))
               (is (= "one ⬆️" (get-in (first msgs) [:body :text])))
               (is (= "two ⬆️" (get-in (second msgs) [:body :text]))))
-            (let [resp2 (list-handler {:request-method :get
+            (let [resp2 (helpers/invoke-handler list-handler {:request-method :get
                                        :headers {"accept" "application/json"}
                                        :params {:id (str conv-id)}
                                        :query-params {"limit" "2"

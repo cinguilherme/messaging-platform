@@ -88,12 +88,16 @@
   (let [{:keys [db token-client keycloak logger] :as components} webdeps
         item-timeout-ms (or (get webdeps :conversations-list-item-timeout-ms) default-conversation-item-timeout-ms)]
     (fn [req]
-      (let [{:keys [limit cursor]} (get-in req [:parameters :query])
+      (let [query (or (get-in req [:parameters :query]) {})
+            {:keys [limit cursor]} query
             sender-id (:user-id req)
             before-ms (http/parse-long cursor nil)
+            invalid-cursor? (and (contains? query :cursor) (nil? before-ms))
             before-ts (logic/timestamp-from-ms before-ms)]
         (if (nil? sender-id)
           {:status 401 :body {:ok false :error "invalid sender id"}}
+          (if invalid-cursor?
+            {:status 400 :body {:ok false :error "invalid cursor"}}
           (let [limit (or limit 50)
                 rows (util/ltap logger ::conversations-list-rows
                                 (conversations-db/list-conversations db {:user-id sender-id
@@ -110,7 +114,7 @@
             (logger/log logger ::conversations-list-resp {:count (count items)})
             {:ok true
              :items items
-             :next_cursor next-cursor}))))))
+             :next_cursor next-cursor})))))))
 
 ;; Keep compatibility with existing tests/callers while handlers live in resource namespaces.
 (defn messages-create
