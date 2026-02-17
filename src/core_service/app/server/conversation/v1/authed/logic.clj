@@ -4,8 +4,8 @@
             [clojure.string :as str]
             [core-service.app.db.users :as users-db]
             [core-service.app.executors.protocol :as executor]
+            [core-service.app.redis.conversation-last :as conversation-last]
             [core-service.app.redis.unread-index :as unread-index]
-            [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
             [core-service.app.server.message.logic :as message-logic]
             [core-service.app.server.receipt.logic :as receipt-logic]
@@ -171,21 +171,12 @@
             profile (get profiles user-id-str)]
         (merge {:user_id user-id-str} profile)))))
 
-(defn redis-last-message
-  [streams stream]
-  (when (and streams stream)
-    (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :backward :limit 1})
-          payload (:payload (first entries))]
-      (when payload
-        (message-logic/decode-message payload)))))
-
-(defn minio-last-message
-  [{:keys [db minio segments] :as components} conversation-id]
-  (when minio
-    (let [segments (or segments {})
-          result (segment-reader/fetch-messages components conversation-id {:limit 1 :cursor nil :direction :backward})
-          messages (vec (:messages result))]
-      (first messages))))
+(defn last-messages-by-conversation
+  [{:keys [redis naming metrics]} conversation-ids]
+  (conversation-last/batch-last-messages {:redis redis
+                                          :naming naming
+                                          :metrics metrics}
+                                         conversation-ids))
 
 (defn entries->decoded
   [entries user-id]
@@ -243,27 +234,26 @@
         (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id))))
 
 (defn conversation-item-fallback
-  "Returns a conversation item with last_message nil and unread_count 0 (e.g. on timeout)."
-  [row user-id member-ids profiles]
+  "Returns a fallback conversation item (e.g. on timeout) with unread_count 0."
+  [row user-id member-ids profiles last-messages-by-conv]
   (let [base (conversation-row->item row)
         members (build-member-items member-ids profiles)
+        conv-id (:id row)
+        last-message (get last-messages-by-conv conv-id)
         counterpart (when (direct-conversation? (:type base))
                       (build-counterpart member-ids profiles user-id))]
     (cond-> (assoc base
                    :members members
-                   :last_message nil
+                   :last_message last-message
                    :unread_count 0)
       counterpart (assoc :counterpart counterpart))))
 
 (defn conversation-item
-  [{:keys [streams redis naming metrics logger] :as components} row user-id member-ids profiles]
+  [{:keys [streams redis naming metrics logger]} row user-id member-ids profiles last-messages-by-conv]
   (let [conv-id (:id row)
         _ (when logger (logger/log logger ::conversation-item-start {:conv-id conv-id}))
         t0 (System/nanoTime)
-        stream (when (and naming conv-id)
-                 (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id))
-        last-message (or (redis-last-message streams stream)
-                         (minio-last-message components conv-id))
+        last-message (get last-messages-by-conv conv-id)
         _ (when logger (logger/log logger ::conversation-item-after-last-msg {:conv-id conv-id
                                                                               :duration-ms (quot (- (System/nanoTime) t0) 1000000)}))
         t1 (System/nanoTime)

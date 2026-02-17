@@ -142,10 +142,12 @@
   [naming conv-id]
   (let [meta-prefix (get-in naming [:redis :stream-meta-prefix] "__dcore:stream")
         seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-        flush-key (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id)]
+        flush-key (str (get-in naming [:redis :flush-prefix] "chat:flush:") conv-id)
+        last-message-key (str (get-in naming [:redis :conversation-last-prefix] "chat:conv_last:") conv-id)]
     {:stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
      :seq-key seq-key
      :flush-key flush-key
+     :last-message-key last-message-key
      :sequence-hash-key (stream-logic/sequence-hash-key meta-prefix)
      :cursor-hash-key (stream-logic/cursor-hash-key meta-prefix)}))
 
@@ -157,11 +159,12 @@
 
 (defn clear-redis-conversation!
   [redis-client naming conv-id]
-  (let [{:keys [stream seq-key flush-key sequence-hash-key cursor-hash-key]} (redis-keys naming conv-id)]
+  (let [{:keys [stream seq-key flush-key last-message-key sequence-hash-key cursor-hash-key]} (redis-keys naming conv-id)]
     (car/wcar (:conn redis-client)
       (car/del stream)
       (car/del seq-key)
       (car/del flush-key)
+      (car/del last-message-key)
       (car/hdel sequence-hash-key seq-key)
       (car/hdel cursor-hash-key flush-key))))
 
