@@ -45,7 +45,7 @@ Refinement: Fully leverage Reitit's middleware:
 Use Muuntaja for automatic content negotiation (JSON/EDN).
 Use reitit.coercion.malli to handle validation at the routing level, allowing handlers to assume valid data.
 
-7. (WIP) Resource Management: Managed Concurrency
+7. (DONE) Resource Management: Managed Concurrency
 The system now uses a size-bounded ExecutorService (Fixed Thread Pool) via a new Integrant component.
 
 Issue: Under high load, the previous use of 'future' could saturate system threads and lead to "thread starvation" for the main Jetty/server threads.

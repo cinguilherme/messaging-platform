@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.test :refer [deftest is testing]]
             [core-service.app.config.clients]
+            [core-service.app.libs.executor]
             [core-service.app.config.messaging]
             [core-service.app.config.storage]
             [core-service.app.server.conversation.v1.authed.authed :as authed]
@@ -35,7 +36,7 @@
      :timeout-ms timeout-ms}))
 
 (defn- make-webdeps
-  [{:keys [db redis streams naming idempotency receipt minio segments timeout-ms]}]
+  [{:keys [db redis streams naming idempotency receipt minio segments timeout-ms executor]}]
   (cond-> {:db db}
     redis (assoc :redis redis)
     streams (assoc :streams streams)
@@ -44,6 +45,7 @@
     receipt (assoc :receipt receipt)
     minio (assoc :minio minio)
     segments (assoc :segments segments)
+    executor (assoc :executor executor)
     timeout-ms (assoc :conversations-list-item-timeout-ms timeout-ms)))
 
 (defn- make-handlers
@@ -53,23 +55,27 @@
    :list (authed/conversations-list {:webdeps webdeps})})
 
 (defmacro with-db
-  [[db client] & body]
+  [[db client executor] & body]
   `(let [{:keys [~'db ~'client]} (helpers/init-db)]
-     (try
-       (let [~db ~'db ~client ~'client]
-         ~@body)
-       (finally
-         (ig/halt-key! :d-core.core.clients.postgres/client ~'client)))))
+     (let [~'executor (ig/init-key :core-service.app.libs.executor/executor {:thread-count 4})]
+       (try
+         (let [~db ~'db ~client ~'client ~executor ~'executor]
+           ~@body)
+         (finally
+           (ig/halt-key! :core-service.app.libs.executor/executor ~'executor)
+           (ig/halt-key! :d-core.core.clients.postgres/client ~'client))))))
 
 (defmacro with-db-cleanup
-  [[db client] cleanup & body]
+  [[db client executor] cleanup & body]
   `(let [{:keys [~'db ~'client]} (helpers/init-db)]
-     (try
-       (let [~db ~'db ~client ~'client]
-         ~@body)
-       (finally
-         ~cleanup
-         (ig/halt-key! :d-core.core.clients.postgres/client ~'client)))))
+     (let [~'executor (ig/init-key :core-service.app.libs.executor/executor {:thread-count 4})]
+       (try
+         (let [~db ~'db ~client ~'client ~executor ~'executor]
+           ~@body)
+         (finally
+           ~cleanup
+           (ig/halt-key! :core-service.app.libs.executor/executor ~'executor)
+           (ig/halt-key! :d-core.core.clients.postgres/client ~'client))))))
 
 (def ^:private accept-json {"accept" "application/json"})
 
@@ -107,8 +113,8 @@
                                                :body {:text "hello"}})})
 
 (deftest conversations-list-requires-sender
-  (with-db [db client]
-    (let [{:keys [list]} (make-handlers (make-webdeps {:db db :client client}))
+  (with-db [db client executor]
+    (let [{:keys [list]} (make-handlers (make-webdeps {:db db :client client :executor executor}))
           resp (helpers/invoke-handler list {:request-method :get
                                              :headers accept-json})
           body (parse-body resp)]
@@ -119,9 +125,9 @@
 
 (deftest conversations-list-returns-items
   (let [{:keys [sender-id conv-id]} test-ids]
-    (with-db-cleanup [db client]
+    (with-db-cleanup [db client executor]
       (helpers/cleanup-conversation! db conv-id)
-      (let [{:keys [list]} (make-handlers (make-webdeps {:db db}))]
+      (let [{:keys [list]} (make-handlers (make-webdeps {:db db :executor executor}))]
       (helpers/setup-conversation! db {:conversation-id conv-id
                                        :user-id sender-id
                                        :title "Test"})
@@ -139,11 +145,11 @@
 
 (deftest conversations-list-paginates-with-cursor
   (let [{:keys [sender-id conv-old conv-new ts-old ts-new]} test-ids]
-    (with-db-cleanup [db client]
+    (with-db-cleanup [db client executor]
       (do
         (helpers/cleanup-conversation! db conv-old)
         (helpers/cleanup-conversation! db conv-new))
-      (let [{:keys [list]} (make-handlers (make-webdeps {:db db}))]
+      (let [{:keys [list]} (make-handlers (make-webdeps {:db db :executor executor}))]
       (helpers/setup-conversation! db {:conversation-id conv-old
                                        :user-id sender-id
                                        :title "Old"})
@@ -177,8 +183,8 @@
             (is (= (str conv-old) (:conversation_id item2))))))))))
 
 (deftest conversations-list-invalid-cursor
-  (with-db [db client]
-    (let [{:keys [list]} (make-handlers (make-webdeps {:db db}))
+  (with-db [db client executor]
+    (let [{:keys [list]} (make-handlers (make-webdeps {:db db :executor executor}))
           {:keys [sender-id]} test-ids
           resp (authed-get list sender-id :query-params {"cursor" "nope"})
           body (parse-body resp)]
@@ -192,7 +198,7 @@
     (if-not (helpers/redis-up? redis)
       (is false "Redis not reachable. Start docker-compose and retry.")
       (let [{:keys [sender-id conv-id receiver-id payload]} test-ids]
-        (with-db-cleanup [db client]
+        (with-db-cleanup [db client executor]
           (do
             (helpers/clear-redis-conversation! redis naming conv-id)
             (helpers/cleanup-conversation! db conv-id))
@@ -201,7 +207,8 @@
                                        :streams streams
                                        :naming naming
                                        :idempotency idempotency
-                                       :receipt receipt})
+                                       :receipt receipt
+                                       :executor executor})
                 {:keys [create receipt list]} (make-handlers webdeps)]
             (helpers/setup-conversation! db {:conversation-id conv-id :user-id sender-id})
             (helpers/ensure-membership! db {:conversation-id conv-id :user-id receiver-id})
@@ -240,7 +247,7 @@
         {:keys [sender-id conv-id payload]} test-ids]
     (if-not (and (helpers/redis-up? redis) (helpers/minio-up? minio))
       (is false "Redis or Minio not reachable. Start docker-compose and retry.")
-      (with-db-cleanup [db client]
+      (with-db-cleanup [db client executor]
         (do
           (helpers/clear-redis-conversation! redis naming conv-id)
           (helpers/cleanup-segment-object-and-index! db minio conv-id)
@@ -251,7 +258,8 @@
                                      :naming naming
                                      :idempotency idempotency
                                      :minio minio
-                                     :segments segments})
+                                     :segments segments
+                                     :executor executor})
               {:keys [create list]} (make-handlers webdeps)
               row (do
                     (helpers/setup-conversation! db {:conversation-id conv-id
@@ -290,10 +298,11 @@
 (deftest conversations-list-timeout-returns-fallback-item
   (let [{:keys [sender-id conv-id]} test-ids
         blocking-promise (promise)]
-    (with-db-cleanup [db client]
+    (with-db-cleanup [db client executor]
       (do
         (helpers/cleanup-conversation! db conv-id))
       (let [webdeps (make-webdeps {:db db
+                                   :executor executor
                                    :minio :fake-minio
                                    :segments {:segment-batch 1
                                               :compression :none

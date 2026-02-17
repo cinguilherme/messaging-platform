@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.test :refer [deftest is testing]]
             [core-service.app.db.users :as users-db]
+            [core-service.app.libs.executor]
             [core-service.app.server.conversation.v1.authed.authed :as authed]
             [core-service.integration.helpers :as helpers]
             [d-core.core.databases.protocols.simple-sql :as sql]
@@ -14,7 +15,8 @@
 
 (deftest conversations-detail-returns-members
   (let [{:keys [db client]} (helpers/init-db)
-        handler (authed/conversations-get {:webdeps {:db db}})
+        executor (ig/init-key :core-service.app.libs.executor/executor {:thread-count 4})
+        handler (authed/conversations-get {:webdeps {:db db :executor executor}})
         sender-id (java.util.UUID/randomUUID)
         other-id (java.util.UUID/randomUUID)
         conv-id (java.util.UUID/randomUUID)]
@@ -51,4 +53,5 @@
         (cleanup-user! db sender-id)
         (cleanup-user! db other-id)
         (helpers/cleanup-conversation! db conv-id)
+        (ig/halt-key! :core-service.app.libs.executor/executor executor)
         (ig/halt-key! :d-core.core.clients.postgres/client client)))))

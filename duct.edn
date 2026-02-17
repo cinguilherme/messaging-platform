@@ -166,6 +166,8 @@
                                             :logger #ig/ref :duct/logger
                                             :metrics #ig/ref :d-core.core.metrics.prometheus/metrics}
 
+   :core-service.app.libs.executor/executor {:thread-count 20}
+
    ;; webdeps component is a bundle of general deps
    :core-service.app.config.webdeps/webdeps {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
@@ -184,6 +186,7 @@
                                              :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
                                              :logging #ig/ref :core-service.app.config.observability/logging
                                              :receipt #ig/ref :core-service.app.config.messaging/receipt-config
+                                             :executor #ig/ref :core-service.app.libs.executor/executor
                                              :conversations-list-item-timeout-ms 10000}
 
   ;; WebSocket server (Aleph) - separate port

@@ -3,6 +3,7 @@
             [clj-http.client :as http-client]
             [clojure.string :as str]
             [core-service.app.db.users :as users-db]
+            [core-service.app.executors.protocol :as executor]
             [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
@@ -126,8 +127,16 @@
         (catch Exception _
           {})))))
 
+(defn- persist-fallback-profiles!
+  [db fallback-profiles]
+  (try
+    (doseq [[user-id profile] fallback-profiles]
+      (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
+    (catch Exception _
+      nil)))
+
 (defn resolve-member-profiles
-  [db token-client keycloak member-ids]
+  [db token-client keycloak executor-pool member-ids]
   (let [local-profiles (users-db/fetch-user-profiles db {:user-ids member-ids})
         profiles (profiles-by-id local-profiles)
         missing-ids (remove #(contains? profiles (str %)) member-ids)
@@ -135,12 +144,9 @@
                                                     :keycloak keycloak}
                                                    missing-ids)]
     (when (seq fallback-profiles)
-      (future
-        (try
-          (doseq [[user-id profile] fallback-profiles]
-            (users-db/upsert-user-profile! db (assoc profile :user-id user-id)))
-          (catch Exception _
-            nil))))
+      (executor/execute executor-pool
+                        (fn []
+                          (persist-fallback-profiles! db fallback-profiles))))
     (merge profiles fallback-profiles)))
 
 (defn build-member-items
