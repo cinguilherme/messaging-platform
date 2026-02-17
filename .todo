@@ -1,0 +1,55 @@
+Based on a review of the core-service codebase, here is a "checkup" report with identified areas of improvement and suggested refactorings.
+
+1. (NOT TO BE DONE, desired webdeps will be kept) Architectural: Decomposition of the WebDeps "God Object"
+The WebDeps component is used as a "bundle" containing nearly 20 different dependencies (DB, Redis, Logger, etc.) and is passed to almost every handler.
+
+Issue: This obscures what a specific handler actually depends on and makes unit testing significantly harder, as you must mock the entire record even if a handler only needs the DB.
+Refinement: Refactor integrant components to accept only the specific dependencies they require in duct.edn.
+
+2. Performance: N+1 External Request Problem
+
+In logic/fetch-keycloak-profiles, the system makes a sequential HTTP GET request to Keycloak for every unique user ID in a list.
+
+Issue: Fetching a list of 50 conversations with many unique members can trigger hundreds of sequential HTTP calls, causing severe latency.
+Refinement: Use a bulk search API if available in Keycloak, or at minimum, parallelize these requests using pmap or a dedicated thread pool.
+
+3. Data Integrity & Performance: Synchronous DB Writes in GETs
+The resolve-member-profiles function performs an upsert-user-profile! for every profile fetched from Keycloak, one by one, inside a loop.
+
+Issue: This happens during a READ operation (listing conversations). It slows down the response and increases DB contention.
+Refinement: Perform these updates in a single batch operation or move the "sync with Keycloak" logic to an asynchronous background job/worker.
+
+4. Bottleneck: Heavy Conversation List Logic
+The conversations-list implementation uses future to parallelize item construction, but each item still performs its own I/O to Redis and S3 to find the "last message".
+
+Issue: This is still an N+1 pattern across different storage layers.
+Refinement: Batch fetch the "last message" metadata for all conversations in the list in one or two queries. Avoid S3/Minio lookups in the list view; ensure the last message metadata is always cached in Redis or the primary DB.
+
+5. (DONE) Logic Optimization: Unread Count Calculation
+The current unread-count-from-redis pages through messages backwards and checks against individual receipts until it finds a read message.
+
+Issue: This is 
+O(M)
+O(M) where 
+M
+M is the number of unread messages. It can be very slow for users who haven't checked a busy group in a while.
+Refinement: Store a last_read_message_id or last_read_timestamp per user/conversation. This allows calculating the count in 
+O(1)
+O(1) using Redis ZCOUNT or a simple SQL count.
+
+6. (DONE) Code Modernization: Standardize API Handlers
+Handlers currently perform manual JSON parsing, manual Malli validation, and manual response formatting in http.clj.
+
+Issue: This leads to verbose cond blocks and duplicated error-handling logic.
+Refinement: Fully leverage Reitit's middleware:
+Use Muuntaja for automatic content negotiation (JSON/EDN).
+Use reitit.coercion.malli to handle validation at the routing level, allowing handlers to assume valid data.
+
+7. (WIP) Resource Management: Managed Concurrency
+The system now uses a size-bounded ExecutorService (Fixed Thread Pool) via a new Integrant component.
+
+Issue: Under high load, the previous use of 'future' could saturate system threads and lead to "thread starvation" for the main Jetty/server threads.
+Refinement: Defined a size-bounded ExecutorService as an Integrant component and passed it to the handlers that require background processing.
+- Created core-service.app.libs.executor/executor component.
+- Added executor to WebDeps.
+- Refactored conversations-list to use managed executor.
