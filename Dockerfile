@@ -1,5 +1,9 @@
 FROM clojure:tools-deps
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
 # Cache deps
 COPY deps.edn /usr/src/app/deps.edn
 WORKDIR /usr/src/app

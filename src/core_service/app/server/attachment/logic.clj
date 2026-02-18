@@ -6,6 +6,8 @@
            (javax.imageio ImageIO)
            (javax.sound.sampled AudioSystem)))
 
+(def ^:private supported-versions #{"original" "alt" "aac" "mp3"})
+
 (defn- coerce-kind
   [kind]
   (when kind
@@ -23,6 +25,14 @@
 (defn resolve-kind
   [kind content-type]
   (or (coerce-kind kind) (infer-kind content-type)))
+
+(defn image-content-type?
+  [content-type]
+  (and (string? content-type) (str/starts-with? content-type "image/")))
+
+(defn voice-content-type?
+  [content-type]
+  (and (string? content-type) (str/starts-with? content-type "audio/")))
 
 (defn- content-type->ext
   [content-type]
@@ -54,6 +64,85 @@
   (when object-key
     (let [base (str/replace (str object-key) #"\.[^./]+$" "")]
       (str base "-alt.jpg"))))
+
+(defn derive-aac-key
+  [object-key]
+  (when object-key
+    (let [base (str/replace (str object-key) #"\.[^./]+$" "")]
+      (str base "-aac.m4a"))))
+
+(defn derive-mp3-key
+  [object-key]
+  (when object-key
+    (let [base (str/replace (str object-key) #"\.[^./]+$" "")]
+      (str base "-mp3.mp3"))))
+
+(defn derive-variant-key
+  [object-key version]
+  (case (some-> version str/lower-case)
+    "alt" (derive-alt-key object-key)
+    "aac" (derive-aac-key object-key)
+    "mp3" (derive-mp3-key object-key)
+    object-key))
+
+(defn supports-version?
+  [version]
+  (contains? supported-versions (or version "original")))
+
+(defn- original-matches-target?
+  [version mime-type]
+  (let [mime (some-> mime-type str/lower-case)]
+    (case version
+      "aac" (= mime "audio/mp4")
+      "mp3" (or (= mime "audio/mpeg") (= mime "audio/mp3"))
+      false)))
+
+(defn resolve-attachment-variant
+  [attachment-row version]
+  (let [version (or (some-> version str/lower-case) "original")
+        object-key (:object_key attachment-row)
+        mime-type (or (:mime_type attachment-row) "application/octet-stream")]
+    (cond
+      (not (supports-version? version))
+      {:status :invalid-version}
+
+      (= version "original")
+      {:status :ok
+       :version "original"
+       :object-key object-key
+       :content-type mime-type}
+
+      (= version "alt")
+      (if (image-content-type? mime-type)
+        {:status :ok
+         :version "alt"
+         :object-key (derive-alt-key object-key)
+         :content-type "image/jpeg"}
+        {:status :incompatible-version})
+
+      (or (= version "aac") (= version "mp3"))
+      (if (voice-content-type? mime-type)
+        (if (original-matches-target? version mime-type)
+          {:status :ok
+           :version version
+           :object-key object-key
+           :content-type (if (= version "aac") "audio/mp4" "audio/mpeg")
+           :aliased-original? true}
+          {:status :ok
+           :version version
+           :object-key (derive-variant-key object-key version)
+           :content-type (if (= version "aac") "audio/mp4" "audio/mpeg")})
+        {:status :incompatible-version})
+
+      :else
+      {:status :invalid-version})))
+
+(defn variant-keys-for-mime
+  [object-key mime-type]
+  (cond-> []
+    (image-content-type? mime-type) (conj (derive-alt-key object-key))
+    (voice-content-type? mime-type) (into [(derive-aac-key object-key)
+                                           (derive-mp3-key object-key)])))
 
 (defn- sha256-hex
   [^bytes bytes]

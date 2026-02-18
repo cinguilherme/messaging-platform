@@ -182,8 +182,8 @@
 
 (defn- fetch-ref-db-then-storage [db attachment-id version conv-id minio]
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
-                            now-ms (System/currentTimeMillis)
-                            alt-version? (= version "alt")]
+        now-ms (System/currentTimeMillis)
+        variant (when row (logic/resolve-attachment-variant row version))]
                         (cond
                           (or (nil? row)
                               (not= conv-id (:conversation_id row)))
@@ -194,20 +194,19 @@
                           {:status 404
                            :body {:ok false :error "attachment expired"}}
 
-                          (and alt-version?
-                               (not (str/starts-with? (or (:mime_type row) "") "image/")))
+                          (= :invalid-version (:status variant))
+                          {:status 400
+                           :body {:ok false :error "invalid version"}}
+
+                          (= :incompatible-version (:status variant))
                           {:status 404
                            :body {:ok false :error "attachment variant not found"}}
 
                           :else
-                          (let [object-key (if alt-version?
-                                             (logic/derive-alt-key (:object_key row))
-                                             (:object_key row))
+                          (let [object-key (:object-key variant)
                                 obj (p-storage/storage-get-bytes minio object-key {})
                                 bytes (:bytes obj)
-                                mime-type (if alt-version?
-                                            "image/jpeg"
-                                            (or (:mime_type row) "application/octet-stream"))]
+                                mime-type (:content-type variant)]
                             (cond
                               (and (:ok obj) (bytes? bytes))
                               {:status 200
@@ -245,7 +244,7 @@
           (nil? minio)
           {:status 500 :body {:ok false :error "minio not configured"}}
 
-          (not (or (nil? version) (= version "original") (= version "alt")))
+          (not (logic/supports-version? version))
           {:status 400 :body {:ok false :error "invalid version"}}
 
           :else
@@ -253,8 +252,8 @@
 
 (defn- fetch-ref-from-db-then-storage [db attachment-id version conv-id minio]
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
-                            now-ms (System/currentTimeMillis)
-                            alt-version? (= version "alt")]
+        now-ms (System/currentTimeMillis)
+        variant (when row (logic/resolve-attachment-variant row version))]
                         (cond
                           (or (nil? row)
                               (not= conv-id (:conversation_id row)))
@@ -263,18 +262,16 @@
                           (attachment-row-expired? row now-ms)
                           {:status 404 :body nil}
 
-                          (and alt-version?
-                               (not (str/starts-with? (or (:mime_type row) "") "image/")))
+                          (= :invalid-version (:status variant))
+                          {:status 400 :body nil}
+
+                          (= :incompatible-version (:status variant))
                           {:status 404 :body nil}
 
                           :else
-                          (let [object-key (if alt-version?
-                                             (logic/derive-alt-key (:object_key row))
-                                             (:object_key row))
+                          (let [object-key (:object-key variant)
                                 obj (p-storage/storage-head minio object-key {})
-                                mime-type-fallback (if alt-version?
-                                                     "image/jpeg"
-                                                     (or (:mime_type row) "application/octet-stream"))
+                                mime-type-fallback (:content-type variant)
                                 content-type (or (:content-type obj) mime-type-fallback)
                                 content-length (or (:size obj) 0)
                                 etag (:etag obj)
@@ -314,7 +311,7 @@
           (nil? minio)
           {:status 500 :body nil}
 
-          (not (or (nil? version) (= version "original") (= version "alt")))
+          (not (logic/supports-version? version))
           {:status 400 :body nil}
 
           :else

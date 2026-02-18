@@ -229,7 +229,15 @@
                                                 :metrics #ig/ref :core-service.app.metrics/component
                                                 :processing {:optimize-threshold-bytes 1048576
                                                              :alt-max-dim 320
-                                                             :standard-max-dim 1920}}
+                                                             :standard-max-dim 1920}
+                                                :audio-processing {:enabled? true
+                                                                   :targets [:aac :mp3]
+                                                                   :ffmpeg-bin "ffmpeg"
+                                                                   :timeout-ms 30000
+                                                                   :aac-bitrate "64k"
+                                                                   :mp3-bitrate "64k"
+                                                                   :sample-rate 24000
+                                                                   :channels 1}}
   :core-service.app.workers.segments/system {:logger #ig/ref :duct/logger
                                              :db #ig/ref :d-core.core.databases.sql/common
                                              :redis #ig/ref :d-core.core.clients.redis/client

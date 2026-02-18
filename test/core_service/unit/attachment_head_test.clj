@@ -46,3 +46,37 @@
       (is (= "etag-123" (get-in response [:headers "etag"])))
       (is (string? (get-in response [:headers "last-modified"])))
       (is (nil? (:body response))))))
+
+(deftest attachments-head-uses-voice-variant-key
+  (let [conv-id #uuid "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        attachment-id #uuid "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        sender-id #uuid "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        storage-key* (atom nil)
+        handler (attachment-authed/attachments-head {:webdeps {:db :db
+                                                               :minio :storage}})
+        response (with-redefs [message-logic/sender-id-from-request (fn [_] sender-id)
+                               conversations-db/member? (fn [_ _] true)
+                               attachments-db/fetch-attachment-by-id (fn [_ _]
+                                                                       {:attachment_id attachment-id
+                                                                        :conversation_id conv-id
+                                                                        :mime_type "audio/webm"
+                                                                        :object_key "attachments/voice/test.webm"
+                                                                        :expires_at nil})
+                               p-storage/storage-head (fn [_ key _]
+                                                       (reset! storage-key* key)
+                                                       {:ok true
+                                                        :size 2048
+                                                        :content-type "audio/mp4"})
+                               p-storage/storage-get-bytes (fn [& _]
+                                                            (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
+                   (helpers/invoke-handler handler {:request-method :head
+                                                    :params {:id (str conv-id)
+                                                             :attachment_id (str attachment-id)
+                                                             :version "aac"}
+                                                    :auth/principal {:subject (str sender-id)
+                                                                     :tenant-id "tenant-1"}}))]
+    (is (= "attachments/voice/test-aac.m4a" @storage-key*))
+    (is (= 200 (:status response)))
+    (is (= "audio/mp4" (get-in response [:headers "content-type"])))
+    (is (= "2048" (get-in response [:headers "content-length"])))
+    (is (nil? (:body response)))))
