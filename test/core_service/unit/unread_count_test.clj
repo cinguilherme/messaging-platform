@@ -1,5 +1,5 @@
 (ns core-service.unit.unread-count-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [d-core.core.stream.protocol :as p-stream]
             [core-service.app.server.conversation.v1.authed.logic :as logic]
             [core-service.app.redis.unread-index :as unread-index]
@@ -10,6 +10,11 @@
   @#'core-service.app.server.conversation.v1.authed.logic/unread-count-from-redis)
 (def ^:private fallback-unread-cache
   @#'core-service.app.server.conversation.v1.authed.logic/fallback-unread-cache)
+
+(use-fixtures :each
+  (fn [f]
+    (reset! fallback-unread-cache {})
+    (f)))
 
 (defn- make-entry
   "Build a mock stream entry with an EDN-encoded message payload."

@@ -401,8 +401,8 @@
         (fallback-cache-evict! conversation-id user-id)
         index-count)
       (or (fallback-cache-get conversation-id user-id)
-          (some-> (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id)
-                  (fallback-cache-put! conversation-id user-id))))))
+          (when-some [scanned (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id)]
+            (fallback-cache-put! conversation-id user-id scanned))))))
 
 (defn conversation-item-fallback
   "Returns a fallback conversation item (e.g. on timeout) with unread_count 0."
