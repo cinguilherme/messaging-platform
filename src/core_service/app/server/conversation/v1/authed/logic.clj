@@ -335,6 +335,39 @@
    {:unread unread :done? false}
    decoded))
 
+(def ^:private fallback-unread-cache-ttl-ms 30000)
+(defonce ^:private fallback-unread-cache (atom {}))
+
+(defn- cache-key
+  [conversation-id user-id]
+  [(str conversation-id) (str user-id)])
+
+(defn- now-ms []
+  (System/currentTimeMillis))
+
+(defn- fallback-cache-get
+  [conversation-id user-id]
+  (let [k (cache-key conversation-id user-id)
+        now (now-ms)
+        cached (get @fallback-unread-cache k)]
+    (when (some? cached)
+      (if (> (:expires-at cached) now)
+        (:unread cached)
+        (do
+          (swap! fallback-unread-cache dissoc k)
+          nil)))))
+
+(defn- fallback-cache-put!
+  [conversation-id user-id unread]
+  (swap! fallback-unread-cache assoc (cache-key conversation-id user-id)
+         {:unread unread
+          :expires-at (+ (now-ms) fallback-unread-cache-ttl-ms)})
+  unread)
+
+(defn- fallback-cache-evict!
+  [conversation-id user-id]
+  (swap! fallback-unread-cache dissoc (cache-key conversation-id user-id)))
+
 (defn unread-count-from-redis-scan
   [streams redis metrics naming conversation-id user-id]
   (when (and streams redis naming conversation-id user-id)
@@ -360,11 +393,16 @@
 (defn unread-count-from-redis
   [streams redis metrics naming conversation-id user-id]
   (when (and streams redis naming conversation-id user-id)
-    (or (unread-index/unread-count {:redis redis
-                                    :naming naming
-                                    :metrics metrics}
-                                   conversation-id user-id)
-        (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id))))
+    (if-some [index-count (unread-index/unread-count {:redis redis
+                                                      :naming naming
+                                                      :metrics metrics}
+                                                     conversation-id user-id)]
+      (do
+        (fallback-cache-evict! conversation-id user-id)
+        index-count)
+      (or (fallback-cache-get conversation-id user-id)
+          (some-> (unread-count-from-redis-scan streams redis metrics naming conversation-id user-id)
+                  (fallback-cache-put! conversation-id user-id))))))
 
 (defn conversation-item-fallback
   "Returns a fallback conversation item (e.g. on timeout) with unread_count 0."
