@@ -19,22 +19,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: maven
 
       - name: Set up Clojure CLI
         uses: DeLaGuardo/setup-clojure@13.2
         with:
           cli: latest
 
-      - name: Cache Clojure git deps
+      - name: Cache Clojure dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.m2/repository
             ~/.gitlibs
             ~/.deps.clj
-          key: ${{ runner.os }}-clojure-${{ hashFiles('deps.edn') }}
+          key: ${{ runner.os }}-clojure-deps-${{ hashFiles('deps.edn') }}
           restore-keys: |
-            ${{ runner.os }}-clojure-
+            ${{ runner.os }}-clojure-deps-
 
       - name: Download dependencies
         run: clojure -P -M:test
