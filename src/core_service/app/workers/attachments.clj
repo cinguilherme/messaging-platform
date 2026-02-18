@@ -2,6 +2,7 @@
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.media.audio-transcode :as audio-transcode]
             [core-service.app.metrics :as app-metrics]
             [core-service.app.server.attachment.logic :as attachment-logic]
             [d-core.core.metrics.protocol :as metrics]
@@ -20,6 +21,16 @@
    :alt-max-dim 320
    :standard-max-dim 1920})
 
+(def default-audio-processing
+  {:enabled? false
+   :targets [:aac :mp3]
+   :ffmpeg-bin "ffmpeg"
+   :timeout-ms 30000
+   :aac-bitrate "64k"
+   :mp3-bitrate "64k"
+   :sample-rate 24000
+   :channels 1})
+
 (defn- duration-seconds
   [start-nanos]
   (/ (double (- (System/nanoTime) start-nanos)) 1000000000.0))
@@ -28,11 +39,21 @@
   [value]
   (and (string? value) (str/starts-with? value "image/")))
 
+(defn- voice-content-type?
+  [value]
+  (and (string? value) (str/starts-with? value "audio/")))
+
 (defn- image-kind?
   [kind mime-type]
   (or (= kind :image)
       (= kind "image")
       (image-content-type? mime-type)))
+
+(defn- voice-kind?
+  [kind mime-type]
+  (or (= kind :voice)
+      (= kind "voice")
+      (voice-content-type? mime-type)))
 
 (defn- content-type->format
   [content-type]
@@ -225,11 +246,102 @@
        :attachment-id attachment-id
        :error (.getMessage e)})))
 
+(defn- audio-target->key
+  [object-key target]
+  (case target
+    :aac (attachment-logic/derive-aac-key object-key)
+    :mp3 (attachment-logic/derive-mp3-key object-key)
+    nil))
+
+(defn audio-transcoder
+  [{:keys [channels components]}
+   {:keys [attachment-id conversation-id object-key bytes mime-type target]}]
+  (let [audio-processing (merge default-audio-processing (:audio-processing components))
+        target-key (audio-target->key object-key target)
+        target-content-type (audio-transcode/content-type-for-target target)]
+    (try
+      (cond
+        (not (audio-transcode/supported-target? target))
+        (do
+          (record-stage-metrics! (:metrics components) :transcode target :error)
+          {:status :error
+           :stage :transcode
+           :variant target
+           :attachment-id attachment-id
+           :error "unsupported audio target"})
+
+        (nil? target-key)
+        (do
+          (record-stage-metrics! (:metrics components) :transcode target :error)
+          {:status :error
+           :stage :transcode
+           :variant target
+           :attachment-id attachment-id
+           :error "missing target key"})
+
+        :else
+        (let [transcoded (audio-transcode/transcode-bytes
+                          audio-processing
+                          {:target target
+                           :bytes bytes
+                           :input-mime-type mime-type})]
+          (if-not (:ok transcoded)
+            (do
+              (record-stage-metrics! (:metrics components) :transcode target :error)
+              (when-let [log (:logger components)]
+                (logger/log log :warn ::attachment-audio-transcode-failed
+                            {:attachment-id attachment-id
+                             :conversation-id conversation-id
+                             :variant target
+                             :object-key object-key
+                             :error (:error transcoded)
+                             :output (:output transcoded)}))
+              {:status :error
+               :stage :transcode
+               :variant target
+               :attachment-id attachment-id
+               :error (:error transcoded)})
+            (let [store-enqueued?
+                  (enqueue! {:channels channels :components components}
+                            :attachments/store
+                            {:attachment-id attachment-id
+                             :conversation-id conversation-id
+                             :object-key target-key
+                             :bytes (:bytes transcoded)
+                             :content-type target-content-type
+                             :variant target}
+                            target)]
+              (record-stage-metrics! (:metrics components)
+                                     :transcode
+                                     target
+                                     (if store-enqueued? :queued :closed))
+              {:status (if store-enqueued? :queued :error)
+               :stage :store
+               :variant target
+               :object-key target-key
+               :attachment-id attachment-id}))))
+      (catch Exception e
+        (record-stage-metrics! (:metrics components) :transcode target :error)
+        (when-let [log (:logger components)]
+          (logger/log log :warn ::attachment-audio-transcode-exception
+                      {:attachment-id attachment-id
+                       :conversation-id conversation-id
+                       :variant target
+                       :object-key object-key
+                       :error (.getMessage e)}))
+        {:status :error
+         :stage :transcode
+         :variant target
+         :attachment-id attachment-id
+         :error (.getMessage e)}))))
+
 (defn attachment-orchestrator
   [{:keys [channels components]}
    {:keys [attachment-id conversation-id object-key bytes mime-type size-bytes kind]}]
   (let [processing (merge default-processing (:processing components))
+        audio-processing (merge default-audio-processing (:audio-processing components))
         image? (image-kind? kind mime-type)
+        voice? (voice-kind? kind mime-type)
         size-bytes (long (or size-bytes (alength ^bytes bytes)))
         alt-key (attachment-logic/derive-alt-key object-key)
         standard-format (content-type->format mime-type)
@@ -266,9 +378,33 @@
                                        :variant :standard
                                        :max-dim (:standard-max-dim processing)
                                        :target-key object-key
-                                       :target-content-type mime-type
-                                       :target-format standard-format}
-                                      :standard))]
+                                      :target-content-type mime-type
+                                      :target-format standard-format}
+                                      :standard))
+        audio-targets (if (and voice? (:enabled? audio-processing))
+                        (->> (:targets audio-processing)
+                             (map (fn [target]
+                                    (if (keyword? target)
+                                      target
+                                      (keyword (str target)))))
+                             (filter audio-transcode/supported-target?)
+                             distinct
+                             vec)
+                        [])
+        audio-enqueue-results
+        (into {}
+              (map (fn [target]
+                     [target
+                      (enqueue! {:channels channels :components components}
+                                :attachments/transcode
+                                {:attachment-id attachment-id
+                                 :conversation-id conversation-id
+                                 :object-key object-key
+                                 :bytes bytes
+                                 :mime-type mime-type
+                                 :target target}
+                                target)]))
+              audio-targets)]
     (when (and (:logger components) (false? alt-enqueued?))
       (logger/log (:logger components) :warn ::attachment-alt-queue-failed
                   {:attachment-id attachment-id
@@ -279,14 +415,18 @@
      :conversation-id conversation-id
      :enqueue {:original original-enqueued?
                :alt (when image? alt-enqueued?)
-               :standard (when standard-eligible? standard-enqueued?)}
+               :standard (when standard-eligible? standard-enqueued?)
+               :audio (when (seq audio-enqueue-results) audio-enqueue-results)}
      :image? image?
+     :voice? voice?
      :alt-key (when image? alt-key)
-     :standard-optimization? standard-eligible?}))
+     :standard-optimization? standard-eligible?
+     :audio-targets audio-targets}))
 
 (def default-definition
   {:channels {:attachments/orchestrate {:buffer 64}
               :attachments/resize {:buffer 64}
+              :attachments/transcode {:buffer 64}
               :attachments/store {:buffer 64}
               :workers/errors {:buffer 16}}
    :workers {:attachment-orchestrator {:kind :command
@@ -300,6 +440,11 @@
                              :worker-fn image-resizer
                              :dispatch :thread
                              :fail-chan :workers/errors}
+             :audio-transcoder {:kind :command
+                                :in :attachments/transcode
+                                :worker-fn audio-transcoder
+                                :dispatch :thread
+                                :fail-chan :workers/errors}
              :image-storer {:kind :command
                             :in :attachments/store
                             :worker-fn image-storer
@@ -307,10 +452,11 @@
                             :fail-chan :workers/errors}}})
 
 (defmethod ig/init-key :core-service.app.workers.attachments/system
-  [_ {:keys [webdeps logger metrics definition processing]}]
+  [_ {:keys [webdeps logger metrics definition processing audio-processing]}]
   (let [webdeps (or webdeps {})
         logger (or logger (:logger webdeps))
         storage (or (:storage webdeps) (:minio webdeps))
+        audio-processing (merge default-audio-processing audio-processing)
         _ (when-not (some? storage)
             (throw (ex-info "attachment workers storage not configured"
                             {:component :core-service.app.workers.attachments/system
@@ -320,17 +466,25 @@
                             {:component :core-service.app.workers.attachments/system
                              :reason :invalid-storage
                              :storage-type (some-> storage class str)})))
+        _ (when (and (:enabled? audio-processing)
+                     (not (audio-transcode/ffmpeg-available? (:ffmpeg-bin audio-processing))))
+            (throw (ex-info "attachment workers ffmpeg not available"
+                            {:component :core-service.app.workers.attachments/system
+                             :reason :missing-ffmpeg
+                             :ffmpeg-bin (:ffmpeg-bin audio-processing)})))
         components {:logger logger
                     :storage storage
                     :db (:db webdeps)
                     :metrics (or metrics (:metrics webdeps))
                     :observability (or metrics (:metrics webdeps))
-                    :processing (merge default-processing processing)}]
+                    :processing (merge default-processing processing)
+                    :audio-processing audio-processing}]
     (when logger
       (logger/log logger :info ::initializing-attachment-workers
                   {:channels (keys (:channels (or definition default-definition)))
                    :workers (keys (:workers (or definition default-definition)))
-                   :processing (:processing components)}))
+                   :processing (:processing components)
+                   :audio-processing (:audio-processing components)}))
     (workers/start-workers (or definition default-definition) components)))
 
 (defmethod ig/halt-key! :core-service.app.workers.attachments/system

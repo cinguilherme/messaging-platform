@@ -164,7 +164,7 @@ Notes:
 
 ```json
 {
-  "type": "text|image|file|system",
+  "type": "text|image|voice|file|system",
   "body": {"text": "hello"},
   "attachments": [
     {
@@ -183,6 +183,21 @@ Notes:
 **Idempotency is required** for `POST /messages` by default:
 - Header: `Idempotency-Key: <unique-per-send>`
 - If missing, the request fails unless `client_ref` is allowed and provided.
+
+### Attachment bytes fetch
+
+- `GET /v1/conversations/:id/attachments/:attachment_id?version=original|alt|aac|mp3`
+- `HEAD /v1/conversations/:id/attachments/:attachment_id?version=original|alt|aac|mp3`
+
+Version behavior:
+- `original`: uploaded object bytes.
+- `alt`: image-only low-resolution JPEG placeholder.
+- `aac`: voice-only AAC/m4a variant (`audio/mp4`).
+- `mp3`: voice-only MP3 variant (`audio/mpeg`).
+
+Recommended client strategy:
+- images: probe/fetch `alt`, then fetch `original`.
+- voice: probe/fetch `aac`, fallback to `mp3`, then fallback to `original`.
 
 ### Messages list (pagination)
 
@@ -206,7 +221,7 @@ Items follow the message envelope schema (below).
       "seq": 12345,
       "sender_id": "uuid",
       "sent_at": 1730000000000,
-      "type": "text|image|file|system",
+      "type": "text|image|voice|file|system",
       "body": {"text": "hello"},
       "attachments": [
         {
@@ -234,7 +249,7 @@ Items follow the message envelope schema (below).
   "seq": 12345,
   "sender_id": "uuid",
   "sent_at": 1730000000000,
-  "type": "text|image|file|system",
+  "type": "text|image|voice|file|system",
   "body": {"text": "hello"},
   "attachments": [
     {
@@ -407,10 +422,6 @@ smoke-testing the WS server. It does not require authentication.
 GraphQL is exposed on its own port. The module supports `graphql-transport-ws`
 subscriptions when enabled. See `docs/dcore-docs/graphql.md` for config details.
 
-## Not Supported in V1 (Explicit)
-
-- Public attachment upload/download flow (attachments are schema-only).
-
 ## Web App Example (Fetch)
 
 ```js
@@ -475,6 +486,3 @@ val request = Request.Builder()
 - Store tokens securely (Keychain/Keystore/Secure Storage).
 - If you’re running the web app in a browser, CORS is **not configured** by
   default in this service; add CORS at your reverse proxy or middleware.
-- Attachments are referenced by metadata in messages, but a public upload flow
-  is not exposed yet (the `/test/image-upload` endpoint is for internal testing).
-  For v1, clients should treat attachments as not supported and send text-only.

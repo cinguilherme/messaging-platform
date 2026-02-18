@@ -1,6 +1,7 @@
 (ns core-service.unit.attachment-workers-test
   (:require [clojure.test :refer [deftest is testing]]
             [core-service.app.db.attachments :as attachments-db]
+            [core-service.app.media.audio-transcode :as audio-transcode]
             [core-service.app.workers.attachments :as attachment-workers]
             [d-core.core.storage.protocol :as p-storage]
             [integrant.core :as ig])
@@ -120,4 +121,41 @@
         (is (= :queued (:status result)))
         (is (true? (get-in result [:enqueue :original])))
         (is (false? (get-in result [:enqueue :alt])))))
-    (clojure.core.async/close! open-store)))
+    (clojure.core.async/close! open-store))
+
+  (let [audio-bytes (.getBytes "voice" "UTF-8")
+        open-store (clojure.core.async/chan 1)
+        open-transcode (clojure.core.async/chan 2)]
+    (testing "voice attachments enqueue audio transcodes when enabled"
+      (let [result (attachment-workers/attachment-orchestrator
+                    {:channels {:attachments/store open-store
+                                :attachments/transcode open-transcode
+                                :attachments/resize (clojure.core.async/chan 1)}
+                     :components {:processing attachment-workers/default-processing
+                                  :audio-processing {:enabled? true
+                                                     :targets [:aac :mp3]}
+                                  :logger nil
+                                  :metrics nil}}
+                    {:attachment-id #uuid "00000000-0000-0000-0000-000000000120"
+                     :conversation-id #uuid "00000000-0000-0000-0000-000000000121"
+                     :object-key "attachments/voice/v.webm"
+                     :bytes audio-bytes
+                     :mime-type "audio/webm"
+                     :kind :voice})]
+        (is (= :queued (:status result)))
+        (is (true? (get-in result [:enqueue :original])))
+        (is (= true (get-in result [:enqueue :audio :aac])))
+        (is (= true (get-in result [:enqueue :audio :mp3])))))
+    (clojure.core.async/close! open-store)
+    (clojure.core.async/close! open-transcode)))
+
+(deftest attachment-workers-init-validates-ffmpeg-when-audio-enabled
+  (with-redefs [audio-transcode/ffmpeg-available? (constantly false)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"ffmpeg not available"
+         (ig/init-key :core-service.app.workers.attachments/system
+                      {:webdeps {:storage (mock-storage)}
+                       :audio-processing {:enabled? true}
+                       :logger nil
+                       :metrics nil})))))

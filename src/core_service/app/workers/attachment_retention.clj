@@ -1,6 +1,5 @@
 (ns core-service.app.workers.attachment-retention
-  (:require [clojure.string :as str]
-            [core-service.app.db.attachments :as attachments-db]
+  (:require [core-service.app.db.attachments :as attachments-db]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.server.attachment.logic :as attachment-logic]
             [d-core.core.storage.protocol :as p-storage]
@@ -40,14 +39,12 @@
             result (reduce (fn [acc {:keys [attachment_id object_key mime_type]}]
                              (let [deleted (p-storage/storage-delete minio object_key {})
                                    original-deleted? (or (:ok deleted) (missing-object? deleted))
-                                   image? (str/starts-with? (or mime_type "") "image/")
-                                   alt-key (when image?
-                                             (attachment-logic/derive-alt-key object_key))]
+                                   variant-keys (attachment-logic/variant-keys-for-mime object_key mime_type)]
                                (if original-deleted?
                                  (do
-                                   (when alt-key
-                                     ;; Low-res variant cleanup is best-effort and must not block row deletion.
-                                     (p-storage/storage-delete minio alt-key {}))
+                                   ;; Variant cleanup is best-effort and must not block row deletion.
+                                   (doseq [variant-key variant-keys]
+                                     (p-storage/storage-delete minio variant-key {}))
                                    (attachments-db/delete-attachment! db {:attachment-id attachment_id})
                                    (update acc :deleted inc))
                                  (update acc :failed inc))))

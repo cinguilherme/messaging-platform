@@ -10,7 +10,11 @@
        "- Probe variant availability with `HEAD /v1/conversations/{id}/attachments/{attachment_id}`.\n"
        "- Image uploads generate a low-res variant using a deterministic key suffix: replace the original extension with `-alt.jpg`.\n"
        "  Example: `attachments/image/123.png` -> `attachments/image/123-alt.jpg`.\n"
+       "- Voice uploads can generate transcoded variants using deterministic suffixes:\n"
+       "  - `version=aac` -> `-aac.m4a`\n"
+       "  - `version=mp3` -> `-mp3.mp3`\n"
        "- For image-first UX, clients can `HEAD ?version=alt` for readiness checks, then `GET ?version=alt` for placeholder rendering, and finally fetch the original when needed.\n"
+       "- For voice playback, clients can probe `version=aac` first (iOS-friendly) and fallback to `version=mp3`.\n"
        "- `object_key` is internal storage metadata; clients should use API endpoints, not direct object paths."))
 
 (def openapi-info
@@ -186,7 +190,7 @@
 
 (def AttachmentGetQuerySchema
   [:map
-   [:version {:optional true} [:enum "original" "alt"]]])
+   [:version {:optional true} [:enum "original" "alt" "aac" "mp3"]]])
 
 (def AttachmentCreateRequestBody
   {:required true

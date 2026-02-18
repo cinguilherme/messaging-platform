@@ -7,6 +7,7 @@
             [core-service.app.config.storage]
             [core-service.app.server.attachment.authed :as attachment-authed]
             [core-service.app.server.attachment.logic :as attachment-logic]
+            [core-service.app.media.audio-transcode :as audio-transcode]
             [core-service.app.server.conversation.v1.authed.authed :as message-authed]
             [core-service.app.workers.attachments]
             [core-service.app.workers.attachment-retention :as attachment-retention]
@@ -19,7 +20,9 @@
   (:import (java.io ByteArrayOutputStream)
            (java.awt.image BufferedImage)
            (java.util Random)
-           (javax.imageio ImageIO)))
+           (javax.imageio ImageIO)
+           (javax.sound.sampled AudioFileFormat$Type AudioFormat AudioInputStream AudioSystem)
+           (java.io ByteArrayInputStream)))
 
 (defn- write-temp-file!
   [^bytes bytes suffix]
@@ -45,6 +48,18 @@
         (.setRGB image x y (.nextInt rnd 0x1000000))))
     (ImageIO/write image "png" out)
     (.toByteArray out)))
+
+(defn- tiny-wav-bytes
+  []
+  (let [sample-rate 8000.0
+        duration-seconds 1
+        frame-count (long (* sample-rate duration-seconds))
+        format (AudioFormat. sample-rate 16 1 true false)
+        payload (byte-array (* frame-count 2))]
+    (with-open [stream (AudioInputStream. (ByteArrayInputStream. payload) format frame-count)
+                out (ByteArrayOutputStream.)]
+      (AudioSystem/write stream AudioFileFormat$Type/WAVE out)
+      (.toByteArray out))))
 
 (defn- wait-for-object
   [storage object-key]
@@ -74,7 +89,7 @@
       (and (bytes? body) (zero? (alength ^bytes body)))))
 
 (defn- init-attachment-workers
-  [minio-client]
+  [minio-client & {:keys [audio-processing]}]
   (ig/init-key :core-service.app.workers.attachments/system
                {:webdeps {:minio minio-client
                           :storage minio-client}
@@ -84,7 +99,8 @@
                              :alt-max-dim 320
                              ;; Keep below test fixture dimensions (1400x1400)
                              ;; so large-image optimization is guaranteed in integration tests.
-                             :standard-max-dim 1280}}))
+                             :standard-max-dim 1280}
+                :audio-processing (merge {:enabled? false} audio-processing)}))
 
 (deftest attachments-upload-and-send-message
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
@@ -394,6 +410,94 @@
             (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
 
+(deftest attachments-retention-removes-expired-voice-variants
+  (if-not (audio-transcode/ffmpeg-available? "ffmpeg")
+    (is true "ffmpeg not available; skipping voice retention integration test.")
+    (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+          minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+      (if-not (helpers/minio-up? minio-client)
+        (is false "Minio not reachable. Start docker-compose and retry.")
+        (let [{:keys [db client]} (helpers/init-db)
+              naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+              attachment-workers-system
+              (init-attachment-workers minio-client
+                                       :audio-processing {:enabled? true
+                                                          :targets [:aac :mp3]
+                                                          :ffmpeg-bin "ffmpeg"
+                                                          :timeout-ms 30000
+                                                          :aac-bitrate "64k"
+                                                          :mp3-bitrate "64k"
+                                                          :sample-rate 24000
+                                                          :channels 1})
+              attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                              :minio minio-client
+                                                                              :naming naming
+                                                                              :attachment-workers attachment-workers-system
+                                                                              :attachment-retention {:max-age-ms 60000}}})
+              conv-id (java.util.UUID/randomUUID)
+              sender-id (java.util.UUID/randomUUID)
+              object-key* (atom nil)
+              attachment-id* (atom nil)
+              wav-bytes (tiny-wav-bytes)
+              wav-file (write-temp-file! wav-bytes ".wav")]
+          (try
+            (helpers/setup-conversation! db {:conversation-id conv-id
+                                             :user-id sender-id})
+            (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
+                                               :headers {"accept" "application/json"
+                                                         "content-type" "multipart/form-data"}
+                                               :params {:id (str conv-id)
+                                                        :kind "voice"}
+                                               :multipart-params {"file" {:tempfile wav-file
+                                                                           :filename "voice.wav"
+                                                                           :content-type "audio/wav"}}
+                                               :auth/principal {:subject (str sender-id)
+                                                                :tenant-id "tenant-1"}})
+                  upload-body (json/parse-string (:body upload-resp) true)]
+              (is (= 200 (:status upload-resp)))
+              (is (:ok upload-body))
+              (when (:ok upload-body)
+                (let [attachment (:attachment upload-body)
+                      attachment-id (java.util.UUID/fromString (:attachment_id attachment))
+                      object-key (:object_key attachment)
+                      aac-key (attachment-logic/derive-aac-key object-key)
+                      mp3-key (attachment-logic/derive-mp3-key object-key)
+                      _ (reset! attachment-id* attachment-id)
+                      _ (reset! object-key* object-key)
+                      _ (wait-for-object minio-client object-key)
+                      _ (wait-for-object minio-client aac-key)
+                      _ (wait-for-object minio-client mp3-key)
+                      expired-at (java.sql.Timestamp. (- (System/currentTimeMillis) 2000))]
+                  (sql/execute! db ["UPDATE attachments SET expires_at = ? WHERE attachment_id = ?"
+                                    expired-at attachment-id]
+                                {})
+                  (let [result (attachment-retention/cleanup! {:db db
+                                                               :minio minio-client
+                                                               :retention {:max-age-ms 1
+                                                                           :batch-size 10}})
+                        obj (p-storage/storage-get-bytes minio-client object-key {})
+                        aac-obj (p-storage/storage-get-bytes minio-client aac-key {})
+                        mp3-obj (p-storage/storage-get-bytes minio-client mp3-key {})
+                        row (first (sql/select db {:table :attachments
+                                                   :where {:attachment_id attachment-id}}))]
+                    (testing "voice retention deletes original and transcoded variants"
+                      (is (= :ok (:status result)))
+                      (is (= 1 (:deleted result)))
+                      (is (false? (:ok obj)))
+                      (is (false? (:ok aac-obj)))
+                      (is (false? (:ok mp3-obj)))
+                      (is (nil? row)))))))
+            (finally
+              (when-let [object-key @object-key*]
+                (p-storage/storage-delete minio-client object-key {})
+                (p-storage/storage-delete minio-client (attachment-logic/derive-aac-key object-key) {})
+                (p-storage/storage-delete minio-client (attachment-logic/derive-mp3-key object-key) {}))
+              (when (.exists wav-file)
+                (.delete wav-file))
+              (helpers/cleanup-conversation! db conv-id)
+              (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
+              (ig/halt-key! :d-core.core.clients.postgres/client client))))))))
+
 (deftest attachments-async-image-variants
   (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
         minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
@@ -528,6 +632,112 @@
             (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
 
+(deftest attachments-async-voice-variants
+  (if-not (audio-transcode/ffmpeg-available? "ffmpeg")
+    (is true "ffmpeg not available; skipping voice variant integration test.")
+    (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
+          minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
+      (if-not (helpers/minio-up? minio-client)
+        (is false "Minio not reachable. Start docker-compose and retry.")
+        (let [{:keys [db client]} (helpers/init-db)
+              naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+              attachment-workers-system
+              (init-attachment-workers minio-client
+                                       :audio-processing {:enabled? true
+                                                          :targets [:aac :mp3]
+                                                          :ffmpeg-bin "ffmpeg"
+                                                          :timeout-ms 30000
+                                                          :aac-bitrate "64k"
+                                                          :mp3-bitrate "64k"
+                                                          :sample-rate 24000
+                                                          :channels 1})
+              attach-handler (attachment-authed/attachments-create {:webdeps {:db db
+                                                                              :minio minio-client
+                                                                              :naming naming
+                                                                              :attachment-workers attachment-workers-system}})
+              get-handler (attachment-authed/attachments-get {:webdeps {:db db
+                                                                        :minio minio-client}})
+              head-handler (attachment-authed/attachments-head {:webdeps {:db db
+                                                                          :minio minio-client}})
+              conv-id (java.util.UUID/randomUUID)
+              sender-id (java.util.UUID/randomUUID)
+              object-keys* (atom [])
+              wav-bytes (tiny-wav-bytes)
+              wav-file (write-temp-file! wav-bytes ".wav")]
+          (try
+            (helpers/setup-conversation! db {:conversation-id conv-id
+                                             :user-id sender-id})
+
+            (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
+                                               :headers {"accept" "application/json"
+                                                         "content-type" "multipart/form-data"}
+                                               :params {:id (str conv-id)
+                                                        :kind "voice"}
+                                               :multipart-params {"file" {:tempfile wav-file
+                                                                           :filename "voice.wav"
+                                                                           :content-type "audio/wav"}}
+                                               :auth/principal {:subject (str sender-id)
+                                                                :tenant-id "tenant-1"}})
+                  upload-body (json/parse-string (:body upload-resp) true)]
+              (testing "voice upload succeeds"
+                (is (= 200 (:status upload-resp)))
+                (is (:ok upload-body)))
+              (when (:ok upload-body)
+                (let [attachment (:attachment upload-body)
+                      object-key (:object_key attachment)
+                      aac-key (attachment-logic/derive-aac-key object-key)
+                      mp3-key (attachment-logic/derive-mp3-key object-key)
+                      _ (swap! object-keys* into [object-key aac-key mp3-key])
+                      original-stored (wait-for-object minio-client object-key)
+                      aac-stored (wait-for-object minio-client aac-key)
+                      mp3-stored (wait-for-object minio-client mp3-key)
+                      head-aac-resp (helpers/invoke-handler head-handler {:request-method :head
+                                                   :params {:id (str conv-id)
+                                                            :attachment_id (str (:attachment_id attachment))
+                                                            :version "aac"}
+                                                   :auth/principal {:subject (str sender-id)
+                                                                    :tenant-id "tenant-1"}})
+                      head-mp3-resp (helpers/invoke-handler head-handler {:request-method :head
+                                                   :params {:id (str conv-id)
+                                                            :attachment_id (str (:attachment_id attachment))
+                                                            :version "mp3"}
+                                                   :auth/principal {:subject (str sender-id)
+                                                                    :tenant-id "tenant-1"}})
+                      get-aac-resp (helpers/invoke-handler get-handler {:request-method :get
+                                                 :params {:id (str conv-id)
+                                                          :attachment_id (str (:attachment_id attachment))
+                                                          :version "aac"}
+                                                 :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})
+                      get-mp3-resp (helpers/invoke-handler get-handler {:request-method :get
+                                                 :params {:id (str conv-id)
+                                                          :attachment_id (str (:attachment_id attachment))
+                                                          :version "mp3"}
+                                                 :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})]
+                  (testing "voice variants are persisted and served"
+                    (is (:ok original-stored))
+                    (is (:ok aac-stored))
+                    (is (:ok mp3-stored))
+                    (is (= 200 (:status head-aac-resp)))
+                    (is (= 200 (:status head-mp3-resp)))
+                    (is (= "audio/mp4" (get-in head-aac-resp [:headers "content-type"])))
+                    (is (= "audio/mpeg" (get-in head-mp3-resp [:headers "content-type"])))
+                    (is (= 200 (:status get-aac-resp)))
+                    (is (= 200 (:status get-mp3-resp)))
+                    (is (= "audio/mp4" (get-in get-aac-resp [:headers "content-type"])))
+                    (is (= "audio/mpeg" (get-in get-mp3-resp [:headers "content-type"])))
+                    (is (bytes? (:body get-aac-resp)))
+                    (is (bytes? (:body get-mp3-resp)))))))
+            (finally
+              (doseq [object-key @object-keys*]
+                (p-storage/storage-delete minio-client object-key {}))
+              (when (.exists wav-file)
+                (.delete wav-file))
+              (helpers/cleanup-conversation! db conv-id)
+              (ig/halt-key! :core-service.app.workers.attachments/system attachment-workers-system)
+              (ig/halt-key! :d-core.core.clients.postgres/client client))))))))
+
 (deftest attachments-head-returns-404-for-non-image-alt-and-missing-original
   (let [minio-cfg (ig/init-key :core-service.app.config.storage/minio {})
         minio-client (ig/init-key :d-core.core.storage/minio minio-cfg)]
@@ -573,9 +783,17 @@
                                                           :attachment_id (str (:attachment_id attachment))
                                                           :version "alt"}
                                                  :auth/principal {:subject (str sender-id)
+                                                                  :tenant-id "tenant-1"}})
+                    aac-head-resp (helpers/invoke-handler head-handler {:request-method :head
+                                                 :params {:id (str conv-id)
+                                                          :attachment_id (str (:attachment_id attachment))
+                                                          :version "aac"}
+                                                 :auth/principal {:subject (str sender-id)
                                                                   :tenant-id "tenant-1"}})]
                 (is (= 404 (:status alt-head-resp)))
                 (is (empty-head-body? (:body alt-head-resp)))
+                (is (= 404 (:status aac-head-resp)))
+                (is (empty-head-body? (:body aac-head-resp)))
                 (p-storage/storage-delete minio-client object-key {})
                 (let [missing-original-head (helpers/invoke-handler head-handler {:request-method :head
                                                            :params {:id (str conv-id)
