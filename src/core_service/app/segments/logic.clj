@@ -59,11 +59,12 @@
   "Convert database rows to messages by fetching and decoding segments. Returns a sequence of message maps."
   [db minio compression codec cursor direction rows]
   (->> rows
-       (mapcat (fn [row]
-                 (segment-messages {:db db :minio minio}
-                                   row
-                                   {:compression compression
-                                    :codec codec
-                                    :cursor cursor
-                                    :direction direction})))
+       (pmap (fn [row]
+               (segment-messages {:db db :minio minio}
+                                 row
+                                 {:compression compression
+                                  :codec codec
+                                  :cursor cursor
+                                  :direction direction})))
+       (mapcat identity)
        vec))

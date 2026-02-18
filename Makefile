@@ -13,6 +13,9 @@ lint:
 tests:
 	clojure -M:test
 
+unit:
+	clojure -M:test -d test/core_service/unit
+
 integration-tests:
 	INTEGRATION=1 clojure -M:test
 

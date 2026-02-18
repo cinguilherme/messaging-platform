@@ -55,7 +55,8 @@
     (fn [req]
       (let [conv-id (get-in req [:parameters :path :id])
             sender-id (:user-id req)
-            data (get-in req [:parameters :body])]
+            data (some-> (get-in req [:parameters :body])
+                         logic/coerce-receipt-create)]
         (cond
           (nil? sender-id)
           {:status 401 :body {:ok false :error "invalid sender id"}}

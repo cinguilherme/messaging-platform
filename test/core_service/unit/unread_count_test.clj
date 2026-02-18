@@ -1,5 +1,5 @@
 (ns core-service.unit.unread-count-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [d-core.core.stream.protocol :as p-stream]
             [core-service.app.server.conversation.v1.authed.logic :as logic]
             [core-service.app.redis.unread-index :as unread-index]
@@ -8,6 +8,13 @@
 ;; Access the private function via its var
 (def ^:private unread-count-from-redis
   @#'core-service.app.server.conversation.v1.authed.logic/unread-count-from-redis)
+(def ^:private fallback-unread-cache
+  @#'core-service.app.server.conversation.v1.authed.logic/fallback-unread-cache)
+
+(use-fixtures :each
+  (fn [f]
+    (reset! fallback-unread-cache {})
+    (f)))
 
 (defn- make-entry
   "Build a mock stream entry with an EDN-encoded message payload."
@@ -163,3 +170,37 @@
     (is (nil? (unread-count-from-redis :streams :redis nil nil conv-id user-a)))
     (is (nil? (unread-count-from-redis :streams :redis nil naming nil user-a)))
     (is (nil? (unread-count-from-redis :streams :redis nil naming conv-id nil)))))
+
+(deftest fallback-scan-result-is-cached-between-calls
+  (testing "when index data is missing, fallback scan is cached to avoid repeated scans"
+    (reset! fallback-unread-cache {})
+    (let [stream-calls (atom 0)
+          mid (java.util.UUID/randomUUID)
+          entries [(make-entry mid user-b)]]
+      (with-redefs [unread-index/unread-count (fn [& _] nil)
+                    p-stream/read-payloads (fn [& _]
+                                             (swap! stream-calls inc)
+                                             {:entries entries :next-cursor nil})
+                    receipt-logic/batch-receipt-read? no-receipts]
+        (is (= 1 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (is (= 1 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (is (= 1 @stream-calls) "second call should use cached fallback unread count")))))
+
+(deftest index-count-overrides-and-evicts-fallback-cache
+  (testing "index availability takes precedence and evicts stale fallback cache"
+    (reset! fallback-unread-cache {})
+    (let [stream-calls (atom 0)
+          index-count (atom nil)
+          mid (java.util.UUID/randomUUID)
+          entries [(make-entry mid user-b)]]
+      (with-redefs [unread-index/unread-count (fn [& _] @index-count)
+                    p-stream/read-payloads (fn [& _]
+                                             (swap! stream-calls inc)
+                                             {:entries entries :next-cursor nil})
+                    receipt-logic/batch-receipt-read? no-receipts]
+        (is (= 1 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (reset! index-count 5)
+        (is (= 5 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (reset! index-count nil)
+        (is (= 1 (unread-count-from-redis :streams :redis nil naming conv-id user-a)))
+        (is (= 2 @stream-calls) "cache should be evicted after index read and scanned again when index disappears")))))
