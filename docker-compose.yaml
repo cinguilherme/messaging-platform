@@ -108,6 +108,14 @@ services:
       - minio
       - keycloak
 
+  core-service-proxy:
+    container_name: core-service-proxy
+    image: nginx:1.27-alpine
+    ports:
+      - 8088:8080
+    volumes:
+      - ./docker/nginx/core-service-proxy.conf:/etc/nginx/nginx.conf:ro
+
 networks:
   core_service_default:
     external: true
