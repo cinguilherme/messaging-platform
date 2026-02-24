@@ -242,8 +242,9 @@
             sender-id (:user-id req)
             query (get-in req [:parameters :query])
             {:keys [limit cursor direction]} query
+            raw-cursor cursor
             request-direction direction
-            {:keys [source direction cursor seq-cursor conversation-id]}
+            {:keys [source direction cursor seq-cursor conversation-id invalid?]}
             (logic/parse-cursor-token cursor)
             direction (or (keyword request-direction)
                           (keyword direction)
@@ -259,6 +260,9 @@
 
           (not (conversations-db/member? db {:conversation-id conv-id :user-id sender-id}))
           {:status 403 :body {:ok false :error "not a member"}}
+
+          (and raw-cursor invalid?)
+          {:status 400 :body {:ok false :error "invalid cursor"}}
 
           (and token-conv (not= token-conv conv-id))
           {:status 400 :body {:ok false :error "cursor conversation mismatch"}}

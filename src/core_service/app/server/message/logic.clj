@@ -102,7 +102,7 @@
 
 (defn parse-cursor-token
   [cursor-param]
-  (let [{:keys [token source direction cursor seq-cursor conversation-id]}
+  (let [{:keys [token source direction cursor seq-cursor conversation-id invalid?]}
         (stream-cursor/decode-cursor cursor-param)
         conv-id (some-> conversation-id http/parse-uuid)]
     {:token token
@@ -110,7 +110,8 @@
      :direction direction
      :cursor cursor
      :seq-cursor seq-cursor
-     :conversation-id conv-id}))
+     :conversation-id conv-id
+     :invalid? invalid?}))
 
 (defn fetch-minio-page
   [{:keys [db minio segments metrics]} conversation-id cursor limit direction]

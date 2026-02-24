@@ -172,6 +172,41 @@
             (helpers/cleanup-conversation! db conv-id)
             (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
 
+(deftest message-read-invalid-cursor
+  (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
+        redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)]
+    (if-not (helpers/redis-up? redis-client)
+      (is false "Redis not reachable. Start docker-compose and retry.")
+      (let [{:keys [db client]} (helpers/init-db)
+            naming (ig/init-key :core-service.app.config.messaging/storage-names {})
+            streams (helpers/init-streams-backend redis-client naming)
+            list-handler (authed/messages-list {:webdeps {:db db
+                                                          :redis redis-client
+                                                          :streams streams
+                                                          :naming naming}})
+            conv-id (java.util.UUID/randomUUID)
+            sender-id (java.util.UUID/randomUUID)]
+        (try
+          (helpers/setup-conversation! db {:conversation-id conv-id
+                                           :user-id sender-id})
+          (helpers/clear-redis-conversation! redis-client naming conv-id)
+          (let [resp (helpers/invoke-handler list-handler {:request-method :get
+                                                           :headers {"accept" "application/json"}
+                                                           :params {:id (str conv-id)}
+                                                           :query-params {"limit" "1"
+                                                                          "cursor" "%%%invalid%%%"}
+                                                           :auth/principal {:subject (str sender-id)
+                                                                            :tenant-id "tenant-1"}})
+                body (json/parse-string (:body resp) true)]
+            (testing "invalid cursor is rejected"
+              (is (= 400 (:status resp)))
+              (is (= false (:ok body)))
+              (is (= "invalid cursor" (:error body)))))
+          (finally
+            (helpers/clear-redis-conversation! redis-client naming conv-id)
+            (helpers/cleanup-conversation! db conv-id)
+            (ig/halt-key! :d-core.core.clients.postgres/client client)))))))
+
 (deftest message-read-from-minio
   (let [redis-cfg (ig/init-key :core-service.app.config.clients/redis {})
         redis-client (ig/init-key :d-core.core.clients.redis/client redis-cfg)
