@@ -43,7 +43,7 @@
    [:seq [:int {:min 0}]]
    [:sender_id :uuid]
    [:sent_at [:int {:min 0}]]
-  [:type [:enum :text :image :voice :file :system]]
+   [:type [:enum :text :image :voice :file :system]]
    [:body [:map
            [:text {:optional true} [:string {:max 256}]]]]
    [:attachments {:optional true} [:vector AttachmentSchema]]
@@ -52,7 +52,7 @@
 
 (def MessageCreateSchema
   [:map
-  [:type [:enum :text :image :voice :file :system]]
+   [:type [:enum :text :image :voice :file :system]]
    [:body [:map
            [:text {:optional true} [:string {:max 256}]]]]
    [:attachments {:optional true} [:vector AttachmentSchema]]

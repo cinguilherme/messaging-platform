@@ -115,39 +115,39 @@
 
 (defn- create! [upload max-bytes naming kind max-age-ms db conv-id sender-id attachment-workers]
   (let [{:keys [bytes filename content-type source]} upload
-                byte-count (alength ^bytes bytes)]
-            (cond
-              (zero? byte-count)
-              {:ok false :error "empty attachment payload"}
+        byte-count (alength ^bytes bytes)]
+    (cond
+      (zero? byte-count)
+      {:ok false :error "empty attachment payload"}
 
-              (and (pos? max-bytes) (> byte-count max-bytes))
-              {:ok false
-               :error "attachment too large"
-               :size_bytes byte-count
-               :max_bytes max-bytes}
+      (and (pos? max-bytes) (> byte-count max-bytes))
+      {:ok false
+       :error "attachment too large"
+       :size_bytes byte-count
+       :max_bytes max-bytes}
 
-              :else
-              (let [attachments-prefix (get-in naming [:minio :attachments-prefix] "attachments/")
-                    {:keys [ok attachment object-key error]}
-                   (logic/prepare-attachment {:bytes bytes
-                                               :content-type content-type
-                                               :filename filename
-                                               :kind kind
-                                               :attachments-prefix attachments-prefix
-                                               :expected-size-bytes byte-count
-                                               :expected-mime-type content-type
-                                               :source source})]
-                (cond
-                  (not ok)
-                  {:ok false :error error}
+      :else
+      (let [attachments-prefix (get-in naming [:minio :attachments-prefix] "attachments/")
+            {:keys [ok attachment object-key error]}
+            (logic/prepare-attachment {:bytes bytes
+                                       :content-type content-type
+                                       :filename filename
+                                       :kind kind
+                                       :attachments-prefix attachments-prefix
+                                       :expected-size-bytes byte-count
+                                       :expected-mime-type content-type
+                                       :source source})]
+        (cond
+          (not ok)
+          {:ok false :error error}
 
-                  (not (m/validate msg-schema/AttachmentSchema attachment))
-                  {:ok false
-                   :error "invalid attachment metadata"
-                   :details (me/humanize (m/explain msg-schema/AttachmentSchema attachment))}
+          (not (m/validate msg-schema/AttachmentSchema attachment))
+          {:ok false
+           :error "invalid attachment metadata"
+           :details (me/humanize (m/explain msg-schema/AttachmentSchema attachment))}
 
-                  :else
-                  (new-attachment-transact! max-age-ms attachment db conv-id sender-id object-key attachment-workers bytes))))))
+          :else
+          (new-attachment-transact! max-age-ms attachment db conv-id sender-id object-key attachment-workers bytes))))))
 
 (defn attachments-create
   "Endpoint handler for uploading attachments to a conversation.
@@ -184,47 +184,47 @@
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
         now-ms (System/currentTimeMillis)
         variant (when row (logic/resolve-attachment-variant row version))]
-                        (cond
-                          (or (nil? row)
-                              (not= conv-id (:conversation_id row)))
-                          {:status 404
-                           :body {:ok false :error "attachment not found"}}
+    (cond
+      (or (nil? row)
+          (not= conv-id (:conversation_id row)))
+      {:status 404
+       :body {:ok false :error "attachment not found"}}
 
-                          (attachment-row-expired? row now-ms)
-                          {:status 404
-                           :body {:ok false :error "attachment expired"}}
+      (attachment-row-expired? row now-ms)
+      {:status 404
+       :body {:ok false :error "attachment expired"}}
 
-                          (= :invalid-version (:status variant))
-                          {:status 400
-                           :body {:ok false :error "invalid version"}}
+      (= :invalid-version (:status variant))
+      {:status 400
+       :body {:ok false :error "invalid version"}}
 
-                          (= :incompatible-version (:status variant))
-                          {:status 404
-                           :body {:ok false :error "attachment variant not found"}}
+      (= :incompatible-version (:status variant))
+      {:status 404
+       :body {:ok false :error "attachment variant not found"}}
 
-                          :else
-                          (let [object-key (:object-key variant)
-                                obj (p-storage/storage-get-bytes minio object-key {})
-                                bytes (:bytes obj)
-                                mime-type (:content-type variant)]
-                            (cond
-                              (and (:ok obj) (bytes? bytes))
-                              {:status 200
-                               :headers {"content-type" mime-type
-                                         "content-length" (str (alength ^bytes bytes))
-                                         "cache-control" "private, max-age=60"}
-                               :body bytes}
+      :else
+      (let [object-key (:object-key variant)
+            obj (p-storage/storage-get-bytes minio object-key {})
+            bytes (:bytes obj)
+            mime-type (:content-type variant)]
+        (cond
+          (and (:ok obj) (bytes? bytes))
+          {:status 200
+           :headers {"content-type" mime-type
+                     "content-length" (str (alength ^bytes bytes))
+                     "cache-control" "private, max-age=60"}
+           :body bytes}
 
-                              (missing-object? obj)
-                              {:status 404
-                               :body {:ok false :error "attachment not found"}}
+          (missing-object? obj)
+          {:status 404
+           :body {:ok false :error "attachment not found"}}
 
-                              :else
-                              {:status 500
-                               :body {:ok false :error "attachment fetch failed"}})))))
+          :else
+          {:status 500
+           :body {:ok false :error "attachment fetch failed"}})))))
 
 (defn attachments-get
-    "Endpoint handler for retrieving attachment content. Validates membership, checks
+  "Endpoint handler for retrieving attachment content. Validates membership, checks
     attachment existence and expiration, and fetches the content from Minio storage.
     Supports fetching the original or an alternate (resized) version of the attachment."
   [{:keys [webdeps]}]
@@ -254,43 +254,43 @@
   (let [row (attachments-db/fetch-attachment-by-id db {:attachment-id attachment-id})
         now-ms (System/currentTimeMillis)
         variant (when row (logic/resolve-attachment-variant row version))]
-                        (cond
-                          (or (nil? row)
-                              (not= conv-id (:conversation_id row)))
-                          {:status 404 :body nil}
+    (cond
+      (or (nil? row)
+          (not= conv-id (:conversation_id row)))
+      {:status 404 :body nil}
 
-                          (attachment-row-expired? row now-ms)
-                          {:status 404 :body nil}
+      (attachment-row-expired? row now-ms)
+      {:status 404 :body nil}
 
-                          (= :invalid-version (:status variant))
-                          {:status 400 :body nil}
+      (= :invalid-version (:status variant))
+      {:status 400 :body nil}
 
-                          (= :incompatible-version (:status variant))
-                          {:status 404 :body nil}
+      (= :incompatible-version (:status variant))
+      {:status 404 :body nil}
 
-                          :else
-                          (let [object-key (:object-key variant)
-                                obj (p-storage/storage-head minio object-key {})
-                                mime-type-fallback (:content-type variant)
-                                content-type (or (:content-type obj) mime-type-fallback)
-                                content-length (or (:size obj) 0)
-                                etag (:etag obj)
-                                last-modified (format-http-date (:last-modified obj))]
-                            (cond
-                              (:ok obj)
-                              {:status 200
-                               :headers (cond-> {"content-type" content-type
-                                                 "content-length" (str content-length)
-                                                 "cache-control" "private, max-age=60"}
-                                          (seq etag) (assoc "etag" etag)
-                                          (seq last-modified) (assoc "last-modified" last-modified))
-                               :body nil}
+      :else
+      (let [object-key (:object-key variant)
+            obj (p-storage/storage-head minio object-key {})
+            mime-type-fallback (:content-type variant)
+            content-type (or (:content-type obj) mime-type-fallback)
+            content-length (or (:size obj) 0)
+            etag (:etag obj)
+            last-modified (format-http-date (:last-modified obj))]
+        (cond
+          (:ok obj)
+          {:status 200
+           :headers (cond-> {"content-type" content-type
+                             "content-length" (str content-length)
+                             "cache-control" "private, max-age=60"}
+                      (seq etag) (assoc "etag" etag)
+                      (seq last-modified) (assoc "last-modified" last-modified))
+           :body nil}
 
-                              (missing-object? obj)
-                              {:status 404 :body nil}
+          (missing-object? obj)
+          {:status 404 :body nil}
 
-                              :else
-                              {:status 500 :body nil})))))
+          :else
+          {:status 500 :body nil})))))
 
 (defn attachments-head
   "Endpoint handler for checking attachment existence and metadata without fetching content."

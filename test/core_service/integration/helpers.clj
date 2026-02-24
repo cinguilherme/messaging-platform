@@ -161,17 +161,17 @@
   [redis-client naming conv-id]
   (let [{:keys [stream seq-key flush-key last-message-key sequence-hash-key cursor-hash-key]} (redis-keys naming conv-id)]
     (car/wcar (:conn redis-client)
-      (car/del stream)
-      (car/del seq-key)
-      (car/del flush-key)
-      (car/del last-message-key)
-      (car/hdel sequence-hash-key seq-key)
-      (car/hdel cursor-hash-key flush-key))))
+              (car/del stream)
+              (car/del seq-key)
+              (car/del flush-key)
+              (car/del last-message-key)
+              (car/hdel sequence-hash-key seq-key)
+              (car/hdel cursor-hash-key flush-key))))
 
 (defn stream-len
   [redis-client stream]
   (car/wcar (:conn redis-client)
-    (car/xlen stream)))
+            (car/xlen stream)))
 
 (defn ensure-conversation!
   [db {:keys [conversation-id tenant-id type title]}]

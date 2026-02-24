@@ -2,7 +2,6 @@
   (:require [core-service.app.libs.env :as env]
             [integrant.core :as ig]))
 
-
 (def ^:private default-timeout-ms 10000)
 
 (defmethod ig/init-key :core-service.app.config.storage/minio
@@ -21,8 +20,8 @@
                "messaging-platform")
    :logger logger
    :connection-timeout-ms (or connection-timeout-ms
-                               (env/env-long "MINIO_CONNECTION_TIMEOUT_MS")
-                               default-timeout-ms)
+                              (env/env-long "MINIO_CONNECTION_TIMEOUT_MS")
+                              default-timeout-ms)
    :socket-timeout-ms (or socket-timeout-ms
                           (env/env-long "MINIO_SOCKET_TIMEOUT_MS")
                           default-timeout-ms)})

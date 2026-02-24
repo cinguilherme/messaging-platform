@@ -173,17 +173,17 @@
 
 (defn image-storer
   [{:keys [components]}
-  {:keys [object-key bytes content-type variant attachment-id]}]
+   {:keys [object-key bytes content-type variant attachment-id]}]
   (let [storage (or (:storage components) (:minio components))
         content-type (or content-type "application/octet-stream")]
     (if-not storage
       (do
         (record-stage-metrics! (:metrics components) :store variant :error)
         {:status :error
-       :error "storage not configured"
-       :variant variant
-       :object-key object-key
-       :attachment-id attachment-id})
+         :error "storage not configured"
+         :variant variant
+         :object-key object-key
+         :attachment-id attachment-id})
       (let [result (p-storage/storage-put-bytes storage object-key bytes {:content-type content-type})
             status (if (:ok result) :stored :error)]
         (record-stage-metrics! (:metrics components) :store variant status)
@@ -370,17 +370,17 @@
                                 (> size-bytes (:optimize-threshold-bytes processing))
                                 (some? standard-format))
         standard-enqueued? (when standard-eligible?
-                            (enqueue! {:channels channels :components components}
-                                      :attachments/resize
-                                      {:attachment-id attachment-id
-                                       :conversation-id conversation-id
-                                       :bytes bytes
-                                       :variant :standard
-                                       :max-dim (:standard-max-dim processing)
-                                       :target-key object-key
-                                      :target-content-type mime-type
-                                      :target-format standard-format}
-                                      :standard))
+                             (enqueue! {:channels channels :components components}
+                                       :attachments/resize
+                                       {:attachment-id attachment-id
+                                        :conversation-id conversation-id
+                                        :bytes bytes
+                                        :variant :standard
+                                        :max-dim (:standard-max-dim processing)
+                                        :target-key object-key
+                                        :target-content-type mime-type
+                                        :target-format standard-format}
+                                       :standard))
         audio-targets (if (and voice? (:enabled? audio-processing))
                         (->> (:targets audio-processing)
                              (map (fn [target]

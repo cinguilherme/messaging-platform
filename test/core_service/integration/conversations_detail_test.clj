@@ -35,9 +35,9 @@
                                          :first-name "Bob"
                                          :last-name "Example"})
       (let [resp (helpers/invoke-handler handler {:request-method :get
-                           :headers {"accept" "application/json"}
-                           :params {:id (str conv-id)}
-                           :auth/principal {:subject (str sender-id)}})
+                                                  :headers {"accept" "application/json"}
+                                                  :params {:id (str conv-id)}
+                                                  :auth/principal {:subject (str sender-id)}})
             body (json/parse-string (:body resp) true)
             item (:item body)
             member-ids (set (map :user_id (:members item)))]

@@ -10,10 +10,10 @@
         metrics-api (:metrics metrics)]
     {:name ::metrics
      :enter (fn [ctx]
-          (assoc ctx ::start-time (time/now-nanos)))
+              (assoc ctx ::start-time (time/now-nanos)))
      :leave (fn [ctx]
               (let [start (::start-time ctx)
-            duration (time/nano-span->seconds start)
+                    duration (time/nano-span->seconds start)
                     req (:request ctx)
                     resp (:response ctx)
                     method (some-> (:request-method req) name str/lower-case)

@@ -4,7 +4,6 @@
             [clojure.string :as str]
             [d-core.core.auth.token-client :as token-client]))
 
-
 (defn token-request
   [{:keys [token-url client-id client-secret http-opts]} params]
   (let [params (cond-> params

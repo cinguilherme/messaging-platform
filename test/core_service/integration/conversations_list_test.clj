@@ -128,20 +128,20 @@
     (with-db-cleanup [db client executor]
       (helpers/cleanup-conversation! db conv-id)
       (let [{:keys [list]} (make-handlers (make-webdeps {:db db :executor executor}))]
-      (helpers/setup-conversation! db {:conversation-id conv-id
-                                       :user-id sender-id
-                                       :title "Test"})
-      (let [resp (authed-get list sender-id)
-            body (parse-body resp)
-            item (first (:items body))]
-        (testing "response shape"
-          (is (= 200 (:status resp)))
-          (is (:ok body))
-          (is (= (str conv-id) (:conversation_id item)))
-          (is (contains? item :updated_at))
-          (is (contains? item :last_message))
-          (is (contains? item :unread_count))
-          (is (some #(= (str sender-id) (:user_id %)) (:members item)))))))))
+        (helpers/setup-conversation! db {:conversation-id conv-id
+                                         :user-id sender-id
+                                         :title "Test"})
+        (let [resp (authed-get list sender-id)
+              body (parse-body resp)
+              item (first (:items body))]
+          (testing "response shape"
+            (is (= 200 (:status resp)))
+            (is (:ok body))
+            (is (= (str conv-id) (:conversation_id item)))
+            (is (contains? item :updated_at))
+            (is (contains? item :last_message))
+            (is (contains? item :unread_count))
+            (is (some #(= (str sender-id) (:user_id %)) (:members item)))))))))
 
 (deftest conversations-list-paginates-with-cursor
   (let [{:keys [sender-id conv-old conv-new ts-old ts-new]} test-ids]
@@ -150,37 +150,37 @@
         (helpers/cleanup-conversation! db conv-old)
         (helpers/cleanup-conversation! db conv-new))
       (let [{:keys [list]} (make-handlers (make-webdeps {:db db :executor executor}))]
-      (helpers/setup-conversation! db {:conversation-id conv-old
-                                       :user-id sender-id
-                                       :title "Old"})
-      (helpers/setup-conversation! db {:conversation-id conv-new
-                                       :user-id sender-id
-                                       :title "New"})
-      (sql/execute! db ["UPDATE conversations SET created_at = ? WHERE id = ?"
-                        (java.sql.Timestamp. ts-old)
-                        conv-old]
-                    {})
-      (sql/execute! db ["UPDATE conversations SET created_at = ? WHERE id = ?"
-                        (java.sql.Timestamp. ts-new)
-                        conv-new]
-                    {})
-      (let [resp (authed-get list sender-id :query-params {"limit" "1"})
-            body (parse-body resp)
-            item (first (:items body))
-            cursor (:next_cursor body)]
-        (testing "first page returns newest"
-          (is (= 200 (:status resp)))
-          (is (:ok body))
-          (is (= (str conv-new) (:conversation_id item)))
-          (is (= (str ts-new) cursor)))
-        (let [resp2 (authed-get list sender-id :query-params {"limit" "1"
-                                                             "cursor" cursor})
-              body2 (parse-body resp2)
-              item2 (first (:items body2))]
-          (testing "second page returns older"
-            (is (= 200 (:status resp2)))
-            (is (:ok body2))
-            (is (= (str conv-old) (:conversation_id item2))))))))))
+        (helpers/setup-conversation! db {:conversation-id conv-old
+                                         :user-id sender-id
+                                         :title "Old"})
+        (helpers/setup-conversation! db {:conversation-id conv-new
+                                         :user-id sender-id
+                                         :title "New"})
+        (sql/execute! db ["UPDATE conversations SET created_at = ? WHERE id = ?"
+                          (java.sql.Timestamp. ts-old)
+                          conv-old]
+                      {})
+        (sql/execute! db ["UPDATE conversations SET created_at = ? WHERE id = ?"
+                          (java.sql.Timestamp. ts-new)
+                          conv-new]
+                      {})
+        (let [resp (authed-get list sender-id :query-params {"limit" "1"})
+              body (parse-body resp)
+              item (first (:items body))
+              cursor (:next_cursor body)]
+          (testing "first page returns newest"
+            (is (= 200 (:status resp)))
+            (is (:ok body))
+            (is (= (str conv-new) (:conversation_id item)))
+            (is (= (str ts-new) cursor)))
+          (let [resp2 (authed-get list sender-id :query-params {"limit" "1"
+                                                                "cursor" cursor})
+                body2 (parse-body resp2)
+                item2 (first (:items body2))]
+            (testing "second page returns older"
+              (is (= 200 (:status resp2)))
+              (is (:ok body2))
+              (is (= (str conv-old) (:conversation_id item2))))))))))
 
 (deftest conversations-list-invalid-cursor
   (with-db [db client executor]

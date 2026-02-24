@@ -6,10 +6,6 @@
            (java.net URL)
            (javax.imageio ImageIO)))
 
-
-
-
-
 ;; Experimental wiring
 
 (defn example-command
@@ -20,13 +16,13 @@
   [image-url error-chan]
   (try
     (with-open [in (io/input-stream (URL. image-url))
-              out (ByteArrayOutputStream.)]
-    (io/copy in out)
-    (.toByteArray out))
-  (catch Exception e
-    (println "error downloading image" {:image-url image-url :error e})
-    (async/put! error-chan {:image-url image-url :error e})
-    nil)))
+                out (ByteArrayOutputStream.)]
+      (io/copy in out)
+      (.toByteArray out))
+    (catch Exception e
+      (println "error downloading image" {:image-url image-url :error e})
+      (async/put! error-chan {:image-url image-url :error e})
+      nil)))
 
 (defn maybe-queue-resize
   [{:keys [channels]} {:keys [image-url bytes max-bytes resize reply-chan]}]
@@ -87,7 +83,7 @@
   [ctx {:keys [image-url max-bytes resize reply-chan error-chan]}]
   (let [bytes (download-bytes image-url error-chan)]
     (maybe-queue-resize ctx {:image-url image-url
-                             :bytes bytes  
+                             :bytes bytes
                              :max-bytes max-bytes
                              :resize resize
                              :reply-chan reply-chan
@@ -157,8 +153,6 @@
 
 (defonce example-system (atom nil))
 
-
-
 ;; after this call my system is running.
 
 (def image-url-not-found "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg")
@@ -185,23 +179,20 @@
                             :guard-ms 50}))
 
   (workers/command! system :image-download {:image-url image-url
-                                             :max-bytes 20000000000
-                                             :resize {:max-dim 1024}})
+                                            :max-bytes 20000000000
+                                            :resize {:max-dim 1024}})
 
-
-  ;; will fail, use an async block to handle the error. 
+;; will fail, use an async block to handle the error. 
   (async/go
     (let [reply (request! system :image-download {:image-url image-url-not-found
-                                                   :max-bytes 200000
-                                                   :resize {:max-dim 1024}})]
+                                                  :max-bytes 200000
+                                                  :resize {:max-dim 1024}})]
       (println "reply:" reply)))
 
   (stats-snapshot system)
 
   ;; end comment
   )
-
-
 ;; REPL feel:
 ;; (start-example!)
 ;; (command! @example-system :commands {:cmd :ping-3})

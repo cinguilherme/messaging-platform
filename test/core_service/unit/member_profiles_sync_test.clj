@@ -117,12 +117,12 @@
                                                 {:id user-id
                                                  :username (str "u-" user-id)})}))]
         (let [profiles (logic/fetch-keycloak-profiles {:token-client :token-client
-                                                        :keycloak {:admin-url "http://keycloak"
-                                                                   :profile-hydration {:max-concurrency 3
-                                                                                       :total-timeout-ms 3000
-                                                                                       :request-timeout-ms 300}}
-                                                        :keycloak-fetch-executor fetch-executor}
-                                                       user-ids)]
+                                                       :keycloak {:admin-url "http://keycloak"
+                                                                  :profile-hydration {:max-concurrency 3
+                                                                                      :total-timeout-ms 3000
+                                                                                      :request-timeout-ms 300}}
+                                                       :keycloak-fetch-executor fetch-executor}
+                                                      user-ids)]
           (is (= (count user-ids) (count profiles)))
           (is (<= @max-in-flight 3))))
       (finally
@@ -142,12 +142,12 @@
                                                 {:id user-id
                                                  :username (str "u-" user-id)})}))]
         (let [profiles (logic/fetch-keycloak-profiles {:token-client :token-client
-                                                        :keycloak {:admin-url "http://keycloak"
-                                                                   :profile-hydration {:max-concurrency 4
-                                                                                       :total-timeout-ms 130
-                                                                                       :request-timeout-ms 90}}
-                                                        :keycloak-fetch-executor fetch-executor}
-                                                       user-ids)]
+                                                       :keycloak {:admin-url "http://keycloak"
+                                                                  :profile-hydration {:max-concurrency 4
+                                                                                      :total-timeout-ms 130
+                                                                                      :request-timeout-ms 90}}
+                                                       :keycloak-fetch-executor fetch-executor}
+                                                      user-ids)]
           (is (pos? (count profiles)))
           (is (< (count profiles) (count user-ids)))))
       (finally
@@ -169,12 +169,12 @@
                                                 {:id user-id
                                                  :username (str "u-" user-id)})}))]
         (let [profiles (logic/fetch-keycloak-profiles {:token-client :token-client
-                                                        :keycloak {:admin-url "http://keycloak"
-                                                                   :profile-hydration {:max-concurrency 4
-                                                                                       :total-timeout-ms 1000
-                                                                                       :request-timeout-ms 150}}
-                                                        :keycloak-fetch-executor fetch-executor}
-                                                       [user-a user-a user-b user-b])]
+                                                       :keycloak {:admin-url "http://keycloak"
+                                                                  :profile-hydration {:max-concurrency 4
+                                                                                      :total-timeout-ms 1000
+                                                                                      :request-timeout-ms 150}}
+                                                       :keycloak-fetch-executor fetch-executor}
+                                                      [user-a user-a user-b user-b])]
           (is (= 2 (count profiles)))
           (is (= #{user-a user-b} (set @seen-ids)))))
       (finally

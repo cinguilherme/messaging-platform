@@ -37,8 +37,8 @@
                                          :email "alice@example.com"
                                          :enabled true})
       (let [resp (helpers/invoke-handler handler {:request-method :post
-                           :headers {"accept" "application/json"}
-                           :body (json/generate-string {:ids [(str user-id)]})})
+                                                  :headers {"accept" "application/json"}
+                                                  :body (json/generate-string {:ids [(str user-id)]})})
             body (json/parse-string (:body resp) true)
             item (first (:items body))]
         (testing "response shape"
@@ -124,12 +124,12 @@
                                        {:status 201
                                         :headers {"location" (str "http://keycloak/admin/realms/d-core/users/" user-id)}})]
         (let [resp (helpers/invoke-handler handler {:request-method :post
-                             :headers {"accept" "application/json"}
-                             :body (json/generate-string {:username "alice"
-                                                          :password "password"
-                                                          :email "alice@example.com"
-                                                          :first_name "Alice"
-                                                          :last_name "Example"})})
+                                                    :headers {"accept" "application/json"}
+                                                    :body (json/generate-string {:username "alice"
+                                                                                 :password "password"
+                                                                                 :email "alice@example.com"
+                                                                                 :first_name "Alice"
+                                                                                 :last_name "Example"})})
               body (json/parse-string (:body resp) true)
               profile (users-db/fetch-user-profile db {:user-id user-id})]
           (testing "profile persisted"
@@ -168,9 +168,9 @@
                                                 :lastName "Example"
                                                 :enabled true}])})]
         (let [resp (helpers/invoke-handler handler {:request-method :post
-                             :headers {"accept" "application/json"}
-                             :body (json/generate-string {:username "alice"
-                                                          :password "password"})})
+                                                    :headers {"accept" "application/json"}
+                                                    :body (json/generate-string {:username "alice"
+                                                                                 :password "password"})})
               body (json/parse-string (:body resp) true)
               profile (users-db/fetch-user-profile db {:user-id user-id})]
           (testing "profile persisted"
@@ -198,9 +198,9 @@
                                       :body (json/generate-string {:access_token "new-token"
                                                                    :refresh_token "new-refresh"})})]
       (let [resp (helpers/invoke-handler handler {:request-method :post
-                           :headers {"accept" "application/json"}
-                           :body (json/generate-string {:refresh_token "refresh-123"
-                                                        :scope "openid"})})
+                                                  :headers {"accept" "application/json"}
+                                                  :body (json/generate-string {:refresh_token "refresh-123"
+                                                                               :scope "openid"})})
             body (json/parse-string (:body resp) true)
             {:keys [url opts]} @seen]
         (is (= 200 (:status resp)))

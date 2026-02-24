@@ -19,7 +19,7 @@
 (defn coerce-conversation-create
   [data]
   (-> data
-  (update :type util/coerce-keyword)
+      (update :type util/coerce-keyword)
       (update :title (fn [v] (when (and (string? v) (not (str/blank? v))) v)))
       (update :member_ids (fn [ids]
                             (when (sequential? ids)
@@ -375,9 +375,9 @@
       (loop [cursor nil
              unread 0]
         (let [{:keys [entries next-cursor]} (p-stream/read-payloads streams stream
-                                                                     {:direction :backward
-                                                                      :limit batch-size
-                                                                      :cursor cursor})
+                                                                    {:direction :backward
+                                                                     :limit batch-size
+                                                                     :cursor cursor})
               decoded (entries->decoded entries user-id)
               readable-ids (->> decoded (filter :readable?) (mapv :message-id))
               receipts (receipt-logic/batch-receipt-read? redis metrics naming

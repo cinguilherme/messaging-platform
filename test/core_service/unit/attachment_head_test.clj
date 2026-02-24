@@ -24,14 +24,14 @@
                                                                         :object_key "attachments/image/test.png"
                                                                         :expires_at nil})
                                p-storage/storage-head (fn [_ key _]
-                                                       (reset! storage-key* key)
-                                                       {:ok true
-                                                        :size 123
-                                                        :content-type "image/jpeg"
-                                                        :etag "etag-123"
-                                                        :last-modified last-modified})
+                                                        (reset! storage-key* key)
+                                                        {:ok true
+                                                         :size 123
+                                                         :content-type "image/jpeg"
+                                                         :etag "etag-123"
+                                                         :last-modified last-modified})
                                p-storage/storage-get-bytes (fn [& _]
-                                                            (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
+                                                             (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
                    (helpers/invoke-handler handler {:request-method :head
                                                     :params {:id (str conv-id)
                                                              :attachment_id (str attachment-id)
@@ -63,12 +63,12 @@
                                                                         :object_key "attachments/voice/test.webm"
                                                                         :expires_at nil})
                                p-storage/storage-head (fn [_ key _]
-                                                       (reset! storage-key* key)
-                                                       {:ok true
-                                                        :size 2048
-                                                        :content-type "audio/mp4"})
+                                                        (reset! storage-key* key)
+                                                        {:ok true
+                                                         :size 2048
+                                                         :content-type "audio/mp4"})
                                p-storage/storage-get-bytes (fn [& _]
-                                                            (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
+                                                             (throw (ex-info "storage-get-bytes must not be called by HEAD" {})))]
                    (helpers/invoke-handler handler {:request-method :head
                                                     :params {:id (str conv-id)
                                                              :attachment_id (str attachment-id)

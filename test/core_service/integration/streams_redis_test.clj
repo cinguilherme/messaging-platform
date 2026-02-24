@@ -28,11 +28,11 @@
               (is (= "two" (String. ^bytes payload "UTF-8")))
               (is (string? cursor)))
             (let [{:keys [entries]} (p-stream/read-payloads backend stream {:direction :backward
-                                                                             :limit 1
-                                                                             :cursor cursor})
-                payload (-> entries first :payload)]
-            (testing "second page returns older"
-              (is (= "one" (String. ^bytes payload "UTF-8"))))))
+                                                                            :limit 1
+                                                                            :cursor cursor})
+                  payload (-> entries first :payload)]
+              (testing "second page returns older"
+                (is (= "one" (String. ^bytes payload "UTF-8"))))))
           (finally
             (car/wcar (:conn redis-client)
-              (car/del stream))))))))
+                      (car/del stream))))))))

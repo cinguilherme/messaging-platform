@@ -123,48 +123,48 @@
 
 (defn- create-message! [naming conv-id streams attachment-validation sender-id data idempotency-result logger logging redis metrics db]
   (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-                seq (logic/next-seq! streams seq-key)
-                canonical-attachments (:canonical-attachments @attachment-validation)
-                message {:message_id (java.util.UUID/randomUUID)
-                         :conversation_id conv-id
-                         :seq seq
-                         :sender_id sender-id
-                         :sent_at (System/currentTimeMillis)
-                         :type (:type data)
-                         :body (:body data)
-                         :attachments canonical-attachments
-                         :client_ref (:client_ref data)
-                         :meta (:meta data)}
-                stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-                payload-bytes (logic/encode-message message)
-                log-ctx {:component :messages-create
-                         :conversation-id conv-id
-                         :sender-id sender-id
-                         :seq seq
-                         :idempotency-source (:source idempotency-result)
-                         :stream stream
-                         :payload-bytes (alength payload-bytes)}]
-            (logic/log-message-create! logger logging ::message-create
-                                       (merge log-ctx {:message message}))
-            (try
-              (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
-                    pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
-                (try-index-message redis naming conv-id message seq sender-id logger logging log-ctx)
-                (try-update-last-message redis naming metrics message logger logging log-ctx)
-                (car/wcar (redis-lib/conn redis)
-                          (car/publish pubsub-ch payload-bytes))
-                (try-mark-reference db attachment-validation logger logging log-ctx)
-                (logic/log-message-create! logger logging ::redis-append
-                                           (merge log-ctx {:entry-id entry-id}))
-                {:ok true
-                 :conversation_id (str conv-id)
-                 :message message
+        seq (logic/next-seq! streams seq-key)
+        canonical-attachments (:canonical-attachments @attachment-validation)
+        message {:message_id (java.util.UUID/randomUUID)
+                 :conversation_id conv-id
+                 :seq seq
+                 :sender_id sender-id
+                 :sent_at (System/currentTimeMillis)
+                 :type (:type data)
+                 :body (:body data)
+                 :attachments canonical-attachments
+                 :client_ref (:client_ref data)
+                 :meta (:meta data)}
+        stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
+        payload-bytes (logic/encode-message message)
+        log-ctx {:component :messages-create
+                 :conversation-id conv-id
+                 :sender-id sender-id
+                 :seq seq
+                 :idempotency-source (:source idempotency-result)
                  :stream stream
-                 :entry_id entry-id})
-              (catch Exception e
-                (obs-log/log! logger logging :error ::redis-append-failed
-                              (merge log-ctx {:error (.getMessage e)}))
-                (throw e)))))
+                 :payload-bytes (alength payload-bytes)}]
+    (logic/log-message-create! logger logging ::message-create
+                               (merge log-ctx {:message message}))
+    (try
+      (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
+            pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
+        (try-index-message redis naming conv-id message seq sender-id logger logging log-ctx)
+        (try-update-last-message redis naming metrics message logger logging log-ctx)
+        (car/wcar (redis-lib/conn redis)
+                  (car/publish pubsub-ch payload-bytes))
+        (try-mark-reference db attachment-validation logger logging log-ctx)
+        (logic/log-message-create! logger logging ::redis-append
+                                   (merge log-ctx {:entry-id entry-id}))
+        {:ok true
+         :conversation_id (str conv-id)
+         :message message
+         :stream stream
+         :entry_id entry-id})
+      (catch Exception e
+        (obs-log/log! logger logging :error ::redis-append-failed
+                      (merge log-ctx {:error (.getMessage e)}))
+        (throw e)))))
 
 (defn messages-create
   [{:keys [webdeps]}]

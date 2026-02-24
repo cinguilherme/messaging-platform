@@ -27,7 +27,7 @@
         field (str "read:" user-id)]
     (app-metrics/with-redis metrics :hget
       #(car/wcar (redis-lib/conn redis)
-         (car/hget key field)))))
+                 (car/hget key field)))))
 
 (defn batch-receipt-read?
   "Check read receipts for multiple messages in a single Redis pipeline.
@@ -41,5 +41,5 @@
                                 message-ids)
           results (app-metrics/with-redis metrics :hget_batch
                     #(car/wcar (redis-lib/conn redis)
-                       (mapv (fn [[k f]] (car/hget k f)) keys-and-fields)))]
+                               (mapv (fn [[k f]] (car/hget k f)) keys-and-fields)))]
       (zipmap message-ids results))))

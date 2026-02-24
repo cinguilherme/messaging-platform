@@ -132,15 +132,15 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                             :headers {"accept" "application/json"
-                                                       "content-type" "multipart/form-data"}
-                                             :params {:id (str conv-id)
-                                                      :kind "image"}
-                                             :multipart-params {"file" {:tempfile temp-file
-                                                                         :filename "tiny.png"
-                                                                         :content-type "image/png"}}
-                                             :auth/principal {:subject (str sender-id)
-                                                              :tenant-id "tenant-1"}})
+                                                                    :headers {"accept" "application/json"
+                                                                              "content-type" "multipart/form-data"}
+                                                                    :params {:id (str conv-id)
+                                                                             :kind "image"}
+                                                                    :multipart-params {"file" {:tempfile temp-file
+                                                                                               :filename "tiny.png"
+                                                                                               :content-type "image/png"}}
+                                                                    :auth/principal {:subject (str sender-id)
+                                                                                     :tenant-id "tenant-1"}})
                 upload-body (json/parse-string (:body upload-resp) true)]
             (testing "attachment upload response"
               (is (= 200 (:status upload-resp)))
@@ -166,11 +166,11 @@
                                                      :body {}
                                                      :attachments [attachment]})
                       msg-resp (helpers/invoke-handler message-handler {:request-method :post
-                                                 :headers {"accept" "application/json"}
-                                                 :params {:id (str conv-id)}
-                                                 :body payload
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})
+                                                                        :headers {"accept" "application/json"}
+                                                                        :params {:id (str conv-id)}
+                                                                        :body payload
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})
                       msg-body (json/parse-string (:body msg-resp) true)]
                   (testing "message includes attachment reference"
                     (is (= 200 (:status msg-resp)))
@@ -219,15 +219,15 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                             :headers {"accept" "application/json"
-                                                       "content-type" "multipart/form-data"}
-                                             :params {:id (str conv-id)
-                                                      :kind "image"}
-                                             :multipart-params {"file" {:tempfile temp-file
-                                                                         :filename "tiny.png"
-                                                                         :content-type "image/png"}}
-                                             :auth/principal {:subject (str sender-id)
-                                                              :tenant-id "tenant-1"}})
+                                                                    :headers {"accept" "application/json"
+                                                                              "content-type" "multipart/form-data"}
+                                                                    :params {:id (str conv-id)
+                                                                             :kind "image"}
+                                                                    :multipart-params {"file" {:tempfile temp-file
+                                                                                               :filename "tiny.png"
+                                                                                               :content-type "image/png"}}
+                                                                    :auth/principal {:subject (str sender-id)
+                                                                                     :tenant-id "tenant-1"}})
                 upload-body (json/parse-string (:body upload-resp) true)]
             (testing "upload succeeds"
               (is (= 200 (:status upload-resp)))
@@ -241,11 +241,11 @@
                                                    :body {}
                                                    :attachments [tampered]})
                     msg-resp (helpers/invoke-handler message-handler {:request-method :post
-                                               :headers {"accept" "application/json"}
-                                               :params {:id (str conv-id)}
-                                               :body payload
-                                               :auth/principal {:subject (str sender-id)
-                                                                :tenant-id "tenant-1"}})
+                                                                      :headers {"accept" "application/json"}
+                                                                      :params {:id (str conv-id)}
+                                                                      :body payload
+                                                                      :auth/principal {:subject (str sender-id)
+                                                                                       :tenant-id "tenant-1"}})
                     msg-body (json/parse-string (:body msg-resp) true)]
                 (testing "message rejects forged attachment metadata"
                   (is (= 400 (:status msg-resp)))
@@ -286,15 +286,15 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                             :headers {"accept" "application/json"
-                                                       "content-type" "multipart/form-data"}
-                                             :params {:id (str conv-id)
-                                                      :kind "image"}
-                                             :multipart-params {"file" {:tempfile temp-file
-                                                                         :filename "tiny.png"
-                                                                         :content-type "image/png"}}
-                                             :auth/principal {:subject (str sender-id)
-                                                              :tenant-id "tenant-1"}})
+                                                                    :headers {"accept" "application/json"
+                                                                              "content-type" "multipart/form-data"}
+                                                                    :params {:id (str conv-id)
+                                                                             :kind "image"}
+                                                                    :multipart-params {"file" {:tempfile temp-file
+                                                                                               :filename "tiny.png"
+                                                                                               :content-type "image/png"}}
+                                                                    :auth/principal {:subject (str sender-id)
+                                                                                     :tenant-id "tenant-1"}})
                 upload-body (json/parse-string (:body upload-resp) true)]
             (testing "upload succeeds"
               (is (= 200 (:status upload-resp)))
@@ -360,15 +360,15 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                             :headers {"accept" "application/json"
-                                                       "content-type" "multipart/form-data"}
-                                             :params {:id (str conv-id)
-                                                      :kind "image"}
-                                             :multipart-params {"file" {:tempfile temp-file
-                                                                         :filename "tiny.png"
-                                                                         :content-type "image/png"}}
-                                             :auth/principal {:subject (str sender-id)
-                                                              :tenant-id "tenant-1"}})
+                                                                    :headers {"accept" "application/json"
+                                                                              "content-type" "multipart/form-data"}
+                                                                    :params {:id (str conv-id)
+                                                                             :kind "image"}
+                                                                    :multipart-params {"file" {:tempfile temp-file
+                                                                                               :filename "tiny.png"
+                                                                                               :content-type "image/png"}}
+                                                                    :auth/principal {:subject (str sender-id)
+                                                                                     :tenant-id "tenant-1"}})
                 upload-body (json/parse-string (:body upload-resp) true)]
             (testing "upload succeeds"
               (is (= 200 (:status upload-resp)))
@@ -444,15 +444,15 @@
             (helpers/setup-conversation! db {:conversation-id conv-id
                                              :user-id sender-id})
             (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                               :headers {"accept" "application/json"
-                                                         "content-type" "multipart/form-data"}
-                                               :params {:id (str conv-id)
-                                                        :kind "voice"}
-                                               :multipart-params {"file" {:tempfile wav-file
-                                                                           :filename "voice.wav"
-                                                                           :content-type "audio/wav"}}
-                                               :auth/principal {:subject (str sender-id)
-                                                                :tenant-id "tenant-1"}})
+                                                                      :headers {"accept" "application/json"
+                                                                                "content-type" "multipart/form-data"}
+                                                                      :params {:id (str conv-id)
+                                                                               :kind "voice"}
+                                                                      :multipart-params {"file" {:tempfile wav-file
+                                                                                                 :filename "voice.wav"
+                                                                                                 :content-type "audio/wav"}}
+                                                                      :auth/principal {:subject (str sender-id)
+                                                                                       :tenant-id "tenant-1"}})
                   upload-body (json/parse-string (:body upload-resp) true)]
               (is (= 200 (:status upload-resp)))
               (is (:ok upload-body))
@@ -526,15 +526,15 @@
                                            :user-id sender-id})
 
           (let [upload-small (helpers/invoke-handler attach-handler {:request-method :post
-                                              :headers {"accept" "application/json"
-                                                        "content-type" "multipart/form-data"}
-                                              :params {:id (str conv-id)
-                                                       :kind "image"}
-                                              :multipart-params {"file" {:tempfile small-file
-                                                                          :filename "small.png"
-                                                                          :content-type "image/png"}}
-                                              :auth/principal {:subject (str sender-id)
-                                                               :tenant-id "tenant-1"}})
+                                                                     :headers {"accept" "application/json"
+                                                                               "content-type" "multipart/form-data"}
+                                                                     :params {:id (str conv-id)
+                                                                              :kind "image"}
+                                                                     :multipart-params {"file" {:tempfile small-file
+                                                                                                :filename "small.png"
+                                                                                                :content-type "image/png"}}
+                                                                     :auth/principal {:subject (str sender-id)
+                                                                                      :tenant-id "tenant-1"}})
                 body-small (json/parse-string (:body upload-small) true)]
             (testing "upload <1MB queues and stores original + alt"
               (is (= 200 (:status upload-small)))
@@ -547,22 +547,22 @@
                     original-stored (wait-for-object minio-client object-key)
                     alt-stored (wait-for-object minio-client alt-key)
                     head-original-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                      :params {:id (str conv-id)
-                                                               :attachment_id (str (:attachment_id attachment))}
-                                                      :auth/principal {:subject (str sender-id)
-                                                                       :tenant-id "tenant-1"}})
+                                                                             :params {:id (str conv-id)
+                                                                                      :attachment_id (str (:attachment_id attachment))}
+                                                                             :auth/principal {:subject (str sender-id)
+                                                                                              :tenant-id "tenant-1"}})
                     head-alt-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                 :params {:id (str conv-id)
-                                                          :attachment_id (str (:attachment_id attachment))
-                                                          :version "alt"}
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})
+                                                                        :params {:id (str conv-id)
+                                                                                 :attachment_id (str (:attachment_id attachment))
+                                                                                 :version "alt"}
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})
                     alt-resp (helpers/invoke-handler get-handler {:request-method :get
-                                           :params {:id (str conv-id)
-                                                    :attachment_id (str (:attachment_id attachment))
-                                                    :version "alt"}
-                                           :auth/principal {:subject (str sender-id)
-                                                            :tenant-id "tenant-1"}})]
+                                                                  :params {:id (str conv-id)
+                                                                           :attachment_id (str (:attachment_id attachment))
+                                                                           :version "alt"}
+                                                                  :auth/principal {:subject (str sender-id)
+                                                                                   :tenant-id "tenant-1"}})]
                 (is (:ok original-stored))
                 (is (:ok alt-stored))
                 (is (= 200 (:status head-original-resp)))
@@ -580,25 +580,25 @@
                 (is (bytes? (:body alt-resp)))
                 (p-storage/storage-delete minio-client alt-key {})
                 (let [missing-alt-head (helpers/invoke-handler head-handler {:request-method :head
-                                                      :params {:id (str conv-id)
-                                                               :attachment_id (str (:attachment_id attachment))
-                                                               :version "alt"}
-                                                      :auth/principal {:subject (str sender-id)
-                                                                       :tenant-id "tenant-1"}})]
+                                                                             :params {:id (str conv-id)
+                                                                                      :attachment_id (str (:attachment_id attachment))
+                                                                                      :version "alt"}
+                                                                             :auth/principal {:subject (str sender-id)
+                                                                                              :tenant-id "tenant-1"}})]
                   (is (= 404 (:status missing-alt-head)))
                   (is (empty-head-body? (:body missing-alt-head)))))))
 
           (let [upload-large (helpers/invoke-handler attach-handler {:request-method :post
-                                              :headers {"accept" "application/json"
-                                                        "content-type" "multipart/form-data"}
-                                              :params {:id (str conv-id)
-                                                       :kind "image"
-                                                       :max-bytes 60000000}
-                                              :multipart-params {"file" {:tempfile large-file
-                                                                          :filename "large.png"
-                                                                          :content-type "image/png"}}
-                                              :auth/principal {:subject (str sender-id)
-                                                               :tenant-id "tenant-1"}})
+                                                                     :headers {"accept" "application/json"
+                                                                               "content-type" "multipart/form-data"}
+                                                                     :params {:id (str conv-id)
+                                                                              :kind "image"
+                                                                              :max-bytes 60000000}
+                                                                     :multipart-params {"file" {:tempfile large-file
+                                                                                                :filename "large.png"
+                                                                                                :content-type "image/png"}}
+                                                                     :auth/principal {:subject (str sender-id)
+                                                                                      :tenant-id "tenant-1"}})
                 body-large (json/parse-string (:body upload-large) true)]
             (testing "upload >1MB stores optimized original + alt"
               (is (= 200 (:status upload-large)))
@@ -669,15 +669,15 @@
                                              :user-id sender-id})
 
             (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                               :headers {"accept" "application/json"
-                                                         "content-type" "multipart/form-data"}
-                                               :params {:id (str conv-id)
-                                                        :kind "voice"}
-                                               :multipart-params {"file" {:tempfile wav-file
-                                                                           :filename "voice.wav"
-                                                                           :content-type "audio/wav"}}
-                                               :auth/principal {:subject (str sender-id)
-                                                                :tenant-id "tenant-1"}})
+                                                                      :headers {"accept" "application/json"
+                                                                                "content-type" "multipart/form-data"}
+                                                                      :params {:id (str conv-id)
+                                                                               :kind "voice"}
+                                                                      :multipart-params {"file" {:tempfile wav-file
+                                                                                                 :filename "voice.wav"
+                                                                                                 :content-type "audio/wav"}}
+                                                                      :auth/principal {:subject (str sender-id)
+                                                                                       :tenant-id "tenant-1"}})
                   upload-body (json/parse-string (:body upload-resp) true)]
               (testing "voice upload succeeds"
                 (is (= 200 (:status upload-resp)))
@@ -692,29 +692,29 @@
                       aac-stored (wait-for-object minio-client aac-key)
                       mp3-stored (wait-for-object minio-client mp3-key)
                       head-aac-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                   :params {:id (str conv-id)
-                                                            :attachment_id (str (:attachment_id attachment))
-                                                            :version "aac"}
-                                                   :auth/principal {:subject (str sender-id)
-                                                                    :tenant-id "tenant-1"}})
+                                                                          :params {:id (str conv-id)
+                                                                                   :attachment_id (str (:attachment_id attachment))
+                                                                                   :version "aac"}
+                                                                          :auth/principal {:subject (str sender-id)
+                                                                                           :tenant-id "tenant-1"}})
                       head-mp3-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                   :params {:id (str conv-id)
-                                                            :attachment_id (str (:attachment_id attachment))
-                                                            :version "mp3"}
-                                                   :auth/principal {:subject (str sender-id)
-                                                                    :tenant-id "tenant-1"}})
+                                                                          :params {:id (str conv-id)
+                                                                                   :attachment_id (str (:attachment_id attachment))
+                                                                                   :version "mp3"}
+                                                                          :auth/principal {:subject (str sender-id)
+                                                                                           :tenant-id "tenant-1"}})
                       get-aac-resp (helpers/invoke-handler get-handler {:request-method :get
-                                                 :params {:id (str conv-id)
-                                                          :attachment_id (str (:attachment_id attachment))
-                                                          :version "aac"}
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})
+                                                                        :params {:id (str conv-id)
+                                                                                 :attachment_id (str (:attachment_id attachment))
+                                                                                 :version "aac"}
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})
                       get-mp3-resp (helpers/invoke-handler get-handler {:request-method :get
-                                                 :params {:id (str conv-id)
-                                                          :attachment_id (str (:attachment_id attachment))
-                                                          :version "mp3"}
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})]
+                                                                        :params {:id (str conv-id)
+                                                                                 :attachment_id (str (:attachment_id attachment))
+                                                                                 :version "mp3"}
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})]
                   (testing "voice variants are persisted and served"
                     (is (:ok original-stored))
                     (is (:ok aac-stored))
@@ -761,15 +761,15 @@
           (helpers/setup-conversation! db {:conversation-id conv-id
                                            :user-id sender-id})
           (let [upload-resp (helpers/invoke-handler attach-handler {:request-method :post
-                                             :headers {"accept" "application/json"
-                                                       "content-type" "multipart/form-data"}
-                                             :params {:id (str conv-id)
-                                                      :kind "file"}
-                                             :multipart-params {"file" {:tempfile payload-file
-                                                                         :filename "payload.txt"
-                                                                         :content-type "text/plain"}}
-                                             :auth/principal {:subject (str sender-id)
-                                                              :tenant-id "tenant-1"}})
+                                                                    :headers {"accept" "application/json"
+                                                                              "content-type" "multipart/form-data"}
+                                                                    :params {:id (str conv-id)
+                                                                             :kind "file"}
+                                                                    :multipart-params {"file" {:tempfile payload-file
+                                                                                               :filename "payload.txt"
+                                                                                               :content-type "text/plain"}}
+                                                                    :auth/principal {:subject (str sender-id)
+                                                                                     :tenant-id "tenant-1"}})
                 upload-body (json/parse-string (:body upload-resp) true)]
             (is (= 200 (:status upload-resp)))
             (is (:ok upload-body))
@@ -779,28 +779,28 @@
                     _ (reset! object-key* object-key)
                     _ (wait-for-object minio-client object-key)
                     alt-head-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                 :params {:id (str conv-id)
-                                                          :attachment_id (str (:attachment_id attachment))
-                                                          :version "alt"}
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})
+                                                                        :params {:id (str conv-id)
+                                                                                 :attachment_id (str (:attachment_id attachment))
+                                                                                 :version "alt"}
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})
                     aac-head-resp (helpers/invoke-handler head-handler {:request-method :head
-                                                 :params {:id (str conv-id)
-                                                          :attachment_id (str (:attachment_id attachment))
-                                                          :version "aac"}
-                                                 :auth/principal {:subject (str sender-id)
-                                                                  :tenant-id "tenant-1"}})]
+                                                                        :params {:id (str conv-id)
+                                                                                 :attachment_id (str (:attachment_id attachment))
+                                                                                 :version "aac"}
+                                                                        :auth/principal {:subject (str sender-id)
+                                                                                         :tenant-id "tenant-1"}})]
                 (is (= 404 (:status alt-head-resp)))
                 (is (empty-head-body? (:body alt-head-resp)))
                 (is (= 404 (:status aac-head-resp)))
                 (is (empty-head-body? (:body aac-head-resp)))
                 (p-storage/storage-delete minio-client object-key {})
                 (let [missing-original-head (helpers/invoke-handler head-handler {:request-method :head
-                                                           :params {:id (str conv-id)
-                                                                    :attachment_id (str (:attachment_id attachment))
-                                                                    :version "original"}
-                                                           :auth/principal {:subject (str sender-id)
-                                                                            :tenant-id "tenant-1"}})]
+                                                                                  :params {:id (str conv-id)
+                                                                                           :attachment_id (str (:attachment_id attachment))
+                                                                                           :version "original"}
+                                                                                  :auth/principal {:subject (str sender-id)
+                                                                                                   :tenant-id "tenant-1"}})]
                   (is (= 404 (:status missing-original-head)))
                   (is (empty-head-body? (:body missing-original-head)))))))
           (finally

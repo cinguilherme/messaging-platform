@@ -17,7 +17,7 @@
 
 (defn test [_options]
   (fn [_req]
-    (try 
+    (try
       (let [p (:producer _options)
             c (:cache _options)
             s (:storage _options)
@@ -31,10 +31,9 @@
             _ (when newly-cached?
                 (cache/cache-put c cache-key msg {}))
 
-            
             valkey-msg-get (cache/cache-lookup c "valkey-test" {:cache :valkey})
 
-            valkey-msg-put (when (nil? valkey-msg-get) 
+            valkey-msg-put (when (nil? valkey-msg-get)
                              (cache/cache-put c "valkey-test" msg {:cache :valkey}))
 
             ;; Storage operations
@@ -42,7 +41,7 @@
 
             ack (producer/produce! p msg {:topic :default})
             ;; Produce to a topic that fails once
-            
+
             fail-ack (producer/produce! p {:type :fail-test :msg "this should fail once"} {:topic :to-fail})]
         (http/format-response
          {:ok true
@@ -58,7 +57,6 @@
          (http/get-accept-format _req)))
       (catch Exception e
         (http/format-response {:ok false :error (.getMessage e)} (http/get-accept-format _req))))))
-
 
 ;; Instead of suppling infra specific information about deadletters, we can supply very generic identifiable information such as a deadletter ID (if we are using any storage that can support it) and we can supply a deadletter payload hash, something that is agnotistic of any storage requirement or not, 
 ;; a payload hash can be recovered from a log or even the raw payload if we are using a storage that can support it.
@@ -80,8 +78,8 @@
       (if-not topic
         (http/format-response {:ok false :error "missing topic"} format)
         (http/format-response
-          (dl-admin/list-deadletters deadletter-admin {:topic topic :status status :limit limit} {})
-          format)))))
+         (dl-admin/list-deadletters deadletter-admin {:topic topic :status status :limit limit} {})
+         format)))))
 
 (defn dl-get
   "Get a DLQ item by dlq-id."
@@ -164,10 +162,10 @@
                                      :max-dim max-dim
                                      :worker worker-id}))
                       (http/format-response {:ok false
-                                        :error "processing timeout"
-                                        :worker worker-id
-                                        :timeout-ms timeout-ms}
-                                       format))
+                                             :error "processing timeout"
+                                             :worker worker-id
+                                             :timeout-ms timeout-ms}
+                                            format))
                     (http/format-response
                      {:ok (= :stored (:status result))
                       :worker worker-id

@@ -14,9 +14,9 @@
 (defn- table-exists?
   [db table]
   (let [row (first (sql/execute! db
-                                ["SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=?) AS exists"
-                                 (name table)]
-                                {:builder-fn rs/as-unqualified-lower-maps}))]
+                                 ["SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=?) AS exists"
+                                  (name table)]
+                                 {:builder-fn rs/as-unqualified-lower-maps}))]
     (boolean (:exists row))))
 
 (deftest migrations-create-tables

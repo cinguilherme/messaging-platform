@@ -101,24 +101,24 @@
           {:status 401 :body {:ok false :error "invalid sender id"}}
           (if invalid-cursor?
             {:status 400 :body {:ok false :error "invalid cursor"}}
-          (let [limit (or limit 50)
-                rows (util/ltap logger ::conversations-list-rows
-                                (conversations-db/list-conversations db {:user-id sender-id
-                                                                         :limit limit
-                                                                         :before-ts before-ts}))
-                conv-ids (mapv :id rows)
-                last-messages-by-conv (logic/last-messages-by-conversation components conv-ids)
-                members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
-                member-ids (->> members-by-conv vals (mapcat identity) distinct vec)
-                profiles (logic/resolve-member-profiles db token-client keycloak executor keycloak-profile-fetch-executor logger member-ids)
-                tasks (rows->tasks executor members-by-conv components sender-id profiles last-messages-by-conv rows)
-                items (tasks->items logger item-timeout-ms sender-id profiles last-messages-by-conv tasks)
-                next-cursor (when (= (count rows) limit)
-                              (some-> (last rows) :created_at (.getTime) str))]
-            (logger/log logger ::conversations-list-resp {:count (count items)})
-            {:ok true
-             :items items
-             :next_cursor next-cursor})))))))
+            (let [limit (or limit 50)
+                  rows (util/ltap logger ::conversations-list-rows
+                                  (conversations-db/list-conversations db {:user-id sender-id
+                                                                           :limit limit
+                                                                           :before-ts before-ts}))
+                  conv-ids (mapv :id rows)
+                  last-messages-by-conv (logic/last-messages-by-conversation components conv-ids)
+                  members-by-conv (conversations-db/list-memberships db {:conversation-ids conv-ids})
+                  member-ids (->> members-by-conv vals (mapcat identity) distinct vec)
+                  profiles (logic/resolve-member-profiles db token-client keycloak executor keycloak-profile-fetch-executor logger member-ids)
+                  tasks (rows->tasks executor members-by-conv components sender-id profiles last-messages-by-conv rows)
+                  items (tasks->items logger item-timeout-ms sender-id profiles last-messages-by-conv tasks)
+                  next-cursor (when (= (count rows) limit)
+                                (some-> (last rows) :created_at (.getTime) str))]
+              (logger/log logger ::conversations-list-resp {:count (count items)})
+              {:ok true
+               :items items
+               :next_cursor next-cursor})))))))
 
 ;; Keep compatibility with existing tests/callers while handlers live in resource namespaces.
 (defn messages-create

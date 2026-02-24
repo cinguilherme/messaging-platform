@@ -113,7 +113,7 @@
            (println "SQL protocol select with where clause:" {:jdbc-url jdbc-url :rows rows}))
 
         ;; select with more conditions, select where username is longer than 3 characters
-        (let [rows (sql/select common-db {:conn conn :table table :where [:> [:length :username] 3]})]
+         (let [rows (sql/select common-db {:conn conn :table table :where [:> [:length :username] 3]})]
            (println "SQL protocol select with where username is longer than 3 characters:" {:jdbc-url jdbc-url :rows rows}))
 
          ;; Update + select
@@ -182,11 +182,11 @@
                 :minimum-idle 1
                 :connection-timeout-ms 30000}}}]
    (let [pg-client (ig/init-key :d-core.core.clients.postgres/client
-                               {:jdbc-url jdbc-url
-                                :username username
-                                :password password
-                                :pool? pool?
-                                :pool pool})
+                                {:jdbc-url jdbc-url
+                                 :username username
+                                 :password password
+                                 :pool? pool?
+                                 :pool pool})
          pg-db (ig/init-key :d-core.core.databases.postgres/db
                             {:postgres-client pg-client})
          common-db (ig/init-key :d-core.core.databases.sql/common
@@ -266,19 +266,19 @@
      (doseq [doc [{:id "1" :sort_id 1 :username "alice" :email "alice@example.com"}
                   {:id "2" :sort_id 2 :username "bob" :email "bob@example.com"}]]
        (let [resp (tc/post!
-                    client
-                    (str "/collections/" collection "/documents")
-                    {:query {:action "upsert"}
-                     :body doc})]
+                   client
+                   (str "/collections/" collection "/documents")
+                   {:query {:action "upsert"}
+                    :body doc})]
          (when-not (<= 200 (:status resp) 299)
            (throw (ex-info "Typesense upsert failed" {:doc doc :resp resp})))))
 
      ;; 4) Search
      (let [resp (tc/get!
-                  client
-                  (str "/collections/" collection "/documents/search")
-                  {:query {:q "ali"
-                           :query_by "username"}})]
+                 client
+                 (str "/collections/" collection "/documents/search")
+                 {:query {:q "ali"
+                          :query_by "username"}})]
        (when-not (<= 200 (:status resp) 299)
          (throw (ex-info "Typesense search failed" {:resp resp})))
        (println "Typesense client smoke test OK:" {:endpoint endpoint
@@ -342,8 +342,8 @@
                               {:jetstream jetstream :routing routing :codec codec :dead-letter nil :logger nil})]
      (try
        (let [ack (producer/produce! producer
-                                                          {:hello "jetstream"}
-                                                          {:topic :jetstream-test})]
+                                    {:hello "jetstream"}
+                                    {:topic :jetstream-test})]
          (println "JetStream produced:" ack))
        (let [env (deref received 3000 ::timeout)]
          (when (= env ::timeout)

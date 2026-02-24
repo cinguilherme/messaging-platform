@@ -8,7 +8,7 @@
    [manifold.deferred :as d]
    [manifold.stream :as s]
    [core-service.app.db.conversations :as conversations-db]
-  [core-service.app.libs.identity :as identity]
+   [core-service.app.libs.identity :as identity]
    [core-service.app.libs.redis :as redis-lib]
    [core-service.app.server.http :as shttp]
    [duct.logger :as logger]
@@ -106,7 +106,7 @@
   (let [{:keys [db redis naming logger]} webdeps]
     (fn [req]
       (let [conv-id (shttp/parse-uuid (get-in req [:path-params :id]))
-        user-id (or (identity/user-id-from-request req)
+            user-id (or (identity/user-id-from-request req)
                         (:user-id req))
             stream-format (stream-format-from-request req)]
         (cond
@@ -121,22 +121,22 @@
 
           :else
           (d/let-flow [ws-conn (http/websocket-connection req)]
-            (let [channel (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
-                  conn-spec (redis-lib/conn redis)
-                  listener (subscribe-and-stream! conn-spec channel ws-conn logger stream-format)]
-              (when logger
-                (logger/log logger :info ::conversation-stream-connected
-                            {:conversation-id (str conv-id)
-                             :user-id (str user-id)
-                             :channel channel
-                             :stream-format stream-format}))
-              (s/on-closed ws-conn
-                (fn []
-                  (when logger
-                    (logger/log logger :info ::conversation-stream-disconnected
-                                {:conversation-id (str conv-id)
-                                 :user-id (str user-id)
-                                 :channel channel
-                                 :stream-format stream-format}))
-                  (car/close-listener listener)))
-              ws-conn)))))))
+                      (let [channel (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)
+                            conn-spec (redis-lib/conn redis)
+                            listener (subscribe-and-stream! conn-spec channel ws-conn logger stream-format)]
+                        (when logger
+                          (logger/log logger :info ::conversation-stream-connected
+                                      {:conversation-id (str conv-id)
+                                       :user-id (str user-id)
+                                       :channel channel
+                                       :stream-format stream-format}))
+                        (s/on-closed ws-conn
+                                     (fn []
+                                       (when logger
+                                         (logger/log logger :info ::conversation-stream-disconnected
+                                                     {:conversation-id (str conv-id)
+                                                      :user-id (str user-id)
+                                                      :channel channel
+                                                      :stream-format stream-format}))
+                                       (car/close-listener listener)))
+                        ws-conn)))))))

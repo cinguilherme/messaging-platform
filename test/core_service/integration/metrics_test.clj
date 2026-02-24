@@ -41,14 +41,14 @@
                                        "http_requests_total"
                                        ["method" "route" "status"]
                                        ["get" "/v1/conversations/:id" "200"])
-                          0.0)))))
+                         0.0)))))
     (testing "histogram recorded"
       (is (= 1.0
              (double (or (sample-value registry
                                        "http_request_duration_seconds_count"
                                        ["method" "route"]
                                        ["get" "/v1/conversations/:id"])
-                          0.0)))))))
+                         0.0)))))))
 
 (deftest worker-metrics-emitted
   (let [{:keys [registry emit]} (metrics-component)]
@@ -61,4 +61,4 @@
                                      "worker_drops_total"
                                      ["worker" "channel" "reason"]
                                      ["segments-flush" "segments/flush-ticks" "input-drop"])
-                        0.0))))))
+                       0.0))))))

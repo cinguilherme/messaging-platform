@@ -43,10 +43,10 @@
 (defmethod ig/init-key :core-service.app.server.reitit/handler
   [_ {:keys [router]}]
   (http/ring-handler
-    router
-    (ring/routes
-      (swagger-ui/create-swagger-ui-handler {:path "/docs"
-                                             :url "/openapi.json"})
-      (ring/create-resource-handler {:path "/"})
-      (ring/create-default-handler))
-    {:executor sieppari/executor}))
+   router
+   (ring/routes
+    (swagger-ui/create-swagger-ui-handler {:path "/docs"
+                                           :url "/openapi.json"})
+    (ring/create-resource-handler {:path "/"})
+    (ring/create-default-handler))
+   {:executor sieppari/executor}))

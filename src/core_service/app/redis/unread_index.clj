@@ -42,8 +42,8 @@
         message-id-str (str message-id)]
     (app-metrics/with-redis metrics :message_index_write
       #(car/wcar (redis-lib/conn redis)
-         (car/zadd idx-key seq-value message-id-str)
-         (car/hset seq-key message-id-str (str seq-value))))
+                 (car/zadd idx-key seq-value message-id-str)
+                 (car/hset seq-key message-id-str (str seq-value))))
     {:ok true
      :index-key idx-key
      :seq-key seq-key
@@ -56,7 +56,7 @@
     (let [seq-key (message-seq-key naming conversation-id)
           value (app-metrics/with-redis metrics :message_seq_read
                   #(car/wcar (redis-lib/conn redis)
-                     (car/hget seq-key (str message-id))))]
+                             (car/hget seq-key (str message-id))))]
       (parse-long-safe value))))
 
 (defn update-last-read-seq!
@@ -64,12 +64,12 @@
   (when-let [seq-value (parse-long-safe seq)]
     (let [key (last-read-key naming conversation-id)
           updated? (= 1 (app-metrics/with-redis metrics :last_read_update
-                            #(car/wcar (redis-lib/conn redis)
-                               (car/eval update-last-read-lua
-                                         1
-                                         key
-                                         (str user-id)
-                                         (str seq-value)))))]
+                          #(car/wcar (redis-lib/conn redis)
+                                     (car/eval update-last-read-lua
+                                               1
+                                               key
+                                               (str user-id)
+                                               (str seq-value)))))]
       {:ok true
        :updated? updated?
        :seq seq-value
@@ -85,15 +85,15 @@
   (when (and redis naming conversation-id user-id)
     (let [last-read (app-metrics/with-redis metrics :last_read_read
                       #(car/wcar (redis-lib/conn redis)
-                         (car/hget (last-read-key naming conversation-id)
-                                   (str user-id))))
+                                 (car/hget (last-read-key naming conversation-id)
+                                           (str user-id))))
           last-read-seq (parse-long-safe last-read)]
       (when (some? last-read-seq)
         (let [count-value (app-metrics/with-redis metrics :message_index_count
                             #(car/wcar (redis-lib/conn redis)
-                               (car/zcount (message-index-key naming conversation-id)
-                                           (str "(" last-read-seq)
-                                           "+inf")))]
+                                       (car/zcount (message-index-key naming conversation-id)
+                                                   (str "(" last-read-seq)
+                                                   "+inf")))]
           (or (parse-long-safe count-value) 0))))))
 
 (defn- hdel-many!
@@ -112,31 +112,31 @@
         (when-let [end-seq (parse-long-safe seq-end)]
           (let [ids (app-metrics/with-redis metrics :message_index_trim
                       #(car/wcar (redis-lib/conn redis)
-                         (car/zrangebyscore idx-key "-inf" end-seq)))]
+                                 (car/zrangebyscore idx-key "-inf" end-seq)))]
             (when (seq ids)
               (app-metrics/with-redis metrics :message_index_trim
                 #(car/wcar (redis-lib/conn redis)
-                   (car/zremrangebyscore idx-key "-inf" end-seq)))
+                           (car/zremrangebyscore idx-key "-inf" end-seq)))
               (app-metrics/with-redis metrics :message_index_trim
                 #(car/wcar (redis-lib/conn redis)
-                   (hdel-many! seq-key ids)))
+                           (hdel-many! seq-key ids)))
               (count ids))))
         (let [card (long (or (parse-long-safe
                               (app-metrics/with-redis metrics :message_index_trim
                                 #(car/wcar (redis-lib/conn redis)
-                                   (car/zcard idx-key))))
+                                           (car/zcard idx-key))))
                              0))
               remove-count (max 0 (- card keep-n))]
           (when (pos? remove-count)
             (let [last-rank (dec remove-count)
                   ids (app-metrics/with-redis metrics :message_index_trim
                         #(car/wcar (redis-lib/conn redis)
-                           (car/zrange idx-key 0 last-rank)))]
+                                   (car/zrange idx-key 0 last-rank)))]
               (app-metrics/with-redis metrics :message_index_trim
                 #(car/wcar (redis-lib/conn redis)
-                   (car/zremrangebyrank idx-key 0 last-rank)))
+                           (car/zremrangebyrank idx-key 0 last-rank)))
               (when (seq ids)
                 (app-metrics/with-redis metrics :message_index_trim
                   #(car/wcar (redis-lib/conn redis)
-                     (hdel-many! seq-key ids))))
+                             (hdel-many! seq-key ids))))
               remove-count)))))))

@@ -131,8 +131,8 @@
              deleted 0
              failed 0]
         (let [resp (p-storage/storage-list minio {:prefix prefix
-                                                :limit batch-size
-                                                :token token})]
+                                                  :limit batch-size
+                                                  :token token})]
           (if-not (:ok resp)
             {:status :error
              :error (:error resp)

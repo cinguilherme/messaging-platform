@@ -25,12 +25,12 @@
 (defn member?
   [db {:keys [conversation-id user-id]}]
   (boolean
-    (seq
-      (sql/select db {:table :memberships
-                      :columns [:conversation_id]
-                      :where {:conversation_id conversation-id
-                              :user_id user-id}
-                      :limit 1}))))
+   (seq
+    (sql/select db {:table :memberships
+                    :columns [:conversation_id]
+                    :where {:conversation_id conversation-id
+                            :user_id user-id}
+                    :limit 1}))))
 
 (defn get-conversation
   [db {:keys [conversation-id]}]

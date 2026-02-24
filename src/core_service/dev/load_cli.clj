@@ -172,7 +172,7 @@
         (throw (ex-info "login failed"
                         {:status (:status resp)
                          :headers (:headers resp)
-                         :body body})))))) 
+                         :body body}))))))
 
 (defn register!
   [opts]
@@ -363,11 +363,11 @@
     (try
       (case cmd
         "register" (do (register! opts) (println "ok"))
-      "login" (println (or (:token opts) (login! opts)))
-      "token" (println (or (:token opts) (login! opts)))
-      "whoami" (let [token (or (:token opts) (login! opts))
-                     claims (token-claims token)]
-                 (println (json/generate-string (or claims {:error "invalid token"}))))
+        "login" (println (or (:token opts) (login! opts)))
+        "token" (println (or (:token opts) (login! opts)))
+        "whoami" (let [token (or (:token opts) (login! opts))
+                       claims (token-claims token)]
+                   (println (json/generate-string (or claims {:error "invalid token"}))))
         "create-conversation" (println (json/generate-string (create-conversation! opts)))
         "send" (println (json/generate-string (run-send-loop! opts)))
         "load" (println (json/generate-string (run-rate-loop! opts)))

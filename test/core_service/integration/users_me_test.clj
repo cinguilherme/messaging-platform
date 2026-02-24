@@ -45,9 +45,9 @@
                  :headers {"accept" "application/json"}
                  :auth/principal {:subject (str user-id)}}
             router (reitit-http/router
-                     ["/" {:get {:handler (fn [ctx]
-                                            (assoc ctx :response (handler ctx)))
-                                 :interceptors interceptors}}])
+                    ["/" {:get {:handler (fn [ctx]
+                                           (assoc ctx :response (handler ctx)))
+                                :interceptors interceptors}}])
             app (reitit-http/ring-handler router (reitit-ring/create-default-handler) {:executor sieppari/executor})
             resp (app req)
             resp (if (and (map? resp) (contains? resp :response)) (:response resp) resp)
@@ -93,10 +93,10 @@
                    :uri "/"
                    :headers {"accept" "application/json"}
                    :auth/principal {:subject (str user-id)}}
-            router (reitit-http/router
-                     ["/" {:get {:handler (fn [ctx]
-                                            (assoc ctx :response (handler ctx)))
-                                 :interceptors interceptors}}])
+              router (reitit-http/router
+                      ["/" {:get {:handler (fn [ctx]
+                                             (assoc ctx :response (handler ctx)))
+                                  :interceptors interceptors}}])
               app (reitit-http/ring-handler router (reitit-ring/create-default-handler) {:executor sieppari/executor})
               resp (app req)
               resp (if (and (map? resp) (contains? resp :response)) (:response resp) resp)

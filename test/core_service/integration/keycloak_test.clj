@@ -86,9 +86,9 @@
                                             :tenant-claim (:tenant-claim cfg)
                                             :scope-claim (:scope-claim cfg)})
                 {:keys [principal]} (authn/authenticate authenticator
-                                                       {:headers {"authorization"
-                                                                  (str "Bearer " token)}}
-                                                       {})]
+                                                        {:headers {"authorization"
+                                                                   (str "Bearer " token)}}
+                                                        {})]
             (is (= "tenant-1" (:tenant-id principal)))
             (is (contains? (:scopes principal) "messages:read"))
             (is (contains? (:scopes principal) "messages:write"))))
@@ -100,11 +100,11 @@
                 resp (token-client/client-credentials client {})]
             (is (string? (:access-token resp)))
             (is (pos? (count (:access-token resp)))))))
-        (testing "Refresh token flow returns a new access token"
-          (let [token-resp (password-token-response cfg)
-                refresh-token (:refresh_token token-resp)]
-            (is (string? refresh-token))
-            (is (pos? (count refresh-token)))
-            (let [refreshed (refresh-token-response cfg refresh-token)]
-              (is (string? (:access_token refreshed)))
-              (is (pos? (count (:access_token refreshed))))))))))
+      (testing "Refresh token flow returns a new access token"
+        (let [token-resp (password-token-response cfg)
+              refresh-token (:refresh_token token-resp)]
+          (is (string? refresh-token))
+          (is (pos? (count refresh-token)))
+          (let [refreshed (refresh-token-response cfg refresh-token)]
+            (is (string? (:access_token refreshed)))
+            (is (pos? (count (:access_token refreshed))))))))))

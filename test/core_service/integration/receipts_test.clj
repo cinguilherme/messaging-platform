@@ -47,10 +47,10 @@
             naming (ig/init-key :core-service.app.config.messaging/storage-names {})
             receipt-config (ig/init-key :core-service.app.config.messaging/receipt-config {})
             handler (authed/receipts-create
-                      {:webdeps {:db db
-                                 :redis redis-client
-                                 :naming naming
-                                 :receipt receipt-config}})
+                     {:webdeps {:db db
+                                :redis redis-client
+                                :naming naming
+                                :receipt receipt-config}})
             conv-id (java.util.UUID/randomUUID)
             sender-id (java.util.UUID/randomUUID)
             message-id (util/random-uuid)
@@ -60,12 +60,12 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (let [resp (helpers/invoke-handler handler {:request-method :post
-                               :headers {"accept" "application/json"}
-                               :params {:id (str conv-id)}
-                               :body (json/generate-string {:receipt_type "read"
-                                                            :message_id (str message-id)})
-                               :auth/principal {:subject (str sender-id)
-                                                :tenant-id "tenant-1"}})
+                                                      :headers {"accept" "application/json"}
+                                                      :params {:id (str conv-id)}
+                                                      :body (json/generate-string {:receipt_type "read"
+                                                                                   :message_id (str message-id)})
+                                                      :auth/principal {:subject (str sender-id)
+                                                                       :tenant-id "tenant-1"}})
                 body (json/parse-string (:body resp) true)]
             (testing "receipt endpoint writes to redis"
               (is (= 200 (:status resp)))

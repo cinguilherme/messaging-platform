@@ -11,9 +11,9 @@
 (defn- cleanup-unread-index!
   [redis-client naming conversation-id]
   (car/wcar (:conn redis-client)
-    (car/del (unread-index/message-index-key naming conversation-id))
-    (car/del (unread-index/message-seq-key naming conversation-id))
-    (car/del (unread-index/last-read-key naming conversation-id))))
+            (car/del (unread-index/message-index-key naming conversation-id))
+            (car/del (unread-index/message-seq-key naming conversation-id))
+            (car/del (unread-index/last-read-key naming conversation-id))))
 
 (defn- make-message-ids
   [n]

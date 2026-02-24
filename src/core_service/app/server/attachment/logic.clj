@@ -179,8 +179,8 @@
         kind (resolve-kind kind content-type)
         ext (content-type->ext content-type)
         object-key (build-object-key {:prefix attachments-prefix
-                                       :kind kind
-                                       :ext ext})
+                                      :kind kind
+                                      :ext ext})
         size-bytes (long (or expected-size-bytes (alength ^bytes bytes)))
         checksum (sha256-hex bytes)
         image (when (= kind :image) (image-dimensions bytes))

@@ -49,8 +49,8 @@
              :seq_end 2
              :object_key "segments/some-key"}]
     (with-redefs [segments-db/list-segments (fn [_ _]
-                                             (let [n (swap! calls inc)]
-                                               (if (= n 1) [row] [])))
+                                              (let [n (swap! calls inc)]
+                                                (if (= n 1) [row] [])))
                   segments-db/delete-segment! (fn [_ args] (reset! delete-called args))]
       (let [result (reader/fetch-messages {:db :db
                                            :minio (mock-storage {:ok false :error "InternalError"})

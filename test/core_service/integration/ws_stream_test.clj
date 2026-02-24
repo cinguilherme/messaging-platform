@@ -30,7 +30,7 @@
         (try
           (let [result (loop [attempt 0]
                          (car/wcar (:conn redis-client)
-                           (car/publish channel payload-bytes))
+                                   (car/publish channel payload-bytes))
                          (let [message @(d/timeout! (s/take! ws-conn) 200 ::timeout)]
                            (cond
                              (= message payload) message
@@ -68,7 +68,7 @@
         (try
           (let [result (loop [attempt 0]
                          (car/wcar (:conn redis-client)
-                           (car/publish channel payload-bytes))
+                                   (car/publish channel payload-bytes))
                          (let [message @(d/timeout! (s/take! ws-conn) 200 ::timeout)]
                            (cond
                              (= message ::timeout)

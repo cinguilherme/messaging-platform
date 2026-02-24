@@ -111,7 +111,7 @@
     (if (<= trim-min-entries 0)
       last-id
       (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :backward
-                                                                       :limit (inc trim-min-entries)})
+                                                                      :limit (inc trim-min-entries)})
             retain-id (when (> (count entries) trim-min-entries)
                         (:id (last entries)))]
         (when (and retain-id (stream-id<=? retain-id last-id))
@@ -148,8 +148,8 @@
 (defn- read-prepared
   [streams stream batch-size cursor codec last-seq]
   (let [{:keys [entries]} (p-stream/read-payloads streams stream {:direction :forward
-                                                                   :limit batch-size
-                                                                   :cursor cursor})
+                                                                  :limit batch-size
+                                                                  :cursor cursor})
         prepared (entry->prepared entries codec last-seq)]
     {:entries entries
      :prepared prepared}))
@@ -190,7 +190,7 @@
                  :payload-bytes byte-size})
     (let [put-start (System/nanoTime)
           store (p-storage/storage-put-bytes minio object-key segment-bytes
-                                            {:content-type "application/octet-stream"})
+                                             {:content-type "application/octet-stream"})
           put-duration (time/nano-span->ms put-start)]
       (if-not (:ok store)
         (do
@@ -292,8 +292,7 @@
                                 (merge log-ctx
                                        {:conversation-id conversation-id
                                         :seq-end (:seq_end header')
-                                        :error (.getMessage e)}))))
-              )
+                                        :error (.getMessage e)})))))
             (assoc result :message-count (:message_count header'))))))))
 
 (defn- record-flush-metrics!
@@ -387,7 +386,7 @@
    (let [prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
          scan-start (System/nanoTime)
          keys (scan-keys streams (str prefix "*"))
-       scan-duration (time/nano-span->ms scan-start)
+         scan-duration (time/nano-span->ms scan-start)
          log-ctx (merge {:component segment-component
                          :worker segment-worker}
                         log-ctx)]
@@ -417,7 +416,7 @@
   [{:keys [components]} _msg]
   (let [{:keys [logger logging]} components
         tick-id (str (java.util.UUID/randomUUID))
-      tick-started-at (time/now-ms)
+        tick-started-at (time/now-ms)
         log-ctx {:component segment-component
                  :worker segment-worker
                  :tick-id tick-id

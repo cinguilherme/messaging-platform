@@ -34,12 +34,12 @@
           seq-value (long seq)
           payload (pr-str message)
           updated? (= 1 (app-metrics/with-redis metrics :conversation_last_write
-                            #(car/wcar (redis-lib/conn redis)
-                               (car/eval update-last-message-lua
-                                         1
-                                         key
-                                         (str seq-value)
-                                         payload))))]
+                          #(car/wcar (redis-lib/conn redis)
+                                     (car/eval update-last-message-lua
+                                               1
+                                               key
+                                               (str seq-value)
+                                               payload))))]
       {:ok true
        :updated? updated?
        :seq seq-value
@@ -53,7 +53,7 @@
       (let [keys (mapv #(last-message-key naming %) conversation-ids)
             payloads (app-metrics/with-redis metrics :conversation_last_read_batch
                        #(car/wcar (redis-lib/conn redis)
-                          (mapv (fn [k] (car/hget k "payload")) keys)))
+                                  (mapv (fn [k] (car/hget k "payload")) keys)))
             payloads (cond
                        (sequential? payloads) payloads
                        (and (= 1 (count conversation-ids)) (some? payloads)) [payloads]

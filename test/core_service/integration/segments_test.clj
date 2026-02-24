@@ -41,17 +41,17 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (helpers/invoke-handler handler {:request-method :post
-                    :headers {"accept" "application/json"}
-                    :params {:id (str conv-id)}
-                    :body payload-one
-                    :auth/principal {:subject (str sender-id)
-                                     :tenant-id "tenant-1"}})
+                                           :headers {"accept" "application/json"}
+                                           :params {:id (str conv-id)}
+                                           :body payload-one
+                                           :auth/principal {:subject (str sender-id)
+                                                            :tenant-id "tenant-1"}})
           (helpers/invoke-handler handler {:request-method :post
-                    :headers {"accept" "application/json"}
-                    :params {:id (str conv-id)}
-                    :body payload-two
-                    :auth/principal {:subject (str sender-id)
-                                     :tenant-id "tenant-1"}})
+                                           :headers {"accept" "application/json"}
+                                           :params {:id (str conv-id)}
+                                           :body payload-two
+                                           :auth/principal {:subject (str sender-id)
+                                                            :tenant-id "tenant-1"}})
           (let [result (segments/flush-conversation! {:db db
                                                       :redis redis-client
                                                       :streams streams
@@ -110,11 +110,11 @@
                                            :user-id sender-id})
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (helpers/invoke-handler handler {:request-method :post
-                    :headers {"accept" "application/json"}
-                    :params {:id (str conv-id)}
-                    :body payload
-                    :auth/principal {:subject (str sender-id)
-                                     :tenant-id "tenant-1"}})
+                                           :headers {"accept" "application/json"}
+                                           :params {:id (str conv-id)}
+                                           :body payload
+                                           :auth/principal {:subject (str sender-id)
+                                                            :tenant-id "tenant-1"}})
           (segments/flush-conversation! {:db db
                                          :redis redis-client
                                          :streams streams
@@ -176,11 +176,11 @@
           (helpers/clear-redis-conversation! redis-client naming conv-id)
           (doseq [payload payloads]
             (helpers/invoke-handler handler {:request-method :post
-                      :headers {"accept" "application/json"}
-                      :params {:id (str conv-id)}
-                      :body payload
-                      :auth/principal {:subject (str sender-id)
-                                       :tenant-id "tenant-1"}}))
+                                             :headers {"accept" "application/json"}
+                                             :params {:id (str conv-id)}
+                                             :body payload
+                                             :auth/principal {:subject (str sender-id)
+                                                              :tenant-id "tenant-1"}}))
           (segments/flush-conversation! {:db db
                                          :redis redis-client
                                          :streams streams

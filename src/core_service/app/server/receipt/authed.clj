@@ -10,7 +10,7 @@
             [malli.core :as m]
             [taoensso.carmine :as car]))
 
-(defn- publish-to-conv-stream! 
+(defn- publish-to-conv-stream!
   "Publishes a receipt event to the conversation's Redis Pub/Sub channel.
   The event is encoded as an EDN string."
   [redis naming conv-id data sender-id]
@@ -43,7 +43,6 @@
                          :message_id (str (:message_id data))
                          :receipt_type (name (:receipt_type data))}
                         format))
-
 
 (defn receipts-create
   "Endpoint handler for creating a message receipt (delivered/read).

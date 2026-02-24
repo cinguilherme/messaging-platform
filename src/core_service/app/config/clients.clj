@@ -2,7 +2,6 @@
   (:require [core-service.app.libs.env :as env]
             [integrant.core :as ig]))
 
-
 (defmethod ig/init-key :core-service.app.config.clients/redis
   [_ {:keys [uri]}]
   {:uri (or uri

@@ -4,7 +4,6 @@
             [core-service.app.libs.env :as env]
             [integrant.core :as ig]))
 
-
 (defn- env-bool
   [k]
   (env/parse-bool (env/getenv k)))
