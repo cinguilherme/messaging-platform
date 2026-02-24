@@ -11,6 +11,55 @@
             [d-core.core.auth.token-client :as token-client]
             [malli.core :as m]))
 
+(defn- register! [logger token-client keycloak data db]
+  (try
+    (logger/log logger ::auth-register-token-client token-client)
+    (let [admin-token (token-client/client-credentials token-client {})
+          access-token (:access-token admin-token)
+          token-details (logic/admin-token-details access-token)
+          admin-client-id (or (:admin-client-id keycloak) (:client-id keycloak))
+          log-details {:realm (:realm keycloak)
+                       :admin-client-id admin-client-id
+                       :admin-url (:admin-url keycloak)
+                       :realm-roles (:realm_roles token-details)
+                       :realm-management-roles (:realm_management_roles token-details)}
+          admin-url (:admin-url keycloak)
+          user-repr (logic/build-user-repr data)
+          resp (http-client/post (str admin-url "/users")
+                                 (merge {:headers {"authorization" (str "Bearer " access-token)}
+                                         :content-type :json
+                                         :body (json/generate-string user-repr)
+                                         :as :text
+                                         :throw-exceptions false}
+                                        (:http-opts keycloak)))
+          status (:status resp)
+          location (get-in resp [:headers "location"])]
+      (logger/log logger ::auth-register-admin-token log-details)
+      (logger/log logger ::auth-register-resp resp)
+      (if (<= 200 status 299)
+        (do
+          (when-let [user-id (logic/parse-user-id-from-location location)]
+            (when db
+              (users-db/upsert-user-profile! db {:user-id user-id
+                                                 :username (:username data)
+                                                 :first-name (:first_name data)
+                                                 :last-name (:last_name data)
+                                                 :email (:email data)
+                                                 :enabled (if (some? (:enabled data)) (:enabled data) true)})))
+          {:ok true
+           :action :register
+           :location location})
+        {:status status
+         :body {:ok false
+                :error "registration failed"
+                :details (some-> (:body resp) (json/parse-string true))
+                :debug log-details}}))
+    (catch Exception ex
+      {:status 500
+       :body {:ok false
+              :error "registration failed"
+              :details (.getMessage ex)}})))
+
 (defn auth-register
   "Proxy endpoint for user registration (backed by Keycloak)."
   [{:keys [webdeps]}]
@@ -29,53 +78,7 @@
           {:status 500 :body {:ok false :error "client id not configured"}}
 
           :else
-          (try
-            (logger/log logger ::auth-register-token-client token-client)
-            (let [admin-token (token-client/client-credentials token-client {})
-                  access-token (:access-token admin-token)
-                  token-details (logic/admin-token-details access-token)
-                  admin-client-id (or (:admin-client-id keycloak) (:client-id keycloak))
-                  log-details {:realm (:realm keycloak)
-                               :admin-client-id admin-client-id
-                               :admin-url (:admin-url keycloak)
-                               :realm-roles (:realm_roles token-details)
-                               :realm-management-roles (:realm_management_roles token-details)}
-                  admin-url (:admin-url keycloak)
-                  user-repr (logic/build-user-repr data)
-                  resp (http-client/post (str admin-url "/users")
-                                         (merge {:headers {"authorization" (str "Bearer " access-token)}
-                                                 :content-type :json
-                                                 :body (json/generate-string user-repr)
-                                                 :as :text
-                                                 :throw-exceptions false}
-                                                (:http-opts keycloak)))
-                  status (:status resp)
-                  location (get-in resp [:headers "location"])]
-              (logger/log logger ::auth-register-admin-token log-details)
-              (logger/log logger ::auth-register-resp resp)
-              (if (<= 200 status 299)
-                (do
-                  (when-let [user-id (logic/parse-user-id-from-location location)]
-                    (when db
-                      (users-db/upsert-user-profile! db {:user-id user-id
-                                                         :username (:username data)
-                                                         :first-name (:first_name data)
-                                                         :last-name (:last_name data)
-                                                         :email (:email data)
-                                                         :enabled (if (some? (:enabled data)) (:enabled data) true)})))
-                  {:ok true
-                   :action :register
-                   :location location})
-                {:status status
-                 :body {:ok false
-                        :error "registration failed"
-                        :details (some-> (:body resp) (json/parse-string true))
-                        :debug log-details}}))
-            (catch Exception ex
-              {:status 500
-               :body {:ok false
-                      :error "registration failed"
-                      :details (.getMessage ex)}})))))))
+          (register! logger token-client keycloak data db))))))
 
 (defn auth-login
   "Proxy endpoint for user login (backed by Keycloak)."
