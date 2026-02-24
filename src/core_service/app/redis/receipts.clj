@@ -1,7 +1,7 @@
 (ns core-service.app.redis.receipts
-  (:require [core-service.app.libs.redis :as redis-lib]
-            [core-service.app.metrics :as app-metrics]
-            [taoensso.carmine :as car]))
+  (:require [d-core.core.state-store.protocol :as p-state]
+            [d-core.core.state-store.redis :as state-store-redis]
+            [core-service.app.metrics :as app-metrics]))
 
 (defn receipt-key
   [naming conversation-id message-id]
@@ -9,43 +9,35 @@
     (str prefix conversation-id ":" message-id)))
 
 (defn record!
-  [{:keys [redis naming receipt metrics]} {:keys [conversation-id message-id user-id receipt-type at]}]
+  [{:keys [redis state-store naming receipt metrics]} {:keys [conversation-id message-id user-id receipt-type at]}]
   (let [key (receipt-key naming conversation-id message-id)
         field (str (name receipt-type) ":" user-id)
         value (str (or at (System/currentTimeMillis)))
-        ttl-ms (long (or (:ttl-ms receipt) 0))]
+        ttl-ms (long (or (:ttl-ms receipt) 0))
+        store (or state-store
+                  (state-store-redis/->RedisStateStore redis))]
     (app-metrics/with-redis metrics :receipt_write
-      #(car/wcar (redis-lib/conn redis)
-                 (car/hset key field value)
-                 (when (pos? ttl-ms)
-                   (car/pexpire key ttl-ms))))
+      #(p-state/put-field! store key field value {:ttl-ms ttl-ms}))
     {:ok true :key key}))
 
 (defn get-receipts
-  [{:keys [redis naming metrics]} {:keys [conversation-id message-id]}]
+  [{:keys [redis state-store naming metrics]} {:keys [conversation-id message-id]}]
   (let [key (receipt-key naming conversation-id message-id)
-        entries (app-metrics/with-redis metrics :hgetall
-                  #(car/wcar (redis-lib/conn redis)
-                             (car/hgetall key)))]
-    (apply hash-map entries)))
+        store (or state-store
+                  (state-store-redis/->RedisStateStore redis))]
+    (app-metrics/with-redis metrics :hgetall
+      #(p-state/get-all store key nil))))
 
 (defn batch-get-receipts
-  [{:keys [redis naming metrics]} {:keys [conversation-id message-ids]}]
+  [{:keys [redis state-store naming metrics]} {:keys [conversation-id message-ids]}]
   (if (empty? message-ids)
     {}
-    (let [keys (mapv #(receipt-key naming conversation-id %) message-ids)
-          entries-by-key (app-metrics/with-redis metrics :hgetall_batch
-                           #(car/wcar (redis-lib/conn redis)
-                                      (mapv car/hgetall keys)))
-          entries-by-key (if (sequential? entries-by-key)
-                           entries-by-key
-                           [])]
-      (reduce-kv
-       (fn [acc idx message-id]
-         (let [entries (nth entries-by-key idx nil)]
-           (assoc acc message-id
-                  (if (and entries (sequential? entries))
-                    (apply hash-map entries)
-                    {}))))
-       {}
-       message-ids))))
+    (let [store (or state-store
+                    (state-store-redis/->RedisStateStore redis))]
+      (reduce (fn [acc message-id]
+                (let [key (receipt-key naming conversation-id message-id)
+                      entries (app-metrics/with-redis metrics :hgetall_batch
+                                #(p-state/get-all store key nil))]
+                  (assoc acc message-id (or entries {}))))
+              {}
+              message-ids))))

@@ -1,5 +1,6 @@
 (ns core-service.app.metrics
   (:require [d-core.core.metrics.protocol :as metrics]
+            [d-core.core.metrics.wrappers :as metrics-wrappers]
             [integrant.core :as ig]))
 
 (defn label-value
@@ -65,14 +66,7 @@
 
 (defn- redis-metrics
   [metrics]
-  {:requests-total (metrics/counter metrics {:name :redis_requests_total
-                                             :help "Redis requests"
-                                             :labels [:op :status]})
-   :request-duration (metrics/histogram metrics {:name :redis_request_duration_seconds
-                                                 :help "Redis request duration in seconds"
-                                                 :labels [:op]
-                                                 :buckets [0.001 0.005 0.01 0.025 0.05
-                                                           0.1 0.25 0.5 1 2 5]})})
+  (metrics-wrappers/redis-instruments metrics))
 
 (defn- consumer-metrics
   [metrics]
@@ -92,15 +86,11 @@
 (defn record-redis!
   [metrics-component op duration-seconds status]
   (when (and metrics-component (:metrics metrics-component))
-    (let [metrics-api (:metrics metrics-component)
-          {:keys [requests-total request-duration]} (:redis metrics-component)]
-      (when requests-total
-        (metrics/inc! metrics-api
-                      (.labels requests-total (labels->array op status))))
-      (when request-duration
-        (metrics/observe! metrics-api
-                          (.labels request-duration (labels->array op))
-                          duration-seconds)))))
+    (metrics-wrappers/record-redis! (:metrics metrics-component)
+                                    (:redis metrics-component)
+                                    op
+                                    duration-seconds
+                                    status)))
 
 (defn record-consumer!
   [metrics-component handler-id duration-seconds status]
@@ -117,14 +107,12 @@
 
 (defn with-redis
   [metrics-component op f]
-  (let [start (System/nanoTime)]
-    (try
-      (let [result (f)]
-        (record-redis! metrics-component op (duration-seconds start) :ok)
-        result)
-      (catch Throwable t
-        (record-redis! metrics-component op (duration-seconds start) :error)
-        (throw t)))))
+  (if-not (and metrics-component (:metrics metrics-component))
+    (f)
+    (metrics-wrappers/with-redis (:metrics metrics-component)
+      (:redis metrics-component)
+      op
+      f)))
 
 (defn wrap-consumer
   [metrics-component handler-id handler]

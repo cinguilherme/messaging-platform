@@ -1,5 +1,7 @@
 (ns core-service.app.config.messaging
-  (:require [integrant.core :as ig]))
+  (:require [d-core.core.idempotency.redis :as idempotency-redis]
+            [d-core.core.state-store.redis :as state-store-redis]
+            [integrant.core :as ig]))
 
 ;; Config components: return config maps (can include Integrant refs via ig/ref).
 
@@ -115,3 +117,13 @@
 (defmethod ig/init-key :core-service.app.config.messaging/idempotency-config
   [_ opts]
   (merge default-idempotency-config opts))
+
+(defmethod ig/init-key :core-service.app.config.messaging/idempotency-store
+  [_ {:keys [redis naming idempotency]}]
+  (let [prefix (get-in naming [:redis :idempotency-prefix] "chat:idemp:")
+        ttl-ms (long (or (:ttl-ms idempotency) 21600000))]
+    (idempotency-redis/->RedisIdempotency redis prefix ttl-ms)))
+
+(defmethod ig/init-key :core-service.app.config.messaging/state-store
+  [_ {:keys [redis]}]
+  (state-store-redis/->RedisStateStore redis))

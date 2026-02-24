@@ -1,15 +1,9 @@
 (ns core-service.app.redis.unread-index
   (:require [core-service.app.libs.redis :as redis-lib]
+            [d-core.core.state-store.protocol :as p-state]
+            [d-core.core.state-store.redis :as state-store-redis]
             [core-service.app.metrics :as app-metrics]
             [taoensso.carmine :as car]))
-
-(def ^:private update-last-read-lua
-  (str "local current = redis.call('HGET', KEYS[1], ARGV[1]);"
-       "if (not current) or (tonumber(ARGV[2]) > tonumber(current)) then "
-       "redis.call('HSET', KEYS[1], ARGV[1], ARGV[2]);"
-       "return 1;"
-       "end;"
-       "return 0;"))
 
 (defn message-index-key
   [naming conversation-id]
@@ -35,15 +29,17 @@
       nil)))
 
 (defn index-message!
-  [{:keys [redis naming metrics]} {:keys [conversation-id message-id seq]}]
+  [{:keys [redis state-store naming metrics]} {:keys [conversation-id message-id seq]}]
   (let [idx-key (message-index-key naming conversation-id)
         seq-key (message-seq-key naming conversation-id)
         seq-value (long seq)
-        message-id-str (str message-id)]
+        message-id-str (str message-id)
+        store (or state-store
+                  (state-store-redis/->RedisStateStore redis))]
     (app-metrics/with-redis metrics :message_index_write
-      #(car/wcar (redis-lib/conn redis)
-                 (car/zadd idx-key seq-value message-id-str)
-                 (car/hset seq-key message-id-str (str seq-value))))
+      #(do
+         (p-state/zadd! store idx-key seq-value message-id-str nil)
+         (p-state/put-field! store seq-key message-id-str (str seq-value) nil)))
     {:ok true
      :index-key idx-key
      :seq-key seq-key
@@ -51,25 +47,25 @@
      :message-id message-id-str}))
 
 (defn message-seq
-  [{:keys [redis naming metrics]} conversation-id message-id]
+  [{:keys [redis state-store naming metrics]} conversation-id message-id]
   (when (and redis naming conversation-id message-id)
     (let [seq-key (message-seq-key naming conversation-id)
+          store (or state-store
+                    (state-store-redis/->RedisStateStore redis))
           value (app-metrics/with-redis metrics :message_seq_read
-                  #(car/wcar (redis-lib/conn redis)
-                             (car/hget seq-key (str message-id))))]
+                  #(p-state/get-field store seq-key (str message-id) nil))]
       (parse-long-safe value))))
 
 (defn update-last-read-seq!
-  [{:keys [redis naming metrics]} conversation-id user-id seq]
+  [{:keys [redis state-store naming metrics]} conversation-id user-id seq]
   (when-let [seq-value (parse-long-safe seq)]
     (let [key (last-read-key naming conversation-id)
+          store (or state-store
+                    (state-store-redis/->RedisStateStore redis))
           updated? (= 1 (app-metrics/with-redis metrics :last_read_update
-                          #(car/wcar (redis-lib/conn redis)
-                                     (car/eval update-last-read-lua
-                                               1
-                                               key
-                                               (str user-id)
-                                               (str seq-value)))))]
+                          #(if (p-state/set-max-field! store key (str user-id) seq-value nil)
+                             1
+                             0)))]
       {:ok true
        :updated? updated?
        :seq seq-value
@@ -81,19 +77,23 @@
     (update-last-read-seq! deps conversation-id user-id seq-value)))
 
 (defn unread-count
-  [{:keys [redis naming metrics]} conversation-id user-id]
+  [{:keys [redis state-store naming metrics]} conversation-id user-id]
   (when (and redis naming conversation-id user-id)
-    (let [last-read (app-metrics/with-redis metrics :last_read_read
-                      #(car/wcar (redis-lib/conn redis)
-                                 (car/hget (last-read-key naming conversation-id)
-                                           (str user-id))))
+    (let [store (or state-store
+                    (state-store-redis/->RedisStateStore redis))
+          last-read (app-metrics/with-redis metrics :last_read_read
+                      #(p-state/get-field store
+                                          (last-read-key naming conversation-id)
+                                          (str user-id)
+                                          nil))
           last-read-seq (parse-long-safe last-read)]
       (when (some? last-read-seq)
         (let [count-value (app-metrics/with-redis metrics :message_index_count
-                            #(car/wcar (redis-lib/conn redis)
-                                       (car/zcount (message-index-key naming conversation-id)
-                                                   (str "(" last-read-seq)
-                                                   "+inf")))]
+                            #(p-state/zcount store
+                                             (message-index-key naming conversation-id)
+                                             (str "(" last-read-seq)
+                                             "+inf"
+                                             nil))]
           (or (parse-long-safe count-value) 0))))))
 
 (defn- hdel-many!

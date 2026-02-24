@@ -3,9 +3,9 @@
             [core-service.app.libs.identity :as identity]
             [core-service.app.libs.util :as util]
             [core-service.app.observability.logging :as obs-log]
-            [core-service.app.pagination :as pagination]
             [core-service.app.segments.reader :as segment-reader]
             [core-service.app.server.http :as http]
+            [d-core.core.stream.cursor :as stream-cursor]
             [d-core.core.stream.protocol :as p-stream]
             [duct.logger :as logger]))
 
@@ -63,6 +63,11 @@
                        header-key :header
                        client-key :client-ref)})))
 
+(defn scoped-idempotency-key
+  [conversation-id sender-id idempotency-key]
+  (when idempotency-key
+    (str conversation-id ":" sender-id ":" idempotency-key)))
+
 (defn decode-message
   "Decodes a message payload from bytes or string into a Clojure map 
   using EDN reader."
@@ -83,28 +88,23 @@
 
 (defn redis-token
   [{:keys [conversation-id cursor direction]}]
-  "Encodes a pagination token for messages sourced from Redis.
-  Includes conversation ID, cursor, direction, and 'redis' source."
-  (pagination/encode-token {:conversation_id (str conversation-id)
-                            :cursor cursor
-                            :direction (name direction)
-                            :source "redis"}))
+  (stream-cursor/encode-cursor {:conversation-id conversation-id
+                                :cursor cursor
+                                :direction direction
+                                :source :redis}))
 
 (defn minio-token
   [{:keys [conversation-id cursor direction]}]
-  (pagination/encode-token {:conversation_id (str conversation-id)
-                            :cursor cursor
-                            :direction (name direction)
-                            :source "minio"}))
+  (stream-cursor/encode-cursor {:conversation-id conversation-id
+                                :cursor cursor
+                                :direction direction
+                                :source :minio}))
 
 (defn parse-cursor-token
   [cursor-param]
-  (let [token (pagination/decode-token cursor-param)
-        source (some-> (:source token) keyword)
-        direction (some-> (:direction token) keyword)
-        cursor (:cursor token)
-        seq-cursor (when (number? cursor) (long cursor))
-        conv-id (some-> (:conversation_id token) http/parse-uuid)]
+  (let [{:keys [token source direction cursor seq-cursor conversation-id]}
+        (stream-cursor/decode-cursor cursor-param)
+        conv-id (some-> conversation-id http/parse-uuid)]
     {:token token
      :source source
      :direction direction

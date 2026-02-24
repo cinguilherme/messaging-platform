@@ -3,9 +3,9 @@
         org.clojure/core.async {:mvn/version "1.8.741"}
         
         ;; Local library dependency (extracted core layer)
-       ;;  d-core/d-core {:local/root "../d-core"}
-        ;; For Docker image to build, it needs to use the CLojars dependency version of D-core, keep the local version only for dev involving the d-core evolution.
-        org.clojars.cinguilherme/d-core {:mvn/version "0.8.1"}
+              d-core/d-core {:local/root "../d-core"}
+              ;; For Docker image builds, switch back to the CLojars dependency version:
+              ;; org.clojars.cinguilherme/d-core {:mvn/version "0.8.1"}
         
         ;; Database dependencies
         org.clojure/java.jdbc {:mvn/version "0.7.12"}

@@ -32,6 +32,10 @@
    :core-service.app.config.messaging/attachment-retention-config {}
    :core-service.app.config.messaging/receipt-config {}
    :core-service.app.config.messaging/idempotency-config {}
+  :core-service.app.config.messaging/idempotency-store {:redis #ig/ref :d-core.core.clients.redis/client
+                                      :naming #ig/ref :core-service.app.config.messaging/storage-names
+                                      :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config}
+  :core-service.app.config.messaging/state-store {:redis #ig/ref :d-core.core.clients.redis/client}
    :core-service.app.config.observability/logging {:level :debug
                                                    :components #{:segment-flush}
                                                    :ticker {:enable true :tick-log-interval-ms 1000}
@@ -185,6 +189,8 @@
                                              :segments #ig/ref :core-service.app.config.messaging/segment-config
                                              :attachment-retention #ig/ref :core-service.app.config.messaging/attachment-retention-config
                                              :idempotency #ig/ref :core-service.app.config.messaging/idempotency-config
+                                             :idempotency-store #ig/ref :core-service.app.config.messaging/idempotency-store
+                                             :state-store #ig/ref :core-service.app.config.messaging/state-store
                                              :logging #ig/ref :core-service.app.config.observability/logging
                                              :receipt #ig/ref :core-service.app.config.messaging/receipt-config
                                              :executor #ig/ref :core-service.app.libs.executor/executor

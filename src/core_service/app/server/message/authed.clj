@@ -9,6 +9,7 @@
    [core-service.app.redis.receipts :as receipts]
    [core-service.app.redis.unread-index :as unread-index]
    [core-service.app.server.message.logic :as logic]
+   [d-core.core.idempotency.protocol :as p-idempotency]
    [d-core.core.stream.protocol :as p-stream]
    [taoensso.carmine :as car]))
 
@@ -69,7 +70,7 @@
            (keys entries)))))
 
 (defn- enrich-message-statuses
-  [redis naming metrics conversation-id requester-id messages]
+  [redis state-store naming metrics conversation-id requester-id messages]
   (let [own-message-ids (->> messages
                              (filter #(= requester-id (:sender_id %)))
                              (map :message_id)
@@ -77,6 +78,7 @@
                              vec)
         receipts-by-message-id (receipts/batch-get-receipts
                                 {:redis redis
+                                 :state-store state-store
                                  :naming naming
                                  :metrics metrics}
                                 {:conversation-id conversation-id
@@ -92,13 +94,19 @@
                 (assoc message :status status))))
           messages)))
 
-(defn- try-index-message [redis naming conv-id message seq sender-id logger logging log-ctx]
+(defn- try-index-message [redis state-store naming metrics conv-id message seq sender-id logger logging log-ctx]
   (try
-    (unread-index/index-message! {:redis redis :naming naming}
+    (unread-index/index-message! {:redis redis
+                                  :state-store state-store
+                                  :naming naming
+                                  :metrics metrics}
                                  {:conversation-id conv-id
                                   :message-id (:message_id message)
                                   :seq seq})
-    (unread-index/update-last-read-seq! {:redis redis :naming naming}
+    (unread-index/update-last-read-seq! {:redis redis
+                                         :state-store state-store
+                                         :naming naming
+                                         :metrics metrics}
                                         conv-id sender-id seq)
     (catch Exception e
       (obs-log/log! logger logging :warn ::unread-index-sync-failed
@@ -121,54 +129,70 @@
       (obs-log/log! logger logging :error ::attachments-mark-referenced-failed
                     (merge log-ctx {:error (.getMessage e)})))))
 
-(defn- create-message! [naming conv-id streams attachment-validation sender-id data idempotency-result logger logging redis metrics db]
-  (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
-        seq (logic/next-seq! streams seq-key)
-        canonical-attachments (:canonical-attachments @attachment-validation)
-        message {:message_id (java.util.UUID/randomUUID)
-                 :conversation_id conv-id
-                 :seq seq
-                 :sender_id sender-id
-                 :sent_at (System/currentTimeMillis)
-                 :type (:type data)
-                 :body (:body data)
-                 :attachments canonical-attachments
-                 :client_ref (:client_ref data)
-                 :meta (:meta data)}
-        stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
-        payload-bytes (logic/encode-message message)
-        log-ctx {:component :messages-create
-                 :conversation-id conv-id
-                 :sender-id sender-id
-                 :seq seq
-                 :idempotency-source (:source idempotency-result)
-                 :stream stream
-                 :payload-bytes (alength payload-bytes)}]
-    (logic/log-message-create! logger logging ::message-create
-                               (merge log-ctx {:message message}))
-    (try
-      (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
-            pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
-        (try-index-message redis naming conv-id message seq sender-id logger logging log-ctx)
-        (try-update-last-message redis naming metrics message logger logging log-ctx)
-        (car/wcar (redis-lib/conn redis)
-                  (car/publish pubsub-ch payload-bytes))
-        (try-mark-reference db attachment-validation logger logging log-ctx)
-        (logic/log-message-create! logger logging ::redis-append
-                                   (merge log-ctx {:entry-id entry-id}))
-        {:ok true
-         :conversation_id (str conv-id)
-         :message message
-         :stream stream
-         :entry_id entry-id})
-      (catch Exception e
-        (obs-log/log! logger logging :error ::redis-append-failed
-                      (merge log-ctx {:error (.getMessage e)}))
-        (throw e)))))
+(defn- create-message! [naming conv-id streams attachment-validation sender-id data idempotency idempotency-store idempotency-result logger logging redis state-store metrics db]
+  (let [idempotency-key (logic/scoped-idempotency-key conv-id sender-id (:key idempotency-result))
+        ttl-ms (long (or (:ttl-ms idempotency) 21600000))
+        claim-result (when (and idempotency-store idempotency-key)
+                       (p-idempotency/claim! idempotency-store idempotency-key ttl-ms))]
+    (cond
+      (= :completed (:status claim-result))
+      (:response claim-result)
+
+      (= :in-progress (:status claim-result))
+      {:ok false :error :idempotency-in-progress}
+
+      :else
+      (let [seq-key (str (get-in naming [:redis :sequence-prefix] "chat:seq:") conv-id)
+            seq (logic/next-seq! streams seq-key)
+            canonical-attachments (:canonical-attachments @attachment-validation)
+            message {:message_id (java.util.UUID/randomUUID)
+                     :conversation_id conv-id
+                     :seq seq
+                     :sender_id sender-id
+                     :sent_at (System/currentTimeMillis)
+                     :type (:type data)
+                     :body (:body data)
+                     :attachments canonical-attachments
+                     :client_ref (:client_ref data)
+                     :meta (:meta data)}
+            stream (str (get-in naming [:redis :stream-prefix] "chat:conv:") conv-id)
+            payload-bytes (logic/encode-message message)
+            log-ctx {:component :messages-create
+                     :conversation-id conv-id
+                     :sender-id sender-id
+                     :seq seq
+                     :idempotency-source (:source idempotency-result)
+                     :idempotency-key idempotency-key
+                     :stream stream
+                     :payload-bytes (alength payload-bytes)}]
+        (logic/log-message-create! logger logging ::message-create
+                                   (merge log-ctx {:message message}))
+        (try
+          (let [entry-id (p-stream/append-payload! streams stream payload-bytes)
+                pubsub-ch (str (get-in naming [:redis :pubsub-prefix] "chat:conv:") conv-id)]
+            (try-index-message redis state-store naming metrics conv-id message seq sender-id logger logging log-ctx)
+            (try-update-last-message redis naming metrics message logger logging log-ctx)
+            (car/wcar (redis-lib/conn redis)
+                      (car/publish pubsub-ch payload-bytes))
+            (try-mark-reference db attachment-validation logger logging log-ctx)
+            (logic/log-message-create! logger logging ::redis-append
+                                       (merge log-ctx {:entry-id entry-id}))
+            (let [result {:ok true
+                          :conversation_id (str conv-id)
+                          :message message
+                          :stream stream
+                          :entry_id entry-id}]
+              (when (and idempotency-store idempotency-key)
+                (p-idempotency/complete! idempotency-store idempotency-key result ttl-ms))
+              result))
+          (catch Exception e
+            (obs-log/log! logger logging :error ::redis-append-failed
+                          (merge log-ctx {:error (.getMessage e)}))
+            (throw e)))))))
 
 (defn messages-create
   [{:keys [webdeps]}]
-  (let [{:keys [db redis streams naming logger logging idempotency metrics]} webdeps]
+  (let [{:keys [db redis streams naming logger logging idempotency idempotency-store state-store metrics]} webdeps]
     (fn [req]
       (let [data (some-> (get-in req [:parameters :body]) logic/coerce-message-create)
             conv-id (get-in req [:parameters :path :id])
@@ -205,20 +229,24 @@
             {:status 400 :body {:ok false :error error}})
 
           :else
-          (create-message! naming conv-id streams attachment-validation sender-id data idempotency-result logger logging redis metrics db))))))
+          (let [result (create-message! naming conv-id streams attachment-validation sender-id data idempotency idempotency-store idempotency-result logger logging redis state-store metrics db)]
+            (if (= :idempotency-in-progress (:error result))
+              {:status 409 :body {:ok false :error "idempotency key is currently processing"}}
+              result)))))))
 
 (defn messages-list
   [{:keys [webdeps]}]
-  (let [{:keys [db streams minio redis naming segments metrics]} webdeps]
+  (let [{:keys [db streams minio redis state-store naming segments metrics]} webdeps]
     (fn [req]
       (let [conv-id (get-in req [:parameters :path :id])
             sender-id (:user-id req)
             query (get-in req [:parameters :query])
             {:keys [limit cursor direction]} query
-            {:keys [token source direction token-direction cursor seq-cursor conversation-id]}
+            request-direction direction
+            {:keys [source direction cursor seq-cursor conversation-id]}
             (logic/parse-cursor-token cursor)
-            direction (or (keyword direction)
-                          (keyword token-direction)
+            direction (or (keyword request-direction)
+                          (keyword direction)
                           :backward)
             query (assoc query :direction direction)
             token-source source
@@ -255,5 +283,5 @@
                                           :direction direction})]
             {:ok true
              :conversation_id (str conv-id)
-             :messages (enrich-message-statuses redis naming metrics conv-id sender-id messages)
+             :messages (enrich-message-statuses redis state-store naming metrics conv-id sender-id messages)
              :next_cursor next-cursor}))))))
