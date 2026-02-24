@@ -4,6 +4,9 @@
             [clojure.string :as str]
             [core-service.app.db.users :as users-db]
             [core-service.app.executors.protocol :as executor]
+            [core-service.app.libs.identity :as identity]
+            [core-service.app.libs.time :as time]
+            [core-service.app.libs.util :as util]
             [core-service.app.redis.conversation-last :as conversation-last]
             [core-service.app.redis.unread-index :as unread-index]
             [core-service.app.server.http :as http]
@@ -16,7 +19,7 @@
 (defn coerce-conversation-create
   [data]
   (-> data
-      (update :type (fn [v] (if (string? v) (keyword v) v)))
+  (update :type util/coerce-keyword)
       (update :title (fn [v] (when (and (string? v) (not (str/blank? v))) v)))
       (update :member_ids (fn [ids]
                             (when (sequential? ids)
@@ -39,8 +42,7 @@
 
 (defn sender-id-from-request
   [req]
-  (or (http/parse-uuid (get-in req [:auth/principal :subject]))
-      (http/parse-uuid (get-in req [:auth/principal :user_id]))))
+  (identity/user-id-from-request req))
 
 (defn conversation-row->item
   [row]
@@ -342,13 +344,10 @@
   [conversation-id user-id]
   [(str conversation-id) (str user-id)])
 
-(defn- now-ms []
-  (System/currentTimeMillis))
-
 (defn- fallback-cache-get
   [conversation-id user-id]
   (let [k (cache-key conversation-id user-id)
-        now (now-ms)
+        now (time/now-ms)
         cached (get @fallback-unread-cache k)]
     (when (some? cached)
       (if (> (:expires-at cached) now)
@@ -361,7 +360,7 @@
   [conversation-id user-id unread]
   (swap! fallback-unread-cache assoc (cache-key conversation-id user-id)
          {:unread unread
-          :expires-at (+ (now-ms) fallback-unread-cache-ttl-ms)})
+          :expires-at (+ (time/now-ms) fallback-unread-cache-ttl-ms)})
   unread)
 
 (defn- fallback-cache-evict!

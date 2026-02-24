@@ -1,5 +1,6 @@
 (ns core-service.app.server.metrics
   (:require [clojure.string :as str]
+            [core-service.app.libs.time :as time]
             [d-core.core.metrics.protocol :as metrics]
             [integrant.core :as ig])
   (:import (io.prometheus.client.exporter.common TextFormat)))
@@ -28,10 +29,10 @@
   (let [{:keys [requests-total request-duration]} http
         metrics-api metrics]
     (fn [req]
-      (let [start (System/nanoTime)]
+      (let [start (time/now-nanos)]
         (try
           (let [resp (handler req)
-                duration (/ (double (- (System/nanoTime) start)) 1000000000.0)
+                duration (time/nano-span->seconds start)
                 method (some-> (:request-method req) name str/lower-case)
                 route (normalize-path (:uri req))
                 status (str (or (:status resp) 200))]
@@ -44,7 +45,7 @@
                                 duration))
             resp)
           (catch Throwable t
-            (let [duration (/ (double (- (System/nanoTime) start)) 1000000000.0)
+            (let [duration (time/nano-span->seconds start)
                   method (some-> (:request-method req) name str/lower-case)
                   route (normalize-path (:uri req))]
               (when requests-total

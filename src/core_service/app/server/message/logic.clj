@@ -1,6 +1,7 @@
 (ns core-service.app.server.message.logic
-  (:require [clojure.edn :as edn]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
+            [core-service.app.libs.identity :as identity]
+            [core-service.app.libs.util :as util]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.pagination :as pagination]
             [core-service.app.segments.reader :as segment-reader]
@@ -10,8 +11,7 @@
 
 (defn sender-id-from-request
   [req]
-  (or (http/parse-uuid (get-in req [:auth/principal :subject]))
-      (http/parse-uuid (get-in req [:auth/principal :user_id]))))
+  (identity/user-id-from-request req))
 
 (defn next-seq!
   [streams key]
@@ -21,7 +21,7 @@
   "Coerces raw message creation data into internal types, 
   converting strings to keywords and UUIDs where necessary."
   [data]
-  (cond-> (update data :type (fn [v] (if (string? v) (keyword v) v)))
+  (cond-> (update data :type util/coerce-keyword)
     (contains? data :attachments)
     (update :attachments
             (fn [atts]
@@ -67,10 +67,7 @@
   "Decodes a message payload from bytes or string into a Clojure map 
   using EDN reader."
   [payload]
-  (cond
-    (bytes? payload) (edn/read-string (String. ^bytes payload "UTF-8"))
-    (string? payload) (edn/read-string payload)
-    :else nil))
+  (util/decode-edn-payload payload))
 
 (defn encode-message
   "Encodes a message map into UTF-8 bytes using EDN (pr-str)."

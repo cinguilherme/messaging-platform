@@ -8,6 +8,7 @@
    [manifold.deferred :as d]
    [manifold.stream :as s]
    [core-service.app.db.conversations :as conversations-db]
+  [core-service.app.libs.identity :as identity]
    [core-service.app.libs.redis :as redis-lib]
    [core-service.app.server.http :as shttp]
    [duct.logger :as logger]
@@ -105,8 +106,7 @@
   (let [{:keys [db redis naming logger]} webdeps]
     (fn [req]
       (let [conv-id (shttp/parse-uuid (get-in req [:path-params :id]))
-            user-id (or (shttp/parse-uuid (get-in req [:auth/principal :subject]))
-                        (shttp/parse-uuid (get-in req [:auth/principal :user_id]))
+        user-id (or (identity/user-id-from-request req)
                         (:user-id req))
             stream-format (stream-format-from-request req)]
         (cond

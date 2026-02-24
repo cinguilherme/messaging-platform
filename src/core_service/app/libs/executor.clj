@@ -1,16 +1,11 @@
 (ns core-service.app.libs.executor
-  (:require [clojure.string :as str]
+  (:require [core-service.app.libs.env :as env]
             [integrant.core :as ig]
             [core-service.app.executors.bounded :as bounded])
   (:import [java.util.concurrent Executors]))
 
 ;; Managed Bounded Executor Service for core-service
 ;; Provides a fixed thread pool to avoid thread explosion from Clojure's default 'future' pool.
-
-(defn- getenv
-  [k]
-  (let [v (some-> (System/getenv k) str/trim)]
-    (when (seq v) v)))
 
 (defn- parse-positive-int
   [value]
@@ -35,7 +30,7 @@
 (defmethod ig/init-key :core-service.app.libs.executor/keycloak-profile-fetch-executor
   [_ {:keys [thread-count]}]
   (let [thread-count (or (parse-positive-int thread-count)
-                         (parse-positive-int (getenv "KEYCLOAK_PROFILE_FETCH_MAX_CONCURRENCY"))
+                         (parse-positive-int (env/getenv "KEYCLOAK_PROFILE_FETCH_MAX_CONCURRENCY"))
                          8)]
     (bounded/->BoundedExecutor (Executors/newFixedThreadPool thread-count))))
 

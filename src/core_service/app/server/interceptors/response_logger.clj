@@ -1,5 +1,6 @@
 (ns core-service.app.server.interceptors.response-logger
-  (:require [integrant.core :as ig]
+  (:require [core-service.app.libs.time :as time]
+            [integrant.core :as ig]
             [duct.logger :as logger]))
 
 (defn response-logger
@@ -19,7 +20,7 @@
    :leave (fn [ctx]
             (let [req-info (::request-info ctx)
                   resp (:response ctx)
-                  duration-ms (quot (- (System/nanoTime) (:start-time req-info)) 1000000)]
+                  duration-ms (time/nano-span->ms (:start-time req-info))]
               (when logger
                 (logger/log logger :info ::api-request
                             (assoc req-info

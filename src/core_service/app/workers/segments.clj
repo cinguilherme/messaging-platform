@@ -1,8 +1,9 @@
 (ns core-service.app.workers.segments
   (:require [cheshire.core :as json]
-            [clojure.edn :as edn]
             [clojure.string :as str]
             [core-service.app.db.segments :as segments-db]
+            [core-service.app.libs.time :as time]
+            [core-service.app.libs.util :as util]
             [core-service.app.metrics :as app-metrics]
             [core-service.app.observability.logging :as obs-log]
             [core-service.app.redis.unread-index :as unread-index]
@@ -18,13 +19,6 @@
 (def segment-worker :segments-flush)
 
 (defonce tick-log-state (atom {}))
-
-(defn- now-ms []
-  (System/currentTimeMillis))
-
-(defn- duration-ms
-  [start-nanos]
-  (long (/ (double (- (System/nanoTime) start-nanos)) 1000000.0)))
 
 (defn- should-log-tick?
   [logging component now-ms]
@@ -68,10 +62,7 @@
 
 (defn- decode-message
   [payload]
-  (cond
-    (bytes? payload) (edn/read-string (String. ^bytes payload "UTF-8"))
-    (string? payload) (edn/read-string payload)
-    :else nil))
+  (util/decode-edn-payload payload))
 
 (defn- record-size
   [^bytes payload]
@@ -181,7 +172,7 @@
         segment-bytes (segment-format/encode-segment {:header header
                                                       :messages payloads
                                                       :compression compression})
-        encode-duration (duration-ms encode-start)
+        encode-duration (time/nano-span->ms encode-start)
         object-key (build-object-key naming {:conversation-id conversation-id
                                              :seq-start (:seq_start header)
                                              :seq-end (:seq_end header)
@@ -200,7 +191,7 @@
     (let [put-start (System/nanoTime)
           store (p-storage/storage-put-bytes minio object-key segment-bytes
                                             {:content-type "application/octet-stream"})
-          put-duration (duration-ms put-start)]
+          put-duration (time/nano-span->ms put-start)]
       (if-not (:ok store)
         (do
           (log-stage! logger logging log-ctx :error :minio-put
@@ -229,7 +220,7 @@
                                                :object-key object-key
                                                :byte-size byte-size})
               (log-stage! logger logging log-ctx :info :index-write
-                          {:duration-ms (duration-ms index-start)
+                          {:duration-ms (time/nano-span->ms index-start)
                            :pg.table :segment_index
                            :pg.operation :insert
                            :pg.rows 1})
@@ -242,7 +233,7 @@
                :byte_size byte-size}
               (catch Exception e
                 (log-stage! logger logging log-ctx :error :index-write
-                            {:duration-ms (duration-ms index-start)
+                            {:duration-ms (time/nano-span->ms index-start)
                              :pg.table :segment_index
                              :pg.operation :insert
                              :pg.rows 1
@@ -373,7 +364,7 @@
                    components
                    {:conversation-id conversation-id
                     :prepared prepared
-                    :created-at (System/currentTimeMillis)
+                    :created-at (time/now-ms)
                     :codec codec
                     :compression compression
                     :max-bytes max-bytes
@@ -382,8 +373,8 @@
                     :trim-stream? trim-stream?
                     :trim-min-entries trim-min-entries
                     :log-ctx log-ctx}))
-         duration-seconds (/ (double (- (System/nanoTime) start)) 1000000000.0)
-         duration-ms (duration-ms start)]
+         duration-seconds (time/nano-span->seconds start)
+         duration-ms (time/nano-span->ms start)]
      (record-flush-metrics! metrics result duration-seconds)
      (obs-log/log! logger logging :debug ::segment-flush-result
                    (merge log-ctx (result->log-fields result) {:duration-ms duration-ms}))
@@ -396,7 +387,7 @@
    (let [prefix (get-in naming [:redis :stream-prefix] "chat:conv:")
          scan-start (System/nanoTime)
          keys (scan-keys streams (str prefix "*"))
-         scan-duration (duration-ms scan-start)
+       scan-duration (time/nano-span->ms scan-start)
          log-ctx (merge {:component segment-component
                          :worker segment-worker}
                         log-ctx)]
@@ -426,7 +417,7 @@
   [{:keys [components]} _msg]
   (let [{:keys [logger logging]} components
         tick-id (str (java.util.UUID/randomUUID))
-        tick-started-at (now-ms)
+      tick-started-at (time/now-ms)
         log-ctx {:component segment-component
                  :worker segment-worker
                  :tick-id tick-id
@@ -436,7 +427,7 @@
       (obs-log/log! logger logging :debug ::segment-flush-tick-start log-ctx))
     (try
       (let [result (flush-all! components log-ctx)
-            tick-ended-at (now-ms)
+            tick-ended-at (time/now-ms)
             duration-ms (- tick-ended-at tick-started-at)
             summary (summarize-results result)
             success? (zero? (:error-count summary))]
@@ -449,7 +440,7 @@
       (catch Exception e
         (obs-log/log! logger logging :error ::segment-flush-tick-failed
                       (merge log-ctx
-                             {:duration-ms (- (now-ms) tick-started-at)
+                             {:duration-ms (- (time/now-ms) tick-started-at)
                               :error (.getMessage e)}))
         (throw e)))))
 

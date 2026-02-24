@@ -1,5 +1,7 @@
 (ns core-service.app.server.receipt.logic
-  (:require [core-service.app.libs.redis :as redis-lib]
+  (:require [core-service.app.libs.identity :as identity]
+            [core-service.app.libs.redis :as redis-lib]
+            [core-service.app.libs.util :as util]
             [core-service.app.metrics :as app-metrics]
             [core-service.app.redis.receipts :as receipts]
             [core-service.app.server.http :as http]
@@ -7,14 +9,13 @@
 
 (defn sender-id-from-request
   [req]
-  (or (http/parse-uuid (get-in req [:auth/principal :subject]))
-      (http/parse-uuid (get-in req [:auth/principal :user_id]))))
+  (identity/user-id-from-request req))
 
 (defn coerce-receipt-create
   [data]
   (cond-> data
     (contains? data :receipt_type)
-    (update :receipt_type (fn [v] (if (string? v) (keyword v) v)))
+    (update :receipt_type util/coerce-keyword)
     (contains? data :message_id)
     (update :message_id http/parse-uuid)
     (contains? data :at)

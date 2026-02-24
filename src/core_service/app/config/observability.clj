@@ -1,39 +1,13 @@
 (ns core-service.app.config.observability
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [core-service.app.libs.env :as env]
             [integrant.core :as ig]))
 
-(defn- getenv
-  "Returns env var value if present and not blank."
-  [k]
-  (let [v (some-> (System/getenv k) str/trim)]
-    (when (seq v) v)))
-
-(defn- parse-bool
-  [value]
-  (let [v (some-> value str/lower-case)]
-    (cond
-      (#{"1" "true" "yes" "y" "on"} v) true
-      (#{"0" "false" "no" "n" "off"} v) false
-      :else nil)))
 
 (defn- env-bool
   [k]
-  (parse-bool (getenv k)))
-
-(defn- parse-long
-  [value]
-  (when (seq value)
-    (try
-      (Long/parseLong value)
-      (catch Exception _ nil))))
-
-(defn- parse-double
-  [value]
-  (when (seq value)
-    (try
-      (Double/parseDouble value)
-      (catch Exception _ nil))))
+  (env/parse-bool (env/getenv k)))
 
 (defn- parse-kw-set
   [value]
@@ -80,19 +54,19 @@
 
 (defn- env-overrides
   []
-  (let [level (some-> (getenv "OBS_LOG_LEVEL") str/lower-case keyword)
-        components (parse-kw-set (getenv "OBS_LOG_COMPONENTS"))
-        workers (parse-kw-set (getenv "OBS_LOG_WORKERS"))
+  (let [level (some-> (env/getenv "OBS_LOG_LEVEL") str/lower-case keyword)
+        components (parse-kw-set (env/getenv "OBS_LOG_COMPONENTS"))
+        workers (parse-kw-set (env/getenv "OBS_LOG_WORKERS"))
         segment-enabled (env-bool "OBS_LOG_SEGMENT_FLUSH_ENABLED")
         segment-stage (env-bool "OBS_LOG_SEGMENT_FLUSH_STAGE_LOGS")
         retention-enabled (env-bool "OBS_LOG_RETENTION_ENABLED")
         attachment-retention-enabled (env-bool "OBS_LOG_ATTACHMENT_RETENTION_ENABLED")
         ticker-enabled (env-bool "OBS_LOG_TICKER_ENABLED")
-        ticker-interval (parse-long (getenv "OBS_LOG_TICKER_INTERVAL_MS"))
+        ticker-interval (env/env-long "OBS_LOG_TICKER_INTERVAL_MS")
         sampling-enabled (env-bool "OBS_LOG_SAMPLING_ENABLED")
-        sampling-default (parse-double (getenv "OBS_LOG_SAMPLING_DEFAULT_RATE"))
-        sampling-per (parse-edn (getenv "OBS_LOG_SAMPLING_PER_COMPONENT"))
-        redact-fields (parse-kw-set (getenv "OBS_LOG_REDACT_FIELDS"))
+        sampling-default (env/env-double "OBS_LOG_SAMPLING_DEFAULT_RATE")
+        sampling-per (parse-edn (env/getenv "OBS_LOG_SAMPLING_PER_COMPONENT"))
+        redact-fields (parse-kw-set (env/getenv "OBS_LOG_REDACT_FIELDS"))
         stacktraces (env-bool "OBS_LOG_INCLUDE_STACKTRACES")]
     (cond-> {}
       level (assoc :level level)

@@ -1,6 +1,7 @@
 (ns core-service.app.server.interceptors.metrics
-  (:require [integrant.core :as ig]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
+            [core-service.app.libs.time :as time]
+            [integrant.core :as ig]
             [d-core.core.metrics.protocol :as d-metrics]))
 
 (defn metrics-interceptor
@@ -9,10 +10,10 @@
         metrics-api (:metrics metrics)]
     {:name ::metrics
      :enter (fn [ctx]
-              (assoc ctx ::start-time (System/nanoTime)))
+          (assoc ctx ::start-time (time/now-nanos)))
      :leave (fn [ctx]
               (let [start (::start-time ctx)
-                    duration (/ (double (- (System/nanoTime) start)) 1000000000.0)
+            duration (time/nano-span->seconds start)
                     req (:request ctx)
                     resp (:response ctx)
                     method (some-> (:request-method req) name str/lower-case)
