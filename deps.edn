@@ -3,9 +3,9 @@
         org.clojure/core.async {:mvn/version "1.8.741"}
         
         ;; Local library dependency (extracted core layer)
-              d-core/d-core {:local/root "../d-core"}
+            ;;   d-core/d-core {:local/root "../d-core"}
               ;; For Docker image builds, switch back to the CLojars dependency version:
-              ;; org.clojars.cinguilherme/d-core {:mvn/version "0.9.0"}
+              org.clojars.cinguilherme/d-core {:mvn/version "0.9.0"}
         
         ;; Database dependencies
         org.clojure/java.jdbc {:mvn/version "0.7.12"}
